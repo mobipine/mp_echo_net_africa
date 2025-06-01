@@ -1,0 +1,16 @@
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Outer Shield -->
+  <path d="M50 5 L90 25 L80 80 C80 85, 50 95, 50 95 C50 95, 20 85, 20 80 L10 25 Z"
+        fill="#0057A3" stroke="#003B70" stroke-width="2"/>
+
+  <!-- Inner Shield Layer -->
+  <path d="M50 15 L80 30 L72 75 C72 78, 50 87, 50 87 C50 87, 28 78, 28 75 L20 30 Z"
+        fill="#0077CC" opacity="0.9"/>
+
+  <!-- Decorative Element (e.g. stylized bar or lock shape) -->
+  <path d="M45 40 H55 V65 H45 Z"
+        fill="#ffffff" rx="2"/>
+
+  <!-- Optional Center Circle -->
+  <circle cx="50" cy="35" r="5" fill="#ffffff" />
+</svg>
