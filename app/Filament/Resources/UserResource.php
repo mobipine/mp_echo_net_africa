@@ -13,6 +13,7 @@ use Filament\Forms\Components\View;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Columns\BadgeColumn;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -73,6 +74,8 @@ class UserResource extends Resource
                 \Filament\Tables\Columns\TextColumn::make('name')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('email')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable(),
+                //show role in badge
+                BadgeColumn::make('roles.name')->sortable()->searchable()->badge(),
                 ImageColumn::make('profile_picture')
                     ->label('Profile Picture')
                     ->circular()

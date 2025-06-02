@@ -19,4 +19,14 @@ class Member extends Model
     {
         return $this->belongsTo(\App\Models\Group::class);
     }
+
+    public function dependants()
+    {
+        return $this->hasMany(Dependant::class);
+    }
+
+    public function kycDocuments()
+    {
+        return $this->hasMany(KycDocument::class);
+    }
 }

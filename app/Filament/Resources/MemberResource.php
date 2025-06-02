@@ -90,7 +90,7 @@ class MemberResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                // Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
                 
@@ -105,7 +105,8 @@ class MemberResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            RelationManagers\DependantsRelationManager::class,
+            RelationManagers\KycDocumentRelationManager::class,
         ];
     }
 

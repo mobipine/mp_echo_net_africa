@@ -1,0 +1,44 @@
+<?php
+
+namespace App\Filament\Resources\MemberResource\RelationManagers;
+
+use Filament\Forms;
+use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Tables;
+use Illuminate\Support\Facades\Storage;
+
+class KycDocumentRelationManager extends RelationManager
+{
+    protected static string $relationship = 'kycDocuments';
+    protected static ?string $recordTitleAttribute = 'document_type';
+
+    public function form(Forms\Form $form): Forms\Form
+    {
+        return $form->schema([
+            // Forms\Components\TextInput::make('document_type')->required(),
+            //select for document type
+            Forms\Components\Select::make('document_type')
+                ->options([
+                    'national_id' => 'National ID',
+                    'passport' => 'Passport',
+                    'driver_license' => 'Driver License',
+                ])->required(),
+            Forms\Components\FileUpload::make('file_path')->directory('kyc-documents')->required()->visibility('public'),
+            Forms\Components\Textarea::make('description'),
+        ]);
+    }
+
+    public function table(Tables\Table $table): Tables\Table
+    {
+        return $table->columns([
+            Tables\Columns\TextColumn::make('document_type')->sortable()->searchable(),
+            Tables\Columns\TextColumn::make('file_path')->url(fn($record) => Storage::url($record->file_path), true),
+            Tables\Columns\TextColumn::make('description')->limit(30),
+        ])->actions([
+            Tables\Actions\EditAction::make(),
+            Tables\Actions\DeleteAction::make(),
+        ])->headerActions([
+            Tables\Actions\CreateAction::make(),
+        ]);
+    }
+} 

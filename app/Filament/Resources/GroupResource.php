@@ -3,7 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\GroupResource\Pages;
-use App\Filament\Resources\GroupResource\RelationManagers;
+use App\Filament\Resources\GroupResource\RelationManagers\MembersRelationManager;
 use App\Models\Group;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -55,7 +55,7 @@ class GroupResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            MembersRelationManager::class,
         ];
     }
 
