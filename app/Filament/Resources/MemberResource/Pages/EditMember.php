@@ -10,10 +10,17 @@ class EditMember extends EditRecord
 {
     protected static string $resource = MemberResource::class;
 
+    //change the title of the page
+    public function getTitle(): string
+    {
+        return 'View Member';
+    }
+
     protected function getHeaderActions(): array
     {
         return [
             Actions\DeleteAction::make(),
         ];
     }
+    
 }

@@ -29,4 +29,14 @@ class Member extends Model
     {
         return $this->hasMany(KycDocument::class);
     }
+
+    public function emailInboxes()
+    {
+        return $this->hasMany(EmailInbox::class);
+    }
+
+    public function smsInboxes()
+    {
+        return $this->hasMany(SmsInbox::class);
+    }
 }

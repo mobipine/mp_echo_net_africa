@@ -23,11 +23,17 @@ class MemberResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
 
+    public static function getNavigationBadge(): ?string
+    {
+        return static::getModel()::count();
+    }
+
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
                 \Filament\Forms\Components\Select::make('group_id')
+                ->native(false)
                     ->label('Group')
                     ->relationship('group', 'name')
                     ->required(),
@@ -40,12 +46,14 @@ class MemberResource extends Resource
                     ->minLength(7)
                     ->numeric(),
                 \Filament\Forms\Components\Select::make('gender')
+                ->native(false)
                     ->options([
                         'male' => 'Male',
                         'female' => 'Female',
                     ]),
                 \Filament\Forms\Components\DatePicker::make('dob')->label('Date of Birth'),
                 \Filament\Forms\Components\Select::make('marital_status')
+                ->native(false)
                     ->options([
                         'single' => 'Single',
                         'married' => 'Married',
@@ -91,7 +99,7 @@ class MemberResource extends Resource
             ])
             ->actions([
                 // Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()->color('gray')->icon('heroicon-o-eye')->label('View'),
                 Tables\Actions\DeleteAction::make(),
                 
             ])
@@ -107,6 +115,8 @@ class MemberResource extends Resource
         return [
             RelationManagers\DependantsRelationManager::class,
             RelationManagers\KycDocumentRelationManager::class,
+            RelationManagers\EmailInboxesRelationManager::class,
+            RelationManagers\SmsInboxesRelationManager::class,
         ];
     }
 
@@ -115,7 +125,9 @@ class MemberResource extends Resource
         return [
             'index' => Pages\ListMembers::route('/'),
             'create' => Pages\CreateMember::route('/create'),
-            'edit' => Pages\EditMember::route('/{record}/edit'),
+            'edit' => Pages\EditMember::route('/{record}/view'),
+            // 'edit' => Pages\EditMemberTabbed::route('/{record}/edit'),
+
         ];
     }
 }

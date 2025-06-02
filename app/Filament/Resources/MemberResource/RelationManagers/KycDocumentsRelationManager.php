@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\MemberResource\RelationManagers;
 
+use App\Models\DocsMeta;
 use Filament\Forms;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
@@ -18,11 +19,10 @@ class KycDocumentRelationManager extends RelationManager
             // Forms\Components\TextInput::make('document_type')->required(),
             //select for document type
             Forms\Components\Select::make('document_type')
-                ->options([
-                    'national_id' => 'National ID',
-                    'passport' => 'Passport',
-                    'driver_license' => 'Driver License',
-                ])->required(),
+                ->options(DocsMeta::all()->pluck('name', 'id'))
+                ->required()
+                ->native(false)
+                ->searchable(),
             Forms\Components\FileUpload::make('file_path')->directory('kyc-documents')->required()->visibility('public'),
             Forms\Components\Textarea::make('description'),
         ]);

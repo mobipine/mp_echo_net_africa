@@ -28,6 +28,11 @@ class UserResource extends Resource
     //add navigation group
     protected static ?string $navigationGroup = 'User Management';
 
+    public static function getNavigationBadge(): ?string
+    {
+        return static::getModel()::count();
+    }
+
     public static function form(Form $form): Form
     {
         return $form
