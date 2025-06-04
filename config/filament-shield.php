@@ -84,9 +84,6 @@ return [
 
     'discovery' => [
         'discover_all_resources' => true, // Enable discovery of all resources
-        //discover all relation managers
-        'discover_all_relation_managers' => true,
-        'discover_all_relation_resources' => true,
         'discover_all_widgets' => false,
         'discover_all_pages' => false,
     ],
