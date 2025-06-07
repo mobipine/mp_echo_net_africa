@@ -14,6 +14,7 @@ return new class extends Migration
         Schema::create('chart_of_accounts', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+            $table->string('slug');
             $table->string('account_code')->unique();
             $table->string('account_type')->nullable();
             $table->timestamps();

@@ -22,6 +22,8 @@ return new class extends Migration
             $table->string('loan_number');
             $table->dateTime('issued_at')->nullable();
             $table->dateTime('due_at')->nullable();
+            $table->string('loan_purpose')->nullable();
+            $table->string('repayment_schedule')->nullable();//store the repayment schedule as a json that will be easily editable
             $table->timestamps();
         });
     }

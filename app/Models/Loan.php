@@ -12,10 +12,18 @@ class Loan extends Model
     protected $fillable = [
         'member_id',
         'loan_product_id',
-        'amount',
+        'loan_number',
         'status',
-        'issued_at',
-        'due_at',
+        'principal_amount',
+        'interest_rate',
+        'interest_cycle',
+        'repayment_amount',
+        'interest_amount',
+        'release_date',
+        'due_date',
+        'loan_duration',
+        'loan_purpose',
+        'repayment_schedule',
     ];
 
     public function member()

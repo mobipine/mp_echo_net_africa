@@ -10,6 +10,7 @@ class Transaction extends Model
     protected $fillable = [
         'chart_of_account_id',
         'transaction_type',
+        'dr_cr',
         'amount',
         'transaction_date',
         'description',

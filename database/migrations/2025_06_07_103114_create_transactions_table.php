@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('chart_of_account_id')->constrained('chart_of_accounts');
             $table->string('transaction_type')->nullable();
+            $table->string('dr_cr')->nullable();
             $table->decimal('amount', 10, 2);
             $table->date('transaction_date');
             $table->string('description')->nullable();

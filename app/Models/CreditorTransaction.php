@@ -11,6 +11,7 @@ class CreditorTransaction extends Model
         'member_id',
         'chart_of_account_id',
         'transaction_type',
+        'dr_cr',
         'amount',
         'transaction_date',
         'description',  
