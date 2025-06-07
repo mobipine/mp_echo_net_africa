@@ -23,9 +23,10 @@ class TransactionResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Select::make('chartOfAccount_id')
-                    ->relationship('chartOfAccount', 'name')
-                    ->required(),
+               
+                //no creation form for transactions, only editing existing ones
+
+               
             ]);
     }
 
@@ -33,7 +34,26 @@ class TransactionResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('chartOfAccount.name'),
+                Tables\Columns\TextColumn::make('chartOfAccount.name')
+                    ->label('Account')
+                    ->sortable()
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('transaction_type'),
+                
+                //badge column for dr_cr
+                Tables\Columns\BadgeColumn::make('dr_cr')
+                    ->label('Debit/Credit')
+                    ->colors([
+                        'yellow' => 'dr',
+                        'blue' => 'cr',
+                    ]),
+                Tables\Columns\TextColumn::make('amount')
+                    ->money('KES', true)
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('transaction_date')
+                    ->date()
+                    ->sortable(),
+                    
             ])
             ->filters([
                 //

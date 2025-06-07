@@ -22,8 +22,12 @@ class ChartofAccountsResource extends Resource
     
     protected static ?string $navigationLabel = 'Chart of Accounts';
 
+    //change the label for the resource
+    protected static ?string $label = 'Chart of Account';
+
     protected static ?string $cluster = Settings::class;
 
+   
     public static function form(Form $form): Form
     {
         return $form
@@ -83,4 +87,7 @@ class ChartofAccountsResource extends Resource
             'edit' => Pages\EditChartofAccounts::route('/{record}/edit'),
         ];
     }
+
+   
+    
 }

@@ -5,9 +5,14 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\LoanResource\Pages;
 use App\Filament\Resources\LoanResource\RelationManagers;
 use App\Models\Loan;
+use App\Models\LoanAttribute;
+use App\Models\LoanProduct;
 use Filament\Forms;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Support\RawJs;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -30,110 +35,130 @@ class LoanResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Select::make('loan_product_id')
-                    ->relationship('loanProduct', 'name')
-                    ->required()
+                Select::make('loan_product_id')
+                    ->label('Loan Product')
+                    ->native(false)
+                    ->options(LoanProduct::all()->pluck('name', 'id')->toArray())
                     ->reactive()
-                    ->afterStateUpdated(function ($state, $set) {
-                        // Fetch interest rate from LoanProduct
-                        $interestRate = 0.05; // Example value, replace with actual fetch logic
-                        $interestCycle = 'monthly'; // Example value, replace with actual fetch logic
-                        $set('interest_rate', $interestRate);
-                        $set('interest_cycle', $interestCycle);
-                        
-                    }),
-                Forms\Components\Select::make('member_id')
-                    ->relationship('member', 'name')
+                    
                     ->required(),
+
+                TextInput::make('loan_number')
+                    ->label('Loan Number')
+                    ->default(function () {
+                        return 'LN' . str_pad(Loan::count() + 1, 6, '0', STR_PAD_LEFT);
+                    })
+                    ->required()
+                    ->readOnly(),
+
                 Forms\Components\TextInput::make('status')
                     ->default('Pending Approval')
-                    ->disabled(),
-                Forms\Components\TextInput::make('principal_amount')
-                    ->required()
-                    ->numeric(),
-                Forms\Components\TextInput::make('interest_cycle')
-                    ->label('Interest Cycle')
-                    ->disabled(),
-                Forms\Components\Select::make('loan_duration')
+                    ->readOnly(),
+
+               
+
+                Forms\Components\TextInput::make('loan_duration')
                     ->label('Loan Duration')
+                    // ->numeric()
+                    ->placeholder('Enter Loan Duration depending on the interest cycle')
+                    ->formatStateUsing(function ($state, $record) {
+                       return self::formatDuration($state, $record);
+                    })
+                    // ->helperText('Enter Loan Duration depending on the interest cycle')
+                    ->required(),
+
+                Forms\Components\TextInput::make('principal_amount')
+                    ->label('Principal Amount')
+                    ->placeholder('Enter requested loan amount')
                     ->required()
-                    ->native(false)
-                    ->options([
-                        '1' => '1 Month',
-                        '2' => '2 Months',
-                        '3' => '3 Months',
-                        '4' => '4 Months',
-                        '5' => '5 Months',
-                    ])
-                    ->afterStateUpdated(function ($state, $set) {
-                        \Illuminate\Support\Facades\Log::info('State updated: ' . $state);
-                        $set('repayment_amount', 20000);
-                        $set('interest_amount', 1000);
-                    }),
+                    ->reactive()
+                    ->mask(RawJs::make('$money($input)'))
+                    ->stripCharacters(',')
+                    ->numeric(),
+                    
                 Forms\Components\DatePicker::make('release_date')
                     ->label('Release Date')
+                    ->reactive()
+                    ->native(false)
+                    ->displayFormat('d/m/Y')
+                    ->timezone('Africa/Nairobi')
+                    ->locale('en')
                     ->required(),
+
+                Forms\Components\DatePicker::make('due_at')
+                    ->label('Due Date')
+                    ->displayFormat('d/m/Y')
+                    ->timezone('Africa/Nairobi')
+                    ->locale('en')
+                    ->required()
+                    ->native(false)
+                    // ->hidden()
+                    ->readOnly(),
 
                 Forms\Components\TextInput::make('repayment_amount')
                     ->label('Repayment Amount')
                     ->numeric()
                     ->required()
-                    ->disabled(),
-                    
+                    ->mask(RawJs::make('$money($input)'))
+                    ->stripCharacters(',')
+                    ->readOnly(),
+
                 Forms\Components\TextInput::make('interest_amount')
                     ->label('Interest Amount')
                     ->numeric()
                     ->required()
-                    ->disabled(),
-                Forms\Components\TextInput::make('interest_rate')
-                    ->label('Interest Rate')
-                    ->numeric()
-                    ->required()
-                    ->disabled(),
-
-                Forms\Components\TextInput::make('loan_number')
-                    ->label('Loan Number')
-                    ->default(fn () => 'LN-' . strtoupper(uniqid()))
-                    ->required()
-                    ->disabled(),
-
-                Forms\Components\DatePicker::make('due_date')
-                    ->label('Due Date')
-                    ->required()
-                    // ->hidden()
-                    ->disabled(),
+                    ->mask(RawJs::make('$money($input)'))
+                    ->stripCharacters(',')
+                    ->readOnly(),
             ]);
-    }
-
-    protected function calculateLoanAmount($loanProductId)
-    {
-        // Fetch attributes and perform calculations
-        // Placeholder logic for demonstration
-        $interestRate = 0.05; // Example value
-        $loanCharges = 100; // Example value
-        $maxLoanAmount = 10000; // Example value
-
-        return $maxLoanAmount + ($maxLoanAmount * $interestRate) + $loanCharges;
     }
 
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('member_id')
+                Tables\Columns\TextColumn::make('member.name')
+                    ->label('Member Name')
+                    ->sortable()
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('loanProduct.name')
+                    ->label('Loan Product')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('loan_product_id')
+
+                Tables\Columns\TextColumn::make('principal_amount')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('amount')
-                    ->numeric()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('status')
+
+                // Tables\Columns\TextColumn::make('status')
+                //     ->searchable(),
+                Tables\Columns\BadgeColumn::make('status')
+                    ->colors([
+                        'yellow' => 'Pending Approval',
+                        'primary' => 'Approved',
+                        'danger' => 'Rejected',
+                        'blue' => 'Completed',
+                    ])
+                    ->sortable()
                     ->searchable(),
-                Tables\Columns\TextColumn::make('issued_at')
-                    ->dateTime()
+
+                
+                Tables\Columns\TextColumn::make('release_date')
+                    ->date()
+                    ->searchable()
+                    // ->format('Y-m-d')
                     ->sortable(),
+                    //loan duration is a select field, so we can use it directly
+                Tables\Columns\TextColumn::make('loan_duration')
+                //get the loan cycle of the loan product and append it to the duration
+                    ->formatStateUsing(function ($state, $record) {
+                        return self::formatDuration($state, $record);
+                    })
+                    ->label('Duration')
+                    ->sortable()
+                    ->searchable(),
+
                 Tables\Columns\TextColumn::make('due_at')
                     ->dateTime()
                     ->sortable(),
@@ -150,7 +175,8 @@ class LoanResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                // Tables\Actions\EditAction::make(),
+                Tables\Actions\ViewAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -171,7 +197,32 @@ class LoanResource extends Resource
         return [
             'index' => Pages\ListLoans::route('/'),
             'create' => Pages\CreateLoan::route('/create'),
-            'edit' => Pages\EditLoan::route('/{record}/edit'),
+            // 'edit' => Pages\EditLoan::route('/{record}/edit'),
         ];
+    }
+
+    public static function formatDuration($state, $record) {
+        // return $state . ' ' . $record->loanProduct->interest_cycle;
+
+        $slug = 'interest_cycle';
+        $attributeId = LoanAttribute::where('slug', $slug)->first()->id;
+        $loan_product = $record->loanProduct;
+
+
+        $loanAttribute = $loan_product->loanProductAttributes()->where('loan_attribute_id', $attributeId)->first();
+        // dd($loanAttribute, $loanAttribute->value);
+        if($loanAttribute->value == "Daily") {
+            $units = 'days';
+        } elseif($loanAttribute->value == "Weekly") {
+            $units = 'weeks';
+        } elseif($loanAttribute->value == "Monthly") {
+            $units = 'months';
+        } elseif($loanAttribute->value == "Yearly") {
+            $units = 'years';
+        } else {
+            $units = 'N/A';
+
+        }
+        return $state . ' ' . $units;
     }
 }

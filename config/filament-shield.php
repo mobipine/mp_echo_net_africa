@@ -11,7 +11,7 @@ return [
         'is_globally_searchable' => false,
         'show_model_path' => true,
         'is_scoped_to_tenant' => true,
-        // 'cluster' => true,
+        'cluster' => null,
     ],
 
     'tenant_model' => null,
@@ -20,18 +20,18 @@ return [
         'fqcn' => 'App\\Models\\User',
     ],
 
-    // 'super_admin' => [
-    //     'enabled' => true,
-    //     'name' => 'super_admin',
-    //     'define_via_gate' => true, // Enforce permissions via gates
-    //     'intercept_gate' => 'before', // after
-    // ],
+    'super_admin' => [
+        'enabled' => true,
+        'name' => 'super_admin',
+        // 'define_via_gate' => true, // Enforce permissions via gates
+        // 'intercept_gate' => 'before', // after
+    ],
 
-    // 'admin' => [
-    //     'enabled' => true,
-    //     'name' => 'admin',
+    'admin' => [
+        'enabled' => true,
+        'name' => 'admin',
         
-    // ],
+    ],
 
     'permission_prefixes' => [
         'resource' => [
@@ -67,7 +67,7 @@ return [
     ],
 
     'exclude' => [
-        'enabled' => true,
+        'enabled' => false,
 
         'pages' => [
             'Dashboard',
@@ -84,8 +84,11 @@ return [
 
     'discovery' => [
         'discover_all_resources' => true, // Enable discovery of all resources
-        'discover_all_widgets' => true,
-        'discover_all_pages' => true,
+        //discover all relation managers
+        'discover_all_relation_managers' => true,
+        'discover_all_relation_resources' => true,
+        'discover_all_widgets' => false,
+        'discover_all_pages' => false,
     ],
 
     'register_role_policy' => [

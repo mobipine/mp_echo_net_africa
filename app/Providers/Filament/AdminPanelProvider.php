@@ -34,6 +34,25 @@ class AdminPanelProvider extends PanelProvider
                 'primary' => Color::Green,
                 // 'primary' => "#64ffda",//set custom panel colors here
                 'secondary' => Color::Purple,
+                
+                'blue' => Color::Blue,
+                'red' => Color::Red,
+                'yellow' => Color::Yellow,
+                'orange' => Color::Orange,
+
+                'gray' => Color::Gray,
+
+                'indigo' => Color::Indigo,
+                'pink' => Color::Pink,
+                'purple' => Color::Purple,
+                'teal' => Color::Teal,
+                'cyan' => Color::Cyan,
+                'lime' => Color::Lime,
+                'emerald' => Color::Emerald,
+                'amber' => Color::Amber,
+                'rose' => Color::Rose,
+                'fuchsia' => Color::Fuchsia,
+                'violet' => Color::Violet,
             ])
             ->font(
                 'Poppins' //set custom panel font here
@@ -53,6 +72,7 @@ class AdminPanelProvider extends PanelProvider
             
             ->pages([
                 Pages\Dashboard::class,
+
 
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')

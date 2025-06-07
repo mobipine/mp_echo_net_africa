@@ -74,10 +74,15 @@ class LoanApplication extends Page implements HasForms
     {
         $this->loan_attributes = LoanAttribute::all()->pluck('slug')->toArray();
     }
-
+    
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()->can('page_LoanApplication');
+    }
 
     public function mount(): void
     {
+        abort_unless(auth()->user()->can('page_LoanApplication'), 403);
         $this->form->fill();
     }
 
@@ -203,10 +208,10 @@ class LoanApplication extends Page implements HasForms
         Log::info('Loan Application submitted successfully', ['loan' => $loan->toArray()]);
         // Redirect or show a success message
         // $this->notify('success', 'Loan Application submitted successfully');
-        Notification::make() 
+        Notification::make()
             ->success()
             ->title('Loan Application Submitted Successfully')
-            ->send(); 
+            ->send();
         // Optionally, you can redirect to a different page or reset the form
         //redirect to the loan resource page after submission
         $this->form->fill(); // Reset the form after submission
@@ -311,7 +316,7 @@ class LoanApplication extends Page implements HasForms
                     ->mask(RawJs::make('$money($input)'))
                     ->stripCharacters(',')
                     ->numeric(),
-                    
+
                 Forms\Components\DatePicker::make('release_date')
                     ->label('Release Date')
                     ->reactive()
@@ -426,19 +431,21 @@ class LoanApplication extends Page implements HasForms
     public function setLoanParticulars($set, $arranged_attributes)
     {
         foreach ($arranged_attributes as $attribute) {
-            $set($attribute['slug'],
-            (int)($attribute['value']) > 0 ? number_format($attribute['value'], 2) : $attribute['value']);
+            $set(
+                $attribute['slug'],
+                (int)($attribute['value']) > 0 ? number_format($attribute['value'], 2) : $attribute['value']
+            );
         }
     }
 
     public function calculateLoanAmounts($set, $state)
-    {     
+    {
         //if principal amount is filled, calculate the repayment amount and interest amount and interest_type
         //get the interest cycle, loan duration and interest rate
-        $interest_cycle = $this->interest_cycle;//daily, weekly, monthly, yearly
-        $loan_duration = $this->loan_duration;//number of days, weeks, months, years
-        $interest_rate = $this->interest_rate;//percentage
-        $interest_type = $this->interest_type;//flat, reducing balance, simple interest
+        $interest_cycle = $this->interest_cycle; //daily, weekly, monthly, yearly
+        $loan_duration = $this->loan_duration; //number of days, weeks, months, years
+        $interest_rate = $this->interest_rate; //percentage
+        $interest_type = $this->interest_type; //flat, reducing balance, simple interest
         $principal_amount = (int) str_replace(',', '', $state);
 
         if (!$state || !$this->interest_cycle || !$this->loan_duration || !$this->interest_rate || !$this->interest_type) {
@@ -505,7 +512,5 @@ class LoanApplication extends Page implements HasForms
 
         $due_date = Carbon::parse($release_date)->add((int)$loan_duration['value'], $loan_duration['unit']);
         $set('due_date', $due_date->format('d/m/Y'));
-
-        
     }
 }
