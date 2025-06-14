@@ -51,7 +51,8 @@ class MemberResource extends Resource
                         'male' => 'Male',
                         'female' => 'Female',
                     ]),
-                \Filament\Forms\Components\DatePicker::make('dob')->label('Date of Birth'),
+                \Filament\Forms\Components\DatePicker::make('dob')->label('Date of Birth')
+                ->native(false),
                 \Filament\Forms\Components\Select::make('marital_status')
                 ->native(false)
                     ->options([
