@@ -25,9 +25,32 @@ class SurveyResponseResource extends Resource
     {
         return $form
             ->schema([
-                // Forms\Components\TextInput::make('participant_id')->required(),
-                // Forms\Components\Textarea::make('response_data')->required(),
-                // /
+               
+
+                Forms\Components\Select::make('survey_id')
+                    ->label('Survey Name')
+                    ->options(\App\Models\Survey::pluck('title', 'id')) // Fetch directly from the Survey model
+                    ->label('Survey')
+                    ->required()
+                    ->native(false)
+                    ->searchable(),
+                Forms\Components\TextInput::make('msisdn')
+                    ->label('MSISDN')
+                    ->required()
+                    ->maxLength(15)
+                    ->placeholder('e.g. 0712345678'),
+                Forms\Components\Select::make('question_id')
+                    ->label('Question')
+                    // ->relationship('question', 'question')
+                    ->options(\App\Models\SurveyQuestion::pluck('question', 'id'))
+                    ->required()
+                    ->native(false)
+                    ->searchable(),
+                Forms\Components\TextInput::make('survey_response')
+                    ->label('Response')
+                    ->required()
+                    ->maxLength(500)
+                    ->placeholder('e.g. Yes, No, 123'),
             ]);
     }
 
@@ -35,15 +58,27 @@ class SurveyResponseResource extends Resource
     {
         return $table
             ->columns([
+                // Tables\Columns\TextColumn::make('id')->sortable(),
+                // Tables\Columns\TextColumn::make('participant_id')->sortable()->searchable(),
+                // Tables\Columns\TextColumn::make('response_data')->limit(50),
+
+
+                //i want columns for id	survey_name form the survey id, msisdn	question	survey_response	created_at	updated_at	
                 Tables\Columns\TextColumn::make('id')->sortable(),
-                Tables\Columns\TextColumn::make('participant_id')->sortable()->searchable(),
-                Tables\Columns\TextColumn::make('response_data')->limit(50),
+                Tables\Columns\TextColumn::make('survey.title')->label('Survey Name')->sortable()->searchable(),
+                Tables\Columns\TextColumn::make('msisdn')->label('MSISDN')->sortable()->searchable(),
+                Tables\Columns\TextColumn::make('question.question')->label('Question')->sortable()->searchable(),
+                Tables\Columns\TextColumn::make('survey_response')->label('Response')->limit(50)->sortable(),
+                Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable(),
+                Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable(),
+
             ])
             ->filters([
                 //
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                // Tables\Actions\EditAction::make(),
+                Tables\Actions\ViewAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -63,8 +98,8 @@ class SurveyResponseResource extends Resource
     {
         return [
             'index' => Pages\ListSurveyResponses::route('/'),
-            'create' => Pages\CreateSurveyResponse::route('/create'),
-            'edit' => Pages\EditSurveyResponse::route('/{record}/edit'),
+            // 'create' => Pages\CreateSurveyResponse::route('/create'),
+            // 'edit' => Pages\EditSurveyResponse::route('/{record}/edit'),
         ];
     }
 }
