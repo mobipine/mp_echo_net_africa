@@ -20,13 +20,17 @@ class SurveyResponseResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-chat-bubble-left-ellipsis';
     protected static ?string $navigationGroup = 'Surveys';
 
+    public static function canCreate(): bool
+    {
+        return false; // Disable the create action
+    }
+
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-               
-
+            
                 Forms\Components\Select::make('survey_id')
                     ->label('Survey Name')
                     ->options(\App\Models\Survey::pluck('title', 'id')) // Fetch directly from the Survey model

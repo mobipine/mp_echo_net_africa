@@ -26,8 +26,12 @@ class ResponsesRelationManager extends RelationManager
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('id')->sortable(),
-                Tables\Columns\TextColumn::make('participant_id')->sortable()->searchable(),
-                Tables\Columns\TextColumn::make('response_data')->limit(50),
+                Tables\Columns\TextColumn::make('survey.title')->label('Survey Name')->sortable()->searchable(),
+                Tables\Columns\TextColumn::make('msisdn')->label('MSISDN')->sortable()->searchable(),
+                Tables\Columns\TextColumn::make('question.question')->label('Question')->sortable()->searchable(),
+                Tables\Columns\TextColumn::make('survey_response')->label('Response')->limit(50)->sortable(),
+                Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable(),
+                Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable(),
             ])
             ->filters([
                 //
