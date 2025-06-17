@@ -43,8 +43,9 @@ RUN npm install && npm run build
 # RUN docker-php-ext-configure gd --with-freetype --with-jpeg
 
 # Install Composer and PHP dependencies
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer && \
-    composer install
+# RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer && \
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+RUN composer install
 
 # Copy the project files into the container
 COPY . .
