@@ -58,8 +58,8 @@ RUN php artisan storage:link && \
     touch storage/logs/laravel.log && \
     chmod -R 777 storage && \
     chmod -R 777 public && \
-    sudo chown -R www-data:www-data storage && \
-    sudo chown -R www-data:www-data public && \
+    chown -R www-data:www-data storage && \
+    chown -R www-data:www-data public && \
     chmod -R 777 bootstrap
 
 ARG DB_CONNECTION
