@@ -47,4 +47,4 @@ jobs:
           password: '${{ secrets.CAPROVER_PASSWORD }}'
           appName: '${{ secrets.APP_NAME }}'
           # image: 'username/my-docker-image-name:latest'
-          image: '${{ secrets.DOCKER_USERNAME }}/easyauction:${{ github.sha }}'
+          image: '${{ secrets.DOCKER_USERNAME }}/trustfund:${{ github.sha }}'
