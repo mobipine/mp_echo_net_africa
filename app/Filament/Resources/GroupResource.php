@@ -38,7 +38,7 @@ class GroupResource extends Resource
                     ->options(fn() => collect(config('counties'))->mapWithKeys(fn($county) => [$county['code'] => $county['county']]))
                     //on state update, set the sub_county options
                     ->afterStateUpdated(function (callable $set, $state) {
-                        self::updateSubCounties($set, $state);
+                        // self::updateSubCounties($set, $state);
                     })
                     ->native(false)
                     ->searchable()

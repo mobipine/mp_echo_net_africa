@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('sms_inboxes', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('member_id')->constrained()->onDelete('cascade');
-            $table->string('phone_number');
+            $table->foreignId('member_id')->constrained()->onDelete('cascade')->nullable();;
+            $table->string('phone_number')->nullable();;
             $table->text('message')->nullable();
             $table->string('status')->default('pending');
             $table->timestamps();
