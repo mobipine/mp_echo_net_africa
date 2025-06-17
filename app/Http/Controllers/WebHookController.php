@@ -30,6 +30,12 @@ class WebHookController extends Controller
         //if not we will store the message in the database in the survey_response table and proceed to send the next message
 
        
-        return response()->json(['status' => 'success', 'message' => 'Webhook processed successfully']);
+        return response()->json(
+            [
+                'status' => 'success',
+                'data' => json_encode($request->all(), true),
+                'message' => 'Webhook processed successfully'
+
+            ]);
     }
 }
