@@ -6,14 +6,14 @@ SHELL ["/bin/bash", "-c"]
 
 ENV PHP_MAX_EXECUTION_TIME 110
 # Copy the project files into the container
-COPY . /production/easyauction
+COPY . /production/trustfund
 
 # Set the laravel web folder
-ARG WEB_PATH=/production/easyauction/public
+ARG WEB_PATH=/production/trustfund/public
 ENV WEB_DOCUMENT_ROOT=$WEB_PATH
 
 # set the correct laravel app foler
-ARG LARAVEL_PATH=/production/easyauction
+ARG LARAVEL_PATH=/production/trustfund
 WORKDIR $LARAVEL_PATH
 
 # # Install Node.js and npm
@@ -57,6 +57,9 @@ RUN php artisan storage:link && \
     mkdir -p bootstrap/cache && \
     touch storage/logs/laravel.log && \
     chmod -R 777 storage && \
+    chmod -R 777 public && \
+    sudo chown -R www-data:www-data storage && \
+    sudo chown -R www-data:www-data public && \
     chmod -R 777 bootstrap
 
 ARG DB_CONNECTION
