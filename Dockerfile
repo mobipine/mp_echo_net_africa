@@ -1,5 +1,5 @@
 # Use webdevops/php-nginx as base image
-FROM webdevops/php-nginx:latest
+FROM webdevops/php-nginx:8.3
 
 ##change the shell
 SHELL ["/bin/bash", "-c"]
