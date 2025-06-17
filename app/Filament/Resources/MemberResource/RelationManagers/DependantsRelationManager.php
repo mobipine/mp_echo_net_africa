@@ -18,8 +18,8 @@ class DependantsRelationManager extends RelationManager
         return $form->schema([
             Forms\Components\TextInput::make('name')->required(),
             Forms\Components\TextInput::make('relationship')->required(),
-            Forms\Components\DatePicker::make('dob')->label('Date of Birth'),
-            Forms\Components\Select::make('gender')->options([
+            Forms\Components\DatePicker::make('date_of_birth')->label('Date of Birth')->native(false),
+            Forms\Components\Select::make('gender')->native(false)->options([
                 'male' => 'Male',
                 'female' => 'Female',
             ]),

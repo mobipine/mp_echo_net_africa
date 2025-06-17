@@ -49,8 +49,40 @@ class SendSMS extends Command
         info('Processing pending SMS...');
 
         if ($sms_inboxes->isEmpty()) {
-            info('No pending SMS to send.');
-            return;
+            // info('No pending SMS to send.');
+            // return;
+
+
+            //check if there are SMSInbox with group_ids that are null or empty but phone_number and member_id is filled
+            $sms_inboxes = SMSInbox::where('status', 'pending')
+
+                ->whereNotNull('phone_number')
+                ->whereNotNull('member_id')
+                ->take(10)
+                ->get();
+
+            // dd($sms_inboxes);
+
+            foreach ($sms_inboxes as $sms_inbox) {
+                $phone_number = $sms_inbox->phone_number;
+                $message = $sms_inbox->message;
+
+                // Send SMS to the phone number
+                info("Sending SMS to {$phone_number}");
+                $response = $this->sendSMS($phone_number, $message);
+
+                if ($response['status']['code'] == "1008" && $response['status']['type'] == "success") {
+                    info("SMS sent to {$phone_number}");
+                    // After processing, update the SMS inbox status to 'sent'
+                    $sms_inbox->status = 'sent';
+                    $sms_inbox->save();
+                    info("SMS inbox with ID {$sms_inbox->id} marked as sent.");
+                } else {
+                    $this->error("Failed to send SMS to {$phone_number}");
+                }
+            }
+
+            return; // Exit if no groups are found
         }
 
         foreach ($sms_inboxes as $sms_inbox) {
@@ -79,8 +111,6 @@ class SendSMS extends Command
                         } else {
                             $this->error("Failed to send SMS to {$member->phone}");
                         }
-
-                        
                     }
                 }
             }

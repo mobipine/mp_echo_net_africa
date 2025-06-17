@@ -32,7 +32,16 @@ class KycDocumentRelationManager extends RelationManager
     {
         return $table->columns([
             Tables\Columns\TextColumn::make('document_type')->sortable()->searchable(),
-            Tables\Columns\TextColumn::make('file_path')->url(fn($record) => Storage::url($record->file_path), true),
+            // Tables\Columns\TextColumn::make('file_path'),
+            //display a link to the file
+            Tables\Columns\TextColumn::make('file_path')
+                ->url(function ($record) {
+                    // dd($record);
+                    return Storage::disk('public')->url($record->file_path);
+                })
+                ->label('File Link')
+                ->html()
+                ->sortable(),
             Tables\Columns\TextColumn::make('description')->limit(30),
         ])->actions([
             Tables\Actions\EditAction::make(),

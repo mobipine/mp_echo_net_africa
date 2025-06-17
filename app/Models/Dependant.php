@@ -10,7 +10,7 @@ class Dependant extends Model
         'member_id',
         'name',
         'relationship',
-        'dob',
+        'date_of_birth',
         'gender',
     ];
 }
