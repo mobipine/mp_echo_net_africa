@@ -22,4 +22,31 @@ class SurveyQuestion extends Model
     {
         return $this->belongsToMany(Survey::class, 'survey_question_survey');
     }
+
+    //add a function that takes in the survey_id and returns the position of the question in that survey
+    public function getPosition($surveyId)
+    {
+        $position = SurveyQuestionPivot::where('survey_id', $surveyId)
+            ->where('survey_question_id', $this->id)
+            ->first()
+            ->position ?? null;
+
+        return $position;
+
+    }
+
+    public function getNextQuestion($surveyId)
+    {
+        $position = $this->getPosition($surveyId);
+        if ($position === null) {
+            return null;
+        }
+
+        $nextQuestion = SurveyQuestionPivot::where('survey_id', $surveyId)
+            ->where('position', '>', $position)
+            ->orderBy('position')
+            ->first();
+
+        return $nextQuestion ? SurveyQuestion::find($nextQuestion->survey_question_id) : null;
+    }
 }

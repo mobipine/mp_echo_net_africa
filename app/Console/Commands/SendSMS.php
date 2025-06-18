@@ -49,13 +49,10 @@ class SendSMS extends Command
         info('Processing pending SMS...');
 
         if ($sms_inboxes->isEmpty()) {
-            // info('No pending SMS to send.');
-            // return;
 
 
             //check if there are SMSInbox with group_ids that are null or empty but phone_number and member_id is filled
             $sms_inboxes = SMSInbox::where('status', 'pending')
-
                 ->whereNotNull('phone_number')
                 ->whereNotNull('member_id')
                 ->take(10)
