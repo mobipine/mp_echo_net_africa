@@ -40,7 +40,7 @@ class WebHookController extends Controller
             ->latest()
             ->first(); // a user can have multiple sessions, so we get the latest one
 
-            // dd($session);
+        // dd($session);
 
         if ($session) {
             // Process the user's response
@@ -72,7 +72,11 @@ class WebHookController extends Controller
         // Send the first question
         $this->sendSMS($msisdn, $firstQuestion->question);
 
-        return response()->json(['status' => 'success', 'message' => 'Survey started.']);
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Survey started.',
+            'question_sent' => $firstQuestion->question
+        ]);
     }
 
     private function processSurveyResponse($msisdn, ShortcodeSession $session, $response)
@@ -101,6 +105,7 @@ class WebHookController extends Controller
         // Store the response in the survey_responses table
         SurveyResponse::create([
             'survey_id' => $session->survey_id,
+            'session_id' => $session->id, // Associate the response with the session
             'msisdn' => $msisdn,
             'question_id' => $session->current_question_id,
             'survey_response' => $response,
@@ -108,10 +113,7 @@ class WebHookController extends Controller
 
         // Get the next question in the survey
         $survey = $session->survey;
-        
-        $survey_question_id = 
         $nextQuestion = $currentQuestion->getNextQuestion($survey->id);
-        // dd($survey, "here", $currentQuestion->getPosition($survey->id), $nextQuestion);
 
         if ($nextQuestion) {
             // Update the session with the next question
@@ -120,14 +122,25 @@ class WebHookController extends Controller
             // Send the next question
             $this->sendSMS($msisdn, $nextQuestion->question);
 
-            return response()->json(['status' => 'success', 'message' => 'Next question sent.']);
+            return response()->json([
+                'status' => 'success', 
+                'message' => 'Next question sent.',
+                'question_sent' => $nextQuestion->question
+            ]);
         }
 
         // If no more questions, end the survey and send the final response
-        $session->update(['current_question_id' => null]); // Mark session as complete
+        $session->update([
+            'current_question_id' => null, // Mark session as complete
+            'status' => 'COMPLETED', // Update session status to COMPLETED
+        ]);
         $this->sendSMS($msisdn, $survey->final_response);
 
-        return response()->json(['status' => 'success', 'message' => 'Survey completed.']);
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Survey completed.',
+            'final_response' => $survey->final_response
+        ]);
     }
 
     private function sendSMS($msisdn, $message)

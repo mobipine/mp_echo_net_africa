@@ -8,7 +8,7 @@ class ShortcodeSession extends Model
 {
     protected $table = 'shortcode_sessions';
 
-    protected $fillable = ['msisdn', 'survey_id', 'current_question_id'];
+    protected $fillable = ['msisdn', 'survey_id', 'current_question_id', 'status'];
 
     public function survey()
     {
@@ -18,5 +18,10 @@ class ShortcodeSession extends Model
     public function currentQuestion()
     {
         return $this->belongsTo(SurveyQuestion::class, 'current_question_id');
+    }
+
+    public function responses()
+    {
+        return $this->hasMany(SurveyResponse::class, 'session_id');
     }
 }

@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class SurveyResponse extends Model
 {
-    protected $fillable = ['survey_id', 'msisdn', 'question_id', 'survey_response'];
+    protected $fillable = ['survey_id', 'msisdn', 'question_id', 'survey_response', 'session_id'];
 
     public function survey()
     {
@@ -17,4 +17,10 @@ class SurveyResponse extends Model
     {
         return $this->belongsTo(SurveyQuestion::class);
     }
+
+    public function session()
+    {
+        return $this->belongsTo(ShortcodeSession::class, 'session_id');
+    }
+
 }
