@@ -156,13 +156,15 @@ class LoanApplication extends Page implements HasForms
         //create the following records
         //loan 1 record
         $loan = new Loan();
+        // dd($this->form->getState());
         $loan->member_id = $this->member_id;
         $loan->loan_product_id = $this->loan_product_id;
         $loan->principal_amount = str_replace(',', '', $this->principal_amount);
         $loan->status = $this->status;
         // $loan->issued_at = null;
         //$this->due_date looks like '2023-10-01' and we need to convert it to Carbon format
-        $loan->due_at = Carbon::createFromFormat('d/m/Y', $this->due_date)->format('Y-m-d');
+        // $loan->due_at = Carbon::createFromFormat('d/m/Y', $this->due_date)->format('Y-m-d');
+        $loan->due_at = $this->due_date;
         // $loan->due_date = Carbon::createFromFormat('Y-m-d', $this->due_date)->format('Y-m-d');
         $loan->repayment_amount = str_replace(',', '', $this->repayment_amount);
         $loan->release_date = Carbon::createFromFormat('Y-m-d H:i:s', $this->release_date)->format('Y-m-d');
@@ -325,6 +327,7 @@ class LoanApplication extends Page implements HasForms
                     ->timezone('Africa/Nairobi')
                     ->locale('en')
                     ->afterStateUpdated(function ($state, callable $set) {
+                        // dd($state);
                         $this->calculateDueDate($set, $state);
                     })
                     ->required(),
@@ -502,15 +505,18 @@ class LoanApplication extends Page implements HasForms
     public function calculateDueDate($set, $state)
     {
         $release_date = $state;
-        // dd($release_date);
-
-
+        
+        
         $interest_cycle = $this->interest_cycle;
         $loan_duration = $this->loan_duration;
 
         $loan_duration = $this->formatLoanDuration($loan_duration, $interest_cycle);
-
+        
         $due_date = Carbon::parse($release_date)->add((int)$loan_duration['value'], $loan_duration['unit']);
-        $set('due_date', $due_date->format('d/m/Y'));
+        // dd($release_date, $due_date);
+
+        // $set('due_date', $due_date->format('d/m/Y'));
+        $set('due_date', $due_date);
+
     }
 }

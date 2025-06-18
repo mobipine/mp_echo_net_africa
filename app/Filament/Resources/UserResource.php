@@ -45,6 +45,7 @@ class UserResource extends Resource
                     ->relationship('roles', 'name')
                     ->multiple()
                     ->preload()
+                    ->required()
                     ->searchable(),
 
                 FileUpload::make('profile_picture')
