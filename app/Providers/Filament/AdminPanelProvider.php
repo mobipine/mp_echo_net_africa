@@ -42,6 +42,8 @@ class AdminPanelProvider extends PanelProvider
                 'yellow' => Color::Yellow,
                 'orange' => Color::Orange,
 
+                'lilac' => Color::Purple,
+
                 'gray' => Color::Gray,
 
                 'indigo' => Color::Indigo,
