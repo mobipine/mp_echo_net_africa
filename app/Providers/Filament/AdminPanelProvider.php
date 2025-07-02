@@ -46,17 +46,17 @@ class AdminPanelProvider extends PanelProvider
 
                 'gray' => Color::Gray,
 
-                // 'indigo' => Color::Indigo,
-                // 'pink' => Color::Pink,
-                // 'purple' => Color::Purple,
-                // 'teal' => Color::Teal,
-                // 'cyan' => Color::Cyan,
-                // 'lime' => Color::Lime,
-                // 'emerald' => Color::Emerald,
-                // 'amber' => Color::Amber,
-                // 'rose' => Color::Rose,
-                // 'fuchsia' => Color::Fuchsia,
-                // 'violet' => Color::Violet,
+                'indigo' => Color::Indigo,
+                'pink' => Color::Pink,
+                'purple' => Color::Purple,
+                'teal' => Color::Teal,
+                'cyan' => Color::Cyan,
+                'lime' => Color::Lime,
+                'emerald' => Color::Emerald,
+                'amber' => Color::Amber,
+                'rose' => Color::Rose,
+                'fuchsia' => Color::Fuchsia,
+                'violet' => Color::Violet,
             ])
             ->font(
                 'Poppins' //set custom panel font here
