@@ -1,4 +1,4 @@
-name: Build, Push, and Deploy Laravel App to Docker Hub and CapRover
+name: Build, Push, and Deploy Echo Net Africa to Docker Hub and CapRover
 
 on:
   push:
@@ -28,12 +28,12 @@ jobs:
       # Step 4: Build Docker image
       - name: Build Docker image
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/trustfund:${{ github.sha }} .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/mp_echo_net_africa:${{ github.sha }} .
 
       # Step 5: Push Docker image to Docker Hub
       - name: Push Docker image to Docker Hub
         run: |
-          docker push ${{ secrets.DOCKER_USERNAME }}/trustfund:${{ github.sha }}
+          docker push ${{ secrets.DOCKER_USERNAME }}/mp_echo_net_africa:${{ github.sha }}
 
       # Step 6: Install CapRover CLI
       - name: Install CapRover CLI
@@ -47,4 +47,4 @@ jobs:
           password: '${{ secrets.CAPROVER_PASSWORD }}'
           appName: '${{ secrets.APP_NAME }}'
           # image: 'username/my-docker-image-name:latest'
-          image: '${{ secrets.DOCKER_USERNAME }}/trustfund:${{ github.sha }}'
+          image: '${{ secrets.DOCKER_USERNAME }}/mp_echo_net_africa:${{ github.sha }}'
