@@ -116,7 +116,7 @@ class SMSResource extends Resource
     //change label of the resource
     public static function getLabel(): string
     {
-        return 'Queued Messages';
+        return 'Sent Messages';
     }
 
     public static function getPages(): array
