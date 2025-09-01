@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Clusters\Settings;
 use App\Filament\Resources\GroupResource\Pages;
 use App\Filament\Resources\GroupResource\RelationManagers\MembersRelationManager;
+use App\Filament\Resources\SurveyRelationManagerResource\RelationManagers\SurveysRelationManager;
 use App\Models\Group;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -99,6 +100,7 @@ class GroupResource extends Resource
     {
         return [
             MembersRelationManager::class,
+            SurveysRelationManager::class,
         ];
     }
 

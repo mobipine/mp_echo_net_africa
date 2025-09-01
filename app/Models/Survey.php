@@ -28,4 +28,9 @@ class Survey extends Model
     {
         return $this->hasMany(SurveyResponse::class);
     }
+
+    public function groups()
+    {
+        return $this->belongsToMany(Group::class, 'group_survey');
+    }
 }

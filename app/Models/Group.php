@@ -12,4 +12,9 @@ class Group extends Model
     {
         return $this->hasMany(\App\Models\Member::class);
     }
+    
+    public function surveys()
+    {
+        return $this->belongsToMany(Survey::class, 'group_survey');
+    }
 }

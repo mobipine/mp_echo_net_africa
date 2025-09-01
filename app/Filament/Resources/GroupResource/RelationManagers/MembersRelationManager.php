@@ -18,9 +18,9 @@ class MembersRelationManager extends RelationManager
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('group_id')
-                    ->required()
-                    ->maxLength(255),
+                // Forms\Components\TextInput::make('group_id')
+                //     ->required()
+                //     ->maxLength(255),
             ]);
     }
 
@@ -57,7 +57,7 @@ class MembersRelationManager extends RelationManager
 
     public function canCreate(): bool
     {
-        return true;
+        return false;
     }
     
 }
