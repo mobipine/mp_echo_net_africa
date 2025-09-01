@@ -8,11 +8,12 @@ class Member extends Model
 {
     protected $fillable = [
         'group_id', 'name', 'email', 'phone', 'national_id',
-        'gender', 'dob', 'marital_status', 'profile_picture'
+        'gender', 'dob', 'marital_status', 'profile_picture','is_active'
     ];
 
     protected $casts = [
         'dob' => 'date',
+        'is_active' => 'boolean',
     ];
 
     public function group()

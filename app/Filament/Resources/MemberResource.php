@@ -8,6 +8,7 @@ use App\Models\Member;
 use Filament\Facades\Filament;
 use Filament\Forms;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -71,7 +72,8 @@ class MemberResource extends Resource
                     ->nullable()
                     ->visibility('public')
                     ->enableDownload()
-                    ->enableOpen()
+                    ->enableOpen(),
+                Toggle::make('is_active',)
 
             ]);
     }
