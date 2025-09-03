@@ -17,3 +17,7 @@ Artisan::command('inspire', function () {
 Schedule::call(function () {
     Artisan::call('send:sms');
 })->name('send_sms')->everyFiveSeconds()->withoutOverlapping();
+
+Schedule::command('surveys:dispatch-due')->everyMinute();
+Schedule::command('surveys:process-progress')->everyMinute();
+
