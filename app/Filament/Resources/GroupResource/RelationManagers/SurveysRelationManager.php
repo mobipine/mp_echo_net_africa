@@ -138,6 +138,33 @@ class SurveysRelationManager extends RelationManager
                 Tables\Actions\DeleteAction::make()
                     ->label('Detach')
                     ->action(fn ($record) => $this->getRelationship()->detach($record->id)),
+                
+
+                Tables\Actions\Action::make('dispatchManually')
+                    ->label('Send Now')
+                    ->icon('heroicon-s-paper-airplane') // A "send" icon
+                    ->color('success') // Green button
+                    ->requiresConfirmation()
+                    ->modalHeading('Send Survey Manually')
+                    ->modalDescription("Are you sure you want to manually send the survey  to all members of this group? This will happen immediately and bypass the schedule.")
+                    ->action(function (\App\Models\Survey $record): void {
+                        // Dispatch the job immediately, passing the current group and this survey
+                        \App\Jobs\SendSurveyToGroupJob::dispatch($this->ownerRecord, $record);
+                        
+                        // Optional: Update the pivot to mark it as dispatched to prevent auto-send later
+                        $this->getRelationship()->updateExistingPivot($record->id, [
+                            'was_dispatched' => true,
+                            // You might also want to update the starts_at time to now?
+                            // 'starts_at' => now(),
+                        ]);
+                        
+                        // Send a notification to the admin within Filament
+                        \Filament\Notifications\Notification::make()
+                            ->title('Survey Dispatched')
+                            ->body("The survey '{$record->title}' is being sent to the group in the background.")
+                            ->success()
+                            ->send();
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\DetachBulkAction::make(),
