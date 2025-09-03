@@ -10,7 +10,13 @@ class SurveyQuestion extends Model
         'survey_id',
         'question',
         'answer_data_type',
-        'data_type_violation_response'
+        'data_type_violation_response',
+        'answer_strictness',
+        'possible_answers',
+    ];
+
+    protected $casts = [
+        'possible_answers' => 'array',
     ];
 
     public function survey()
