@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Member extends Model
 {
@@ -39,5 +40,10 @@ class Member extends Model
     public function smsInboxes()
     {
         return $this->hasMany(SmsInbox::class);
+    }
+
+    public function officials(): HasMany
+    {
+        return $this->hasMany(Official::class);
     }
 }

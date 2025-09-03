@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Group extends Model
 {
@@ -16,5 +17,10 @@ class Group extends Model
     public function surveys()
     {
         return $this->belongsToMany(Survey::class, 'group_survey');
+    }
+
+    public function officials(): HasMany
+    {
+        return $this->hasMany(Official::class);
     }
 }
