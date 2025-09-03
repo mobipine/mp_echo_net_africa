@@ -6,14 +6,14 @@ SHELL ["/bin/bash", "-c"]
 
 ENV PHP_MAX_EXECUTION_TIME 110
 # Copy the project files into the container
-COPY . /production/trustfund
+COPY . /production/echonetafrica
 
 # Set the laravel web folder
-ARG WEB_PATH=/production/trustfund/public
+ARG WEB_PATH=/production/echonetafrica/public
 ENV WEB_DOCUMENT_ROOT=$WEB_PATH
 
 # set the correct laravel app foler
-ARG LARAVEL_PATH=/production/trustfund
+ARG LARAVEL_PATH=/production/echonetafrica
 WORKDIR $LARAVEL_PATH
 
 # # Install Node.js and npm

@@ -30,6 +30,26 @@ class SurveyQuestionResource extends Resource
                     ->options(['Alphanumeric' => 'Alphanumeric', 'Strictly Number' => 'Strictly Number'])
                     ->required(),
                 Forms\Components\Textarea::make('data_type_violation_response')->maxLength(500),
+
+                Forms\Components\Select::make('answer_strictness')
+                    ->options(['Open-Ended' => 'Open-Ended', 'Multiple Choice' => 'Multiple Choice'])
+                    ->required()
+                    ->default('Open-Ended')
+                    ->native(false)
+                    ->reactive()
+                    ->afterStateUpdated(fn (callable $set, $state) => $set('possible_answers', null)),
+
+                //do a repeater for possible_answers that only shows if answer_strictness is Multiple Choice with  afield for the letter and the answer
+                Forms\Components\Repeater::make('possible_answers')
+                    ->schema([
+                        Forms\Components\TextInput::make('letter')->required()->maxLength(1),
+                        Forms\Components\TextInput::make('answer')->required()->maxLength(255),
+                    ])
+                    ->columns(2)
+                    ->visible(fn ($get) => $get('answer_strictness') === 'Multiple Choice')
+                    ->minItems(2)
+                    ->maxItems(26)
+                    ->required(fn ($get) => $get('answer_strictness') === 'Multiple Choice'),
             ]);
     }
 
@@ -46,6 +66,7 @@ class SurveyQuestionResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

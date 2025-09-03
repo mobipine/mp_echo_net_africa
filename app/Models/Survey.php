@@ -14,7 +14,14 @@ class Survey extends Model
         'status',
         'start_date',
         'end_date',
-        'participant_uniqueness'
+        'participant_uniqueness',
+        'flow_data'
+    ];
+
+    protected $casts = [
+        'start_date' => 'datetime',
+        'end_date' => 'datetime',
+        'flow_data' => 'array',
     ];
 
     public function questions()

@@ -31,7 +31,7 @@ class QuestionsRelationManager extends RelationManager
         return $table
             ->reorderable('position') // Enable drag-and-drop reordering
             ->columns([
-                Tables\Columns\TextColumn::make('id')->sortable(),
+                Tables\Columns\TextColumn::make('position')->sortable(),
                 Tables\Columns\TextColumn::make('question')->sortable()->searchable(),
                 Tables\Columns\TextColumn::make('answer_data_type')->sortable(),
             ])
@@ -60,21 +60,21 @@ class QuestionsRelationManager extends RelationManager
                     ->modalHeading('Assign Existing Question')
                     ->modalButton('Assign'),
 
-                    Action::make('createNewQuestion')
-                    ->label('Create New Question')
-                    ->action(function (array $data): void {
-                        $newQuestion = \App\Models\SurveyQuestion::create($data);
-                        $this->getRelationship()->attach($newQuestion->id, ['position' => $this->getRelationship()->count() + 1]);
-                    })
-                    ->form([
-                        Forms\Components\TextInput::make('question')->required()->maxLength(255),
-                        Forms\Components\Select::make('answer_data_type')
-                            ->options(['Alphanumeric' => 'Alphanumeric', 'Strictly Number' => 'Strictly Number'])
-                            ->required(),
-                        Forms\Components\Textarea::make('data_type_violation_response')->maxLength(500),
-                    ])
-                    ->modalHeading('Create New Question')
-                    ->modalButton('Create'),
+                    // Action::make('createNewQuestion')
+                    // ->label('Create New Question')
+                    // ->action(function (array $data): void {
+                    //     $newQuestion = \App\Models\SurveyQuestion::create($data);
+                    //     $this->getRelationship()->attach($newQuestion->id, ['position' => $this->getRelationship()->count() + 1]);
+                    // })
+                    // ->form([
+                    //     Forms\Components\TextInput::make('question')->required()->maxLength(255),
+                    //     Forms\Components\Select::make('answer_data_type')
+                    //         ->options(['Alphanumeric' => 'Alphanumeric', 'Strictly Number' => 'Strictly Number'])
+                    //         ->required(),
+                    //     Forms\Components\Textarea::make('data_type_violation_response')->maxLength(500),
+                    // ])
+                    // ->modalHeading('Create New Question')
+                    // ->modalButton('Create'),
             ])
             ->actions([
                 Action::make('deAssign')
