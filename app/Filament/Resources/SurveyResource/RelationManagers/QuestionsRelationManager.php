@@ -77,8 +77,8 @@ class QuestionsRelationManager extends RelationManager
                     // ->modalButton('Create'),
             ])
             ->actions([
-                Action::make('deAssign')
-                    ->label('De-assign')
+                Action::make('remove')
+                    ->label('Remove')
                     ->action(function (Model $record): void {
                         $this->getRelationship()->detach($record->id);
                     })
