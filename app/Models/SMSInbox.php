@@ -14,6 +14,9 @@ class SMSInbox extends Model
     protected $fillable = [
         'message',
         'group_ids', // Add this to the fillable array
+        'status',
+        'phone_number',
+        'member_id',
     ];
 
     protected $casts = [
