@@ -41,6 +41,7 @@ class SurveyQuestion extends Model
 
     }
 
+    //OLD IMPLEMETATION WHERE WE WERE USING THE POSITIONS TO GET THE NEXT QUESTION
     public function getNextQuestion($surveyId)
     {
         $position = $this->getPosition($surveyId);
@@ -55,4 +56,11 @@ class SurveyQuestion extends Model
 
         return $nextQuestion ? SurveyQuestion::find($nextQuestion->survey_question_id) : null;
     }
+
+
+    //WE CREATED A FLOW BUILDER TABLE TO HANDLE THE NEXT QUESTION FLOW BASED ON THE ANSWERS
+    // public function getNextQuestion($surveyId)
+    // {
+        
+    // }
 }
