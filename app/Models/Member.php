@@ -39,7 +39,7 @@ class Member extends Model
 
     public function smsInboxes()
     {
-        return $this->hasMany(SmsInbox::class);
+        return $this->hasMany(SMSInbox::class);
     }
 
     public function officials(): HasMany
