@@ -36,22 +36,67 @@ class SendSurveyToGroupJob implements ShouldQueue
 
         foreach ($members as $member) {
             if (!empty($member->phone)) {
-                // Check if member already has a progress record for this survey
-                $progress = SurveyProgress::firstOrCreate(
-                    ['survey_id' => $this->survey->id, 'member_id' => $member->id],
-                    [
+                //find a record with the survey id and member id that is not completed
+                $progress = SurveyProgress::where('survey_id', $this->survey->id)
+                    ->where('member_id', $member->id)
+                    ->whereNull('completed_at')
+                    ->first();
+
+                if ($progress) {
+                    //check if survey has member uniquesness
+                    $survey = $this->survey;
+                    $p_unique = $survey->participant_uniqueness;
+                    if ($p_unique) {
+                        return;
+                        //'Survey already started.'
+                    } else {
+                        //update all previous progress records with thesame survey_id and member_id status to CANCELLED
+                        SurveyProgress::where('survey_id', $survey->id)
+                            ->where('member_id', $member->id)
+                            ->whereNull('completed_at')
+                            ->update(['status' => 'CANCELLED']);
+
+
+                        //create a new progress record
+                        $newProgress = SurveyProgress::create([
+                            'survey_id' => $survey->id,
+                            'member_id' => $member->id,
+                            'current_question_id' => $firstQuestion->id,
+                            'last_dispatched_at' => now(),
+                            'has_responded' => false,
+                            'source' => 'manual'
+                        ]);
+
+                        //send the first question
+                        $message = "New Survey: {$survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
+                        try {
+                            SMSInbox::create([
+                                'message'      => $message,
+                                'phone_number' => $member->phone,
+                                'member_id'    => $member->id,
+                            ]);
+
+                            Log::info('Record created in SMS Inbox');
+                        } catch (\Exception $e) {
+                            Log::error("Failed to send initial SMS to {$member->name}: " . $e->getMessage());
+                        }
+                    }
+                } else {
+                    //create a new progress record
+                    $newProgress = SurveyProgress::create([
+                        'survey_id' => $this->survey->id,
+                        'member_id' => $member->id,
                         'current_question_id' => $firstQuestion->id,
                         'last_dispatched_at' => now(),
-                        'has_responded' => false
-                    ]
-                );
+                        'has_responded' => false,
+                        'source' => 'manual'
+                    ]);
 
-                // Only send if this is a new survey assignment
-               if ($progress->wasRecentlyCreated) {
+                    //send the first question
+                    $message = "New Survey: {$this->survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
                     try {
                         SMSInbox::create([
                             'message'      => $message,
-                            'status'       => 'pending',
                             'phone_number' => $member->phone,
                             'member_id'    => $member->id,
                         ]);
@@ -60,10 +105,7 @@ class SendSurveyToGroupJob implements ShouldQueue
                     } catch (\Exception $e) {
                         Log::error("Failed to send initial SMS to {$member->name}: " . $e->getMessage());
                     }
-                } else {
-                    Log::info("Member {$member->phone} already has a progress record for this survey. Skipping initial dispatch.");
                 }
-
             }
         }
 

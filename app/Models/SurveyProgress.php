@@ -29,6 +29,8 @@ class SurveyProgress extends Model
         'last_dispatched_at',
         'has_responded',
         'completed_at',
+        'status',
+        'source',
     ];
 
     /**

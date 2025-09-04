@@ -85,6 +85,7 @@ class SurveysRelationManager extends RelationManager
                             ->required(),
                         Forms\Components\Select::make('question_interval_unit')
                             ->label('Interval Unit')
+                            ->native(false)
                             ->options([
                                 'minutes' => 'Minutes',
                                 'hours' =>'Hours',

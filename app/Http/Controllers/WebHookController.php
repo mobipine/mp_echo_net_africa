@@ -29,6 +29,7 @@ class WebHookController extends Controller
         // Check if the message is a trigger word for any survey
         $survey = Survey::where('trigger_word', $message)->first();
 
+        //TODO: CHECK IF THE member has an active survey
         if ($survey) {
             return $this->startSurvey($msisdn, $survey);
         }
@@ -67,19 +68,58 @@ class WebHookController extends Controller
             Log::warning("No member found with phone number: {$msisdn}");
             return response()->json(['status' => 'error', 'message' => 'Phone number not recognized.']);
         }
-        
-        // Create a new progress record
-        $progress = SurveyProgress::firstOrCreate(
-            ['survey_id' => $survey->id, 'member_id' => $member->id],
-            [
+
+
+        //find a record with the survey id and member id that is not completed
+        $progress = SurveyProgress::where('survey_id', $survey->id)
+            ->where('member_id', $member->id)
+            ->whereNull('completed_at')
+            ->first();
+
+        if ($progress) {
+            //check if survey has member uniquesness
+            $p_unique = $survey->participant_uniqueness;
+            if ($p_unique) {
+                return response()->json(['status' => 'info', 'message' => 'Survey already started.']);
+            } else {
+                //update all previous progress records with thesame survey_id and member_id status to CANCELLED
+                SurveyProgress::where('survey_id', $survey->id)
+                    ->where('member_id', $member->id)
+                    ->whereNull('completed_at')
+                    ->update(['status' => 'CANCELLED']);
+
+
+                //create a new progress record
+                $newProgress = SurveyProgress::create([
+                    'survey_id' => $survey->id,
+                    'member_id' => $member->id,
+                    'current_question_id' => $firstQuestion->id,
+                    'last_dispatched_at' => now(),
+                    'has_responded' => false,
+                    'source' => 'shortcode'
+                ]);
+
+                //send the first question
+                $message = "New Survey: {$survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
+                $this->sendSMS($msisdn, $message);
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Survey started.',
+                    'question_sent' => $firstQuestion->question
+                ]);
+            }
+        } else {
+            //create a new progress record
+            $newProgress = SurveyProgress::create([
+                'survey_id' => $survey->id,
+                'member_id' => $member->id,
                 'current_question_id' => $firstQuestion->id,
                 'last_dispatched_at' => now(),
-                'has_responded' => false
-            ]
-        );
+                'has_responded' => false,
+                'source' => 'shortcode'
+            ]);
 
-        // Only send the first question if this is a new survey
-        if ($progress->wasRecentlyCreated) {
+            //send the first question
             $message = "New Survey: {$survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
             $this->sendSMS($msisdn, $message);
             return response()->json([
@@ -87,12 +127,7 @@ class WebHookController extends Controller
                 'message' => 'Survey started.',
                 'question_sent' => $firstQuestion->question
             ]);
-        } else {
-
-            // If a record already exists, just acknowledge it.
-            return response()->json(['status' => 'info', 'message' => 'Survey already in progress.']);
         }
-        
     }
 
     public function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
@@ -119,15 +154,15 @@ class WebHookController extends Controller
         }
 
         // Check if the user has already responded to this specific question
-        $existingResponse = SurveyResponse::where('msisdn', $msisdn)
-            ->where('survey_id', $survey->id)
-            ->where('question_id', $currentQuestion->id)
-            ->exists();
+        // $existingResponse = SurveyResponse::where('msisdn', $msisdn)
+        //     ->where('survey_id', $survey->id)
+        //     ->where('question_id', $currentQuestion->id)
+        //     ->exists();
 
-        if ($existingResponse) {
-            Log::info("Duplicate response for question_id {$currentQuestion->id} from {$msisdn}. Ignoring.");
-            return response()->json(['status' => 'info', 'message' => 'Response already received for this question.']);
-        }
+        // if ($existingResponse) {
+        //     Log::info("Duplicate response for question_id {$currentQuestion->id} from {$msisdn}. Ignoring.");
+        //     return response()->json(['status' => 'info', 'message' => 'Response already received for this question.']);
+        // }
 
         // Store the response
         SurveyResponse::create([
@@ -142,45 +177,40 @@ class WebHookController extends Controller
         Log::info("Response recorded for question ID: {$currentQuestion->id}. Waiting for next scheduled dispatch.");
 
         // Check if this was the last question in the survey.
-        // $nextQuestion = $currentQuestion->getNextQuestion($survey->id);
-        // if (!$nextQuestion) {
-        //     // If no more questions, end the survey and send the final response
-        //     $progress->update(['completed_at' => now()]);
-        //     $this->sendSMS($msisdn, $survey->final_response);
+        $nextQuestion = $currentQuestion->getNextQuestion($survey->id);
+        if (!$nextQuestion) {
+            // If no more questions, end the survey and send the final response
+            $progress->update(
+                [
+                    'completed_at' => now(),
+                    'status' => 'COMPLETED'
+                ]
+            );
+            $this->sendSMS($msisdn, $survey->final_response);
 
-        //     return response()->json([
-        //         'status' => 'success',
-        //         'message' => 'Survey completed.',
-        //         'final_response' => $survey->final_response
-        //     ]);
-        // }
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Survey completed.',
+                'final_response' => $survey->final_response
+            ]);
+        }
 
         // The next question will be sent by the scheduled command.
         return response()->json([
-            'status' => 'success', 
+            'status' => 'success',
             'message' => 'Response received. Thank you!',
         ]);
     }
 
-    // private function sendSMS($msisdn, $message)
-    // {
-    //     try {
-    //         $ujumbeSMS = new UjumbeSMS();
-    //         $ujumbeSMS->send($msisdn, $message);
-    //     } catch (\Exception $e) {
-    //         Log::error("Failed to send SMS to $msisdn: " . $e->getMessage());
-    //     }
-    // }
+    public function sendSMS($msisdn, $message)
+    {
 
-    public function sendSMS($msisdn, $message) {
-
-        try{
+        try {
 
             SMSInbox::create([
                 'phone_number' => $msisdn, // Store the phone number in group_ids for tracking
                 'message' => $message,
             ]);
-
         } catch (\Exception $e) {
             Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());
         }

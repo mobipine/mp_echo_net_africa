@@ -6,7 +6,12 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use App\Jobs\SendSurveyToGroupJob;
 use App\Models\Group;
+use App\Models\GroupSurvey;
+use App\Models\SMSInbox;
 use App\Models\Survey;
+use App\Models\SurveyProgress;
+use App\Models\SurveyQuestion;
+use Illuminate\Support\Facades\Log;
 
 class DispatchDueSurveysCommand extends Command
 {
@@ -15,12 +20,11 @@ class DispatchDueSurveysCommand extends Command
 
     public function handle(): void
     {
-        
-        $dueAssignments = DB::table('group_survey')
-                            ->where('automated', true) // Check the 'automated' flag on the pivot
-                            ->where('was_dispatched', false) // Ensure it hasn't been sent yet
-                            ->where('starts_at', '<=', now()) // Start time has passed
-                            ->get();
+
+        $dueAssignments = GroupSurvey::where('automated', true) // Check the 'automated' flag on the pivot
+            ->where('was_dispatched', false) // Ensure it hasn't been sent yet
+            ->where('starts_at', '<=', now()) // Start time has passed
+            ->get();
 
         if ($dueAssignments->isEmpty()) {
             $this->info('No automated survey assignments due for dispatch.');
@@ -34,16 +38,114 @@ class DispatchDueSurveysCommand extends Command
             if ($group && $survey) {
                 $this->info("Dispatching survey '{$survey->title}' to group '{$group->name}'");
                 // Dispatch the job for this specific group-survey combo
-                SendSurveyToGroupJob::dispatch($group, $survey);
+                // SendSurveyToGroupJob::dispatch($group, $survey);
+
+                $members = $group->members()->where('is_active', true)->get();
+                $firstQuestion = $survey->questions()->orderBy('pivot_position')->first();
+
+                if (!$firstQuestion) {
+                    Log::info("Survey '{$survey->title}' has no questions. No SMS sent.");
+                    return;
+                }
+
+                $message = "New Survey: {$survey->title}\n\n" . $this->formatQuestionMessage($firstQuestion);
+                $sentCount = 0;
+
+                foreach ($members as $member) {
+                    if (!empty($member->phone)) {
+                        //find a record with the survey id and member id that is not completed
+                        $progress = SurveyProgress::where('survey_id', $survey->id)
+                            ->where('member_id', $member->id)
+                            ->whereNull('completed_at')
+                            ->first();
+
+                        if ($progress) {
+                            //check if survey has member uniquesness
+                            $survey = $survey;
+                            $p_unique = $survey->participant_uniqueness;
+                            if ($p_unique) {
+                                return;
+                                //'Survey already started.'
+                            } else {
+                                //update all previous progress records with thesame survey_id and member_id status to CANCELLED
+                                SurveyProgress::where('survey_id', $survey->id)
+                                    ->where('member_id', $member->id)
+                                    ->whereNull('completed_at')
+                                    ->update(['status' => 'CANCELLED']);
+
+
+                                //create a new progress record
+                                $newProgress = SurveyProgress::create([
+                                    'survey_id' => $survey->id,
+                                    'member_id' => $member->id,
+                                    'current_question_id' => $firstQuestion->id,
+                                    'last_dispatched_at' => now(),
+                                    'has_responded' => false,
+                                    'source' => 'manual'
+                                ]);
+
+                                //send the first question
+                                $message = "New Survey: {$survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
+                                try {
+                                    SMSInbox::create([
+                                        'message'      => $message,
+                                        'phone_number' => $member->phone,
+                                        'member_id'    => $member->id,
+                                    ]);
+
+                                    Log::info('Record created in SMS Inbox');
+                                } catch (\Exception $e) {
+                                    Log::error("Failed to send initial SMS to {$member->name}: " . $e->getMessage());
+                                }
+                            }
+                        } else {
+                            //create a new progress record
+                            $newProgress = SurveyProgress::create([
+                                'survey_id' => $survey->id,
+                                'member_id' => $member->id,
+                                'current_question_id' => $firstQuestion->id,
+                                'last_dispatched_at' => now(),
+                                'has_responded' => false,
+                                'source' => 'manual'
+                            ]);
+
+                            //send the first question
+                            $message = "New Survey: {$survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
+                            try {
+                                SMSInbox::create([
+                                    'message'      => $message,
+                                    'phone_number' => $member->phone,
+                                    'member_id'    => $member->id,
+                                ]);
+
+                                Log::info('Record created in SMS Inbox');
+                            } catch (\Exception $e) {
+                                Log::error("Failed to send initial SMS to {$member->name}: " . $e->getMessage());
+                            }
+                        }
+                    }
+                }
+
+                Log::info("First question of survey '{$survey->title}' dispatched to {$sentCount} members in group '{$group->name}'.");
 
                 // Mark as dispatched to prevent duplicate sends
-                DB::table('group_survey')
-                  ->where('group_id', $assignment->group_id)
-                  ->where('survey_id', $assignment->survey_id)
-                  ->update(['was_dispatched' => true]);
+                // DB::table('group_survey')
+                //   ->where('group_id', $assignment->group_id)
+                //   ->where('survey_id', $assignment->survey_id)
+                //   ->update(['was_dispatched' => true]);
+
+                GroupSurvey::where('group_id', $assignment->group_id)
+                    ->where('survey_id', $assignment->survey_id)
+                    ->update(['was_dispatched' => true]);
             }
         }
 
         $this->info("Dispatched jobs for {$dueAssignments->count()} survey assignments.");
+    }
+
+
+    public function formatQuestionMessage(SurveyQuestion $question): string
+    {
+        return "Question 1: {$question->question}\nPlease reply with your answer.";
     }
 }

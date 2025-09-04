@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\GroupSurvey;
 use App\Models\SMSInbox;
 use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
@@ -21,6 +22,8 @@ class ProcessSurveyProgressCommand extends Command
     {
         $progressRecords = SurveyProgress::with(['survey', 'currentQuestion', 'member'])
             ->whereNull('completed_at')
+            ->whereNot('status', 'CANCELLED')
+            ->whereNot('status', 'COMPLETED')
             ->get();
 
         foreach ($progressRecords as $progress) {
@@ -34,48 +37,69 @@ class ProcessSurveyProgressCommand extends Command
             }
 
             // Get the pivot data for the group-survey relationship
-            $groupSurvey = DB::table('group_survey')
-                ->where('survey_id', $survey->id)
-                ->first();
+            // $groupSurvey = DB::table('group_survey')
+            //     ->where('survey_id', $survey->id)
+            //     ->first();
+            $source = $progress->source ?? 'manual'; // Default to 'MANUAL' if source is null
 
-            // If no pivot data exists, skip this record to prevent errors
-            if (!$groupSurvey) {
-                Log::warning("Group-survey relationship not found for survey ID: {$survey->id}.");
-                continue;
+            if($source != "shortcode") {
+                $groupSurvey = GroupSurvey::where('survey_id', $survey->id)->first();
+    
+                // If no pivot data exists, skip this record to prevent errors
+                if (!$groupSurvey ) {
+                    Log::warning("Group-survey relationship not found for survey ID: {$survey->id}.");
+                    continue;
+                }
+    
+                $interval = $groupSurvey->question_interval ?? 3; // Use the pivot value, or default to 3 days
+                $unit = $groupSurvey->question_interval_unit ?? 'days'; // Use the pivot value, or default to 'days'
+
+                $endDate = DB::table('group_survey')
+                        ->where('group_id', $member->group_id)
+                        ->where('survey_id',$survey->id)
+                        ->value('ends_at');
+                
+
+            } else {
+                //for shortcode surveys, use 1 minute interval
+                //TODO: Josphat: Create a global config for on the survey resource
+                $interval = 30;
+                $unit = 'minutes';
+
+                $endDate = null;
             }
 
-            $interval = $groupSurvey->question_interval ?? 3; // Use the pivot value, or default to 3 days
-            $unit = $groupSurvey->question_interval_unit ?? 'days'; // Use the pivot value, or default to 'days'
+            Log::info("The survey ends on $endDate");
+            //check if endDate has passed. If it has, continue to the next record
+            if ($endDate && now()->greaterThan(Carbon::parse($endDate))) {
+                Log::info("Survey {$survey->title} for member {$member->phone} has ended on $endDate. Skipping.");
+                continue;
+            }
 
             // Check if the time since the last dispatch has exceeded the defined interval
             $lastDispatched = Carbon::parse($progress->last_dispatched_at);
             Log::info("Last Dispatched $lastDispatched");
 
-            $nextDue=$lastDispatched->add($interval, $unit);
+            $nextDue = $lastDispatched->add($interval, $unit);
             Log::info("Next Due Date $nextDue");
 
             $isDue = $nextDue->lessThanOrEqualTo(now()); 
-
-            // Check if the user has responded since the last dispatch
-            $hasResponded = SurveyProgress::where('member_id', $member->id)
-                ->where('survey_id', $survey->id)
-                ->where('has_responded', true)
-                ->exists();
-                
-            
-            $endDate=DB::table('group_survey')
-                        ->where('group_id',$member->group_id)
-                        ->where('survey_id',$survey->id)
-                        ->value('ends_at');
-            Log::info("The survey ends on $endDate");
 
             if (!$isDue) {
                 Log::info("Survey progress ID: {$progress->id} is not yet due for processing.");
                 continue;
             }
 
-            
-            if ($hasResponded &&  ($endDate === null || now()->lessThanOrEqualTo(Carbon::parse($endDate)))) {
+            // Check if the user has responded since the last dispatch
+            $hasResponded = SurveyProgress::where('member_id', $member->id)
+                ->where('survey_id', $survey->id)
+                ->where('has_responded', true)
+                ->whereNot('status', 'CANCELLED')
+                ->whereNot('status', 'COMPLETED')
+                ->exists();
+                
+        
+            if ($hasResponded) {
                 // User has responded, send the next question
                 //TODO: MODIFY FUNCTION TO GET THE NEXT QUESTION FROM THE FLOW BUILDER
                 $nextQuestion = $currentQuestion->getNextQuestion($survey->id);
@@ -97,12 +121,14 @@ class ProcessSurveyProgressCommand extends Command
                     }
                 } else {
                     // All questions answered, mark as complete
-                    $progress->update(['completed_at' => now()]);
+                    $progress->update([
+                        'completed_at' => now(),
+                        'status' => 'COMPLETED'
+                    ]);
                     Log::info("Survey {$survey->title} completed by {$member->phone}.");
                 }
 
-            // } elseif (Carbon::parse($progress->last_dispatched_at)->diffInDays(now()) >= 3) {//hardcoded
-            } elseif (Carbon::parse($progress->last_dispatched_at)->diffInMinutes(now()) >= 1) {
+            } else {
                 // No response and it's been more than 3 days, resend the last question
                 // $message = $this->formatQuestionMessage($currentQuestion, true); // Add a reminder prefix
                 $message = $currentQuestion->question; // Simplified for now

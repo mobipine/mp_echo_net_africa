@@ -123,7 +123,7 @@ class SendSMS extends Command
         // Use the UjumbeSMS service to send the SMS
         try {
             $res = $this->ujumbe_sms->send($phoneNumber, $message);
-            info("SMS sent to {$phoneNumber}");
+            // info("SMS sent to {$phoneNumber}");
 
             // dd($res); // Debugging line to check the response
             return $res; // Return the response from the SMS service

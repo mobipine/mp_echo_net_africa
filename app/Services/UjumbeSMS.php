@@ -20,6 +20,7 @@ class UjumbeSMS {
 
         //hit the url using Http Client get req
         $response = Http::get($url);
+        // $response = true;
         if ($response->successful()) {
             return $response->json();
         } else {
