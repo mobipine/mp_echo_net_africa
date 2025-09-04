@@ -7,6 +7,7 @@ use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
 use App\Models\SurveyProgress;
 use App\Models\Member;
+use App\Models\SMSInbox;
 use App\Services\UjumbeSMS;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -51,10 +52,10 @@ class WebHookController extends Controller
         return response()->json(['status' => 'ignored', 'message' => 'No active survey or trigger word found.']);
     }
 
-    private function startSurvey($msisdn, Survey $survey)
+    public function startSurvey($msisdn, Survey $survey)
     {
+        //TODO: CREATE A FUNCTION TO GET THE FIRST QUESTION FROM THE FLOW BUILDER
         $firstQuestion = $survey->questions()->orderBy('pivot_position')->first();
-
         if (!$firstQuestion) {
             return response()->json(['status' => 'error', 'message' => 'Survey has no questions.']);
         }
@@ -79,20 +80,24 @@ class WebHookController extends Controller
 
         // Only send the first question if this is a new survey
         if ($progress->wasRecentlyCreated) {
-            $this->sendSMS($msisdn, "New Survey: {$survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.");
+            $message = "New Survey: {$survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
+            $this->sendSMS($msisdn, $message);
             return response()->json([
                 'status' => 'success',
                 'message' => 'Survey started.',
                 'question_sent' => $firstQuestion->question
             ]);
+        } else {
+
+            // If a record already exists, just acknowledge it.
+            return response()->json(['status' => 'info', 'message' => 'Survey already in progress.']);
         }
         
-        // If a record already exists, just acknowledge it.
-        return response()->json(['status' => 'info', 'message' => 'Survey already in progress.']);
     }
 
-    private function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
+    public function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
     {
+        //THIS FUNCTION SHOULD VALIDATE THE RESPONSE BASED ON THE QUESTION'S DATA TYPE AND STORE IT IF VALID
         $currentQuestion = $progress->currentQuestion;
         $survey = $progress->survey;
 
@@ -137,18 +142,18 @@ class WebHookController extends Controller
         Log::info("Response recorded for question ID: {$currentQuestion->id}. Waiting for next scheduled dispatch.");
 
         // Check if this was the last question in the survey.
-        $nextQuestion = $currentQuestion->getNextQuestion($survey->id);
-        if (!$nextQuestion) {
-            // If no more questions, end the survey and send the final response
-            $progress->update(['completed_at' => now()]);
-            $this->sendSMS($msisdn, $survey->final_response);
+        // $nextQuestion = $currentQuestion->getNextQuestion($survey->id);
+        // if (!$nextQuestion) {
+        //     // If no more questions, end the survey and send the final response
+        //     $progress->update(['completed_at' => now()]);
+        //     $this->sendSMS($msisdn, $survey->final_response);
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Survey completed.',
-                'final_response' => $survey->final_response
-            ]);
-        }
+        //     return response()->json([
+        //         'status' => 'success',
+        //         'message' => 'Survey completed.',
+        //         'final_response' => $survey->final_response
+        //     ]);
+        // }
 
         // The next question will be sent by the scheduled command.
         return response()->json([
@@ -157,13 +162,27 @@ class WebHookController extends Controller
         ]);
     }
 
-    private function sendSMS($msisdn, $message)
-    {
-        try {
-            $ujumbeSMS = new UjumbeSMS();
-            $ujumbeSMS->send($msisdn, $message);
+    // private function sendSMS($msisdn, $message)
+    // {
+    //     try {
+    //         $ujumbeSMS = new UjumbeSMS();
+    //         $ujumbeSMS->send($msisdn, $message);
+    //     } catch (\Exception $e) {
+    //         Log::error("Failed to send SMS to $msisdn: " . $e->getMessage());
+    //     }
+    // }
+
+    public function sendSMS($msisdn, $message) {
+
+        try{
+
+            SMSInbox::create([
+                'phone_number' => $msisdn, // Store the phone number in group_ids for tracking
+                'message' => $message,
+            ]);
+
         } catch (\Exception $e) {
-            Log::error("Failed to send SMS to $msisdn: " . $e->getMessage());
+            Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());
         }
     }
 }

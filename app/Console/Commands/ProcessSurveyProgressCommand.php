@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\SMSInbox;
 use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
@@ -16,7 +17,7 @@ class ProcessSurveyProgressCommand extends Command
     protected $signature = 'surveys:process-progress';
     protected $description = 'Sends next survey questions or reminders based on participant progress.';
 
-    public function handle(UjumbeSMS $smsService): void
+    public function handle()
     {
         $progressRecords = SurveyProgress::with(['survey', 'currentQuestion', 'member'])
             ->whereNull('completed_at')
@@ -76,12 +77,15 @@ class ProcessSurveyProgressCommand extends Command
             
             if ($hasResponded &&  ($endDate === null || now()->lessThanOrEqualTo(Carbon::parse($endDate)))) {
                 // User has responded, send the next question
+                //TODO: MODIFY FUNCTION TO GET THE NEXT QUESTION FROM THE FLOW BUILDER
                 $nextQuestion = $currentQuestion->getNextQuestion($survey->id);
 
                 if ($nextQuestion) {
-                    $message = $this->formatQuestionMessage($nextQuestion);
+                    // $message = $this->formatQuestionMessage($nextQuestion);
+                    $message = $nextQuestion->question; // Simplified for now
                     try {
-                        $smsService->send($member->phone, $message);
+                        // $smsService->send($member->phone, $message);
+                        $this->sendSMS($member->phone, $message);
                         $progress->update([
                             'current_question_id' => $nextQuestion->id,
                             'last_dispatched_at' => now(),
@@ -96,12 +100,16 @@ class ProcessSurveyProgressCommand extends Command
                     $progress->update(['completed_at' => now()]);
                     Log::info("Survey {$survey->title} completed by {$member->phone}.");
                 }
-            } else {
-                // No response, send a reminder
-                $message = $this->formatQuestionMessage($currentQuestion, true);
+
+            // } elseif (Carbon::parse($progress->last_dispatched_at)->diffInDays(now()) >= 3) {//hardcoded
+            } elseif (Carbon::parse($progress->last_dispatched_at)->diffInMinutes(now()) >= 1) {
+                // No response and it's been more than 3 days, resend the last question
+                // $message = $this->formatQuestionMessage($currentQuestion, true); // Add a reminder prefix
+                $message = $currentQuestion->question; // Simplified for now
                 try {
-                    $smsService->send($member->phone, $message);
-                    $progress->update(['last_dispatched_at' => now()]);
+                    // $smsService->send($member->phone, $message);
+                    $this->sendSMS($member->phone, $message);
+                    $progress->update(['last_dispatched_at' => now()]); // Update timestamp for next check
                     Log::info("Reminder sent to {$member->phone} for survey {$survey->title}.");
                 } catch (\Exception $e) {
                     Log::error("Failed to send reminder to {$member->phone}: " . $e->getMessage());
@@ -110,9 +118,15 @@ class ProcessSurveyProgressCommand extends Command
         }
     }
 
-    protected function formatQuestionMessage(SurveyQuestion $question, bool $isReminder = false): string
-    {
-        $prefix = $isReminder ? "Reminder: " : "";
-        return "{$prefix}Question: {$question->question}\nPlease reply with your answer.";
+    public function sendSMS($msisdn, $message) {
+
+        try{
+            SMSInbox::create([
+                'phone_number' => $msisdn, // Store the phone number in group_ids for tracking
+                'message' => $message,
+            ]);
+        } catch (\Exception $e) {
+            Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());
+        }
     }
 }

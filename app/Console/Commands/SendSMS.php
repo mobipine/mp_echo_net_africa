@@ -54,7 +54,7 @@ class SendSMS extends Command
             //check if there are SMSInbox with group_ids that are null or empty but phone_number and member_id is filled
             $sms_inboxes = SMSInbox::where('status', 'pending')
                 ->whereNotNull('phone_number')
-                ->whereNotNull('member_id')
+                // ->whereNotNull('member_id')
                 ->take(10)
                 ->get();
 
