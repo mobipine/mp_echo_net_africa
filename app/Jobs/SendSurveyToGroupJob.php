@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Group;
+use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
@@ -20,7 +21,7 @@ class SendSurveyToGroupJob implements ShouldQueue
 
     public function __construct(public Group $group, public Survey $survey) {}
 
-    public function handle(UjumbeSMS $smsService): void
+    public function handle(): void
     {
         $members = $this->group->members()->where('is_active', true)->get();
         $firstQuestion = $this->survey->questions()->orderBy('pivot_position')->first();
@@ -46,17 +47,23 @@ class SendSurveyToGroupJob implements ShouldQueue
                 );
 
                 // Only send if this is a new survey assignment
-                if ($progress->wasRecentlyCreated) {
+               if ($progress->wasRecentlyCreated) {
                     try {
-                        $smsService->send($member->phone, $message);
-                        Log::debug("First question for survey '{$this->survey->title}' dispatched to {$member->phone}.");
-                        $sentCount++;
+                        SMSInbox::create([
+                            'message'      => $message,
+                            'status'       => 'pending',
+                            'phone_number' => $member->phone,
+                            'member_id'    => $member->id,
+                        ]);
+
+                        Log::info('Record created in SMS Inbox');
                     } catch (\Exception $e) {
                         Log::error("Failed to send initial SMS to {$member->name}: " . $e->getMessage());
                     }
                 } else {
                     Log::info("Member {$member->phone} already has a progress record for this survey. Skipping initial dispatch.");
                 }
+
             }
         }
 

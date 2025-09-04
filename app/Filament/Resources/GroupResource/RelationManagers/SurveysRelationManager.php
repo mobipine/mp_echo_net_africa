@@ -83,6 +83,21 @@ class SurveysRelationManager extends RelationManager
                             ->searchable()
                             ->native(false)
                             ->required(),
+                        Forms\Components\Select::make('question_interval_unit')
+                            ->label('Interval Unit')
+                            ->options([
+                                'minutes' => 'Minutes',
+                                'hours' =>'Hours',
+                                'days'   => 'Days',
+                                'weeks'  => 'Weeks',
+                                'months' => 'Months',
+                            ])
+                            ->default('days'),
+
+                        Forms\Components\TextInput::make('question_interval')
+                            ->label('Question Interval')
+                            ->numeric()
+                            ->helperText('The time between subsequent questions.'),
 
                         Forms\Components\Toggle::make('automated')
                             ->label('Automated')
@@ -116,9 +131,27 @@ class SurveysRelationManager extends RelationManager
                             'starts_at'      => $data['starts_at'],
                             'ends_at'        => $data['ends_at'],
                             'was_dispatched' => $data['was_dispatched'],
+                            'question_interval'      => $data['question_interval'],
+                            'question_interval_unit' => $data['question_interval_unit'],
                         ]);
                     })
                     ->form([
+                        Forms\Components\Select::make('question_interval_unit')
+                            ->label('Interval Unit')
+                            ->options([
+                                'minutes' => 'Minutes',
+                                'hours' =>'Hours',
+                                'days'   => 'Days',
+                                'weeks'  => 'Weeks',
+                                'months' => 'Months',
+                            ])
+                            ->default('days'),
+
+                        Forms\Components\TextInput::make('question_interval')
+                            ->label('Question Interval')
+                            ->numeric()
+                            ->helperText('The time between subsequent questions.'),
+
                         Forms\Components\Toggle::make('automated')
                             ->label('Automated')
                             ->helperText('Enable if the survey should be sent automatically.'),
