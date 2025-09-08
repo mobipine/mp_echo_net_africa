@@ -11,11 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        
-        Schema::create('official_positions', function (Blueprint $table) {
-            $table->id();
-            $table->string('position_name')->unique();
-            $table->timestamps();
+        Schema::table('members', function (Blueprint $table) {
+            //add account_number column
+            $table->string('account_number')->nullable()->unique()->after('national_id');
         });
     }
 
@@ -24,6 +22,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('official_positions');
+        Schema::table('members', function (Blueprint $table) {
+            $table->dropColumn('account_number');
+        });
     }
 };
