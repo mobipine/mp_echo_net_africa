@@ -54,8 +54,7 @@ class ProcessSurveyProgressCommand extends Command
                 $interval = $groupSurvey->question_interval ?? 3; // Use the pivot value, or default to 3 days
                 $unit = $groupSurvey->question_interval_unit ?? 'days'; // Use the pivot value, or default to 'days'
 
-                $endDate = DB::table('group_survey')
-                        ->where('group_id', $member->group_id)
+                $endDate = GroupSurvey::where('group_id', $member->group_id)
                         ->where('survey_id',$survey->id)
                         ->value('ends_at');
                 

@@ -28,6 +28,7 @@ class DispatchDueSurveysCommand extends Command
 
         if ($dueAssignments->isEmpty()) {
             $this->info('No automated survey assignments due for dispatch.');
+            Log::info("No Due Assignments, exiting the handle function of dispatch due survey command");
             return;
         }
 
@@ -44,7 +45,7 @@ class DispatchDueSurveysCommand extends Command
                 $firstQuestion = $survey->questions()->orderBy('pivot_position')->first();
 
                 if (!$firstQuestion) {
-                    Log::info("Survey '{$survey->title}' has no questions. No SMS sent.");
+                    Log::info("Survey '{$survey->title}' has no questions. Exiting the  handle function of dispatch due survey command. No SMS sent.");
                     return;
                 }
 
@@ -64,10 +65,11 @@ class DispatchDueSurveysCommand extends Command
                             $survey = $survey;
                             $p_unique = $survey->participant_uniqueness;
                             if ($p_unique) {
-                                return;
+                                Log::info("$survey->title has participant uniqueness turned on and $member->phone already has done the survey. Proceding to the next member");
+                                continue;
                                 //'Survey already started.'
                             } else {
-                                //update all previous progress records with thesame survey_id and member_id status to CANCELLED
+                                //update all previous progress records with the same survey_id and member_id status to CANCELLED
                                 SurveyProgress::where('survey_id', $survey->id)
                                     ->where('member_id', $member->id)
                                     ->whereNull('completed_at')

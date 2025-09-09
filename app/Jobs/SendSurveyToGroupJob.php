@@ -7,7 +7,7 @@ use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
-use App\Services\UjumbeSMS; // Your SMS service
+use App\Services\UjumbeSMS;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -19,11 +19,12 @@ class SendSurveyToGroupJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(public Group $group, public Survey $survey) {}
+    public function __construct(public array $groupIds, public Survey $survey) {}
 
     public function handle(): void
     {
-        $members = $this->group->members()->where('is_active', true)->get();
+        Log::info("In the Send Survey To Multiple Groups Job");
+        // Find the first question once, outside the group loop, as it's the same for all groups.
         $firstQuestion = $this->survey->questions()->orderBy('pivot_position')->first();
 
         if (!$firstQuestion) {
@@ -31,89 +32,76 @@ class SendSurveyToGroupJob implements ShouldQueue
             return;
         }
 
-        $message = "New Survey: {$this->survey->title}\n\n" . $this->formatQuestionMessage($firstQuestion);
-        $sentCount = 0;
+        foreach ($this->groupIds as $groupId) {
+            $group = Group::find($groupId);
 
-        foreach ($members as $member) {
-            if (!empty($member->phone)) {
-                //find a record with the survey id and member id that is not completed
+            if (!$group) {
+                Log::warning("Group with ID {$groupId} not found. Skipping.");
+                continue;
+            }
+
+           
+            $members = $group->members()->where('is_active', true)->get();
+            $sentCount = 0;
+
+            foreach ($members as $member) {
+                if (empty($member->phone)) {
+                    continue;
+                }
+
                 $progress = SurveyProgress::where('survey_id', $this->survey->id)
                     ->where('member_id', $member->id)
                     ->whereNull('completed_at')
                     ->first();
 
+                // Simplify logic to handle both cases efficiently
                 if ($progress) {
-                    //check if survey has member uniquesness
-                    $survey = $this->survey;
-                    $p_unique = $survey->participant_uniqueness;
-                    if ($p_unique) {
-                        return;
-                        //'Survey already started.'
-                    } else {
-                        //update all previous progress records with thesame survey_id and member_id status to CANCELLED
-                        SurveyProgress::where('survey_id', $survey->id)
-                            ->where('member_id', $member->id)
-                            ->whereNull('completed_at')
-                            ->update(['status' => 'CANCELLED']);
-
-
-                        //create a new progress record
-                        $newProgress = SurveyProgress::create([
-                            'survey_id' => $survey->id,
-                            'member_id' => $member->id,
-                            'current_question_id' => $firstQuestion->id,
-                            'last_dispatched_at' => now(),
-                            'has_responded' => false,
-                            'source' => 'manual'
-                        ]);
-
-                        //send the first question
-                        $message = "New Survey: {$survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
-                        try {
-                            SMSInbox::create([
-                                'message'      => $message,
-                                'phone_number' => $member->phone,
-                                'member_id'    => $member->id,
-                            ]);
-
-                            Log::info('Record created in SMS Inbox');
-                        } catch (\Exception $e) {
-                            Log::error("Failed to send initial SMS to {$member->name}: " . $e->getMessage());
-                        }
+                    if ($this->survey->participant_uniqueness) {
+                        Log::info("{$this->survey->title} has participant uniqueness turned on, and {$member->phone} has already started. Skipping him.");
+                        continue;
                     }
-                } else {
-                    //create a new progress record
-                    $newProgress = SurveyProgress::create([
-                        'survey_id' => $this->survey->id,
-                        'member_id' => $member->id,
-                        'current_question_id' => $firstQuestion->id,
-                        'last_dispatched_at' => now(),
-                        'has_responded' => false,
-                        'source' => 'manual'
+                    Log::info("{$member->name} has a record in the survey progress table but participant uniqueness for {$this->survey->title} is off. Cancelling previous records...");
+
+                    // If not unique, cancel all previous incomplete progress records
+                    SurveyProgress::where('survey_id', $this->survey->id)
+                        ->where('member_id', $member->id)
+                        ->whereNull('completed_at')
+                        ->update(['status' => 'CANCELLED']);
+                }
+                Log::info("Creating a new record for {$member->name} in the survey progress table");
+
+                // Create a new progress record for the member
+                $newProgress = SurveyProgress::create([
+                    'survey_id' => $this->survey->id,
+                    'member_id' => $member->id,
+                    'current_question_id' => $firstQuestion->id,
+                    'last_dispatched_at' => now(),
+                    'has_responded' => false,
+                    'source' => 'manual',
+                ]);
+
+                Log::info("Saving the first question for {$this->survey->title} in the SMSInbox table and preparing it to be sent.");
+                // Prepare and log the SMS for sending
+                $message = "New Survey: {$this->survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
+                
+                try {
+                    SMSInbox::create([
+                        'message'      => $message,
+                        'phone_number' => $member->phone,
+                        'member_id'    => $member->id,
+                        'survey_progress_id' => $newProgress->id,
                     ]);
 
-                    //send the first question
-                    $message = "New Survey: {$this->survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
-                    try {
-                        SMSInbox::create([
-                            'message'      => $message,
-                            'phone_number' => $member->phone,
-                            'member_id'    => $member->id,
-                        ]);
-
-                        Log::info('Record created in SMS Inbox');
-                    } catch (\Exception $e) {
-                        Log::error("Failed to send initial SMS to {$member->name}: " . $e->getMessage());
-                    }
+                    // Here you would call your actual SMS service, e.g., UjumbeSMS::send($member->phone, $message);
+                    
+                    Log::info("SMS Inbox record created for {$member->phone}.\n\n");
+                    $sentCount++;
+                } catch (\Exception $e) {
+                    Log::error("Failed to create SMS Inbox record for {$member->name}: " . $e->getMessage());
                 }
             }
+
+            Log::info("First question of survey '{$this->survey->title}' dispatched to {$sentCount} members in group '{$group->name}'.\n\n");
         }
-
-        Log::info("First question of survey '{$this->survey->title}' dispatched to {$sentCount} members in group '{$this->group->name}'.");
-    }
-
-    protected function formatQuestionMessage(SurveyQuestion $question): string
-    {
-        return "Question 1: {$question->question}\nPlease reply with your answer.";
     }
 }
