@@ -176,23 +176,24 @@ class SurveysRelationManager extends RelationManager
 
                 Tables\Actions\Action::make('dispatchManually')
                     ->label('Send Now')
-                    ->icon('heroicon-s-paper-airplane') // A "send" icon
-                    ->color('success') // Green button
+                    ->icon('heroicon-s-paper-airplane')
+                    ->color('success')
                     ->requiresConfirmation()
                     ->modalHeading('Send Survey Manually')
-                    ->modalDescription("Are you sure you want to manually send the survey  to all members of this group? This will happen immediately and bypass the schedule.")
+                    ->modalDescription("Are you sure you want to manually send the survey to all members of this group? This will happen immediately and bypass the schedule.")
                     ->action(function (\App\Models\Survey $record): void {
-                        // Dispatch the job immediately, passing the current group and this survey
-                        \App\Jobs\SendSurveyToGroupJob::dispatch($this->ownerRecord, $record);
+                        // The action is for a single group, so we get its ID.
+                        // The `ownerRecord` is the single Group instance this action belongs to.
+                        $groupIds = [$this->ownerRecord->id];
                         
-                        // Optional: Update the pivot to mark it as dispatched to prevent auto-send later
+                        // The job now expects an array of group IDs, so we dispatch it with our single-item array.
+                        \App\Jobs\SendSurveyToGroupJob::dispatch($groupIds, $record);
+                        
+                        // This is still a valid pivot relationship update for a single group.
                         $this->getRelationship()->updateExistingPivot($record->id, [
                             'was_dispatched' => true,
-                            // You might also want to update the starts_at time to now?
-                            // 'starts_at' => now(),
                         ]);
                         
-                        // Send a notification to the admin within Filament
                         \Filament\Notifications\Notification::make()
                             ->title('Survey Dispatched')
                             ->body("The survey '{$record->title}' is being sent to the group in the background.")
