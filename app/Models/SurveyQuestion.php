@@ -38,29 +38,23 @@ class SurveyQuestion extends Model
             ->position ?? null;
 
         return $position;
-
     }
 
-    //OLD IMPLEMETATION WHERE WE WERE USING THE POSITIONS TO GET THE NEXT QUESTION
-    public function getNextQuestion($surveyId)
-    {
-        $position = $this->getPosition($surveyId);
-        if ($position === null) {
-            return null;
-        }
-
-        $nextQuestion = SurveyQuestionPivot::where('survey_id', $surveyId)
-            ->where('position', '>', $position)
-            ->orderBy('position')
-            ->first();
-
-        return $nextQuestion ? SurveyQuestion::find($nextQuestion->survey_question_id) : null;
-    }
-
-
-    //WE CREATED A FLOW BUILDER TABLE TO HANDLE THE NEXT QUESTION FLOW BASED ON THE ANSWERS
+    //OLD IMPLEMETATION WHERE WE WERE USING THE POSITIONS TO GET THE NEXT QUESTION (moved to helpers)
     // public function getNextQuestion($surveyId)
     // {
-        
+    //     $position = $this->getPosition($surveyId);
+    //     if ($position === null) {
+    //         return null;
+    //     }
+
+    //     $nextQuestion = SurveyQuestionPivot::where('survey_id', $surveyId)
+    //         ->where('position', '>', $position)
+    //         ->orderBy('position')
+    //         ->first();
+
+    //     return $nextQuestion ? SurveyQuestion::find($nextQuestion->survey_question_id) : null;
     // }
+
+
 }

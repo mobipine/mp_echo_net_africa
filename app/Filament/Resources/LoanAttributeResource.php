@@ -17,7 +17,7 @@ class LoanAttributeResource extends Resource
 {
     protected static ?string $model = LoanAttribute::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-link';
 
     protected static ?string $navigationGroup = 'Loan Management';
 

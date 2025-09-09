@@ -56,11 +56,11 @@ class WebHookController extends Controller
     public function startSurvey($msisdn, Survey $survey)
     {
         //TODO: CREATE A FUNCTION TO GET THE FIRST QUESTION FROM THE FLOW BUILDER
-        $firstQuestion = $survey->questions()->orderBy('pivot_position')->first();
+        // $firstQuestion = $survey->questions()->orderBy('pivot_position')->first();
+        $firstQuestion = getNextQuestion($survey->id);
         if (!$firstQuestion) {
             return response()->json(['status' => 'error', 'message' => 'Survey has no questions.']);
         }
-
         // Get the member ID based on the phone number
         $member = Member::where('phone', $msisdn)->first();
 
@@ -153,16 +153,6 @@ class WebHookController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Invalid response.']);
         }
 
-        // Check if the user has already responded to this specific question
-        // $existingResponse = SurveyResponse::where('msisdn', $msisdn)
-        //     ->where('survey_id', $survey->id)
-        //     ->where('question_id', $currentQuestion->id)
-        //     ->exists();
-
-        // if ($existingResponse) {
-        //     Log::info("Duplicate response for question_id {$currentQuestion->id} from {$msisdn}. Ignoring.");
-        //     return response()->json(['status' => 'info', 'message' => 'Response already received for this question.']);
-        // }
 
         // Store the response
         SurveyResponse::create([
@@ -170,6 +160,7 @@ class WebHookController extends Controller
             'msisdn' => $msisdn,
             'question_id' => $currentQuestion->id,
             'survey_response' => $response,
+            'session_id' => $progress->id,//this is a foreign key to the survey_progress table
         ]);
 
         // Mark the question as responded to in the progress table
@@ -177,8 +168,9 @@ class WebHookController extends Controller
         Log::info("Response recorded for question ID: {$currentQuestion->id}. Waiting for next scheduled dispatch.");
 
         // Check if this was the last question in the survey.
-        $nextQuestion = $currentQuestion->getNextQuestion($survey->id);
-        if (!$nextQuestion) {
+        $nextQuestion = getNextQuestion($survey->id, $response, $currentQuestion->id);
+        // dd($nextQuestion);
+        if (!$nextQuestion || (is_array($nextQuestion) && isset($nextQuestion['status']) && $nextQuestion['status'] == 'completed')) {
             // If no more questions, end the survey and send the final response
             $progress->update(
                 [
@@ -199,6 +191,7 @@ class WebHookController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => 'Response received. Thank you!',
+            'nxt' => $nextQuestion
         ]);
     }
 

@@ -1,40 +1,32 @@
 <?php
 
-use App\Http\Controllers\WebHookController;
-use App\Models\SurveyQuestion;
-use Illuminate\Support\Facades\Route;
-
-Route::get('/', function () {
-    // return view('welcome');
-    //redirect to the /admin route
-    return redirect('/admin');
-});
-
-Route::post('/webhook', [WebHookController::class, 'handleWebhook']);//route to receive responses from short code SMS Service
-
-
-Route::get('/get-next-qtn', function () {
-    // return view('get-next-qtn');
-
-    //define params
-    $survey_id = 3;
-    $member_id = 2;
-    $response = "China";//the response to the current question (this will help us determine the next question in case of branching)
-    $current_question_id = 11;//if not null, get the next question after this one
-    // $current_question_id = null;//if null, get the first question
-
+//WE CREATED A FLOW BUILDER TABLE TO HANDLE THE NEXT QUESTION FLOW BASED ON THE ANSWERS
+function getNextQuestion($survey_id, $response = null, $current_question_id = null)
+{
     //get the flow data from the survey
     $survey = \App\Models\Survey::find($survey_id);
     $flowData = $survey->flow_data;
     // dd($flowData);
 
+    if (!$flowData) {
+        return [
+            'status' => 'error',
+            'message' => 'No flow data found for this survey.'
+        ];
+    }
+
     $elements = $flowData['elements'];
     $edges = $flowData['edges'];
 
+    if(!$elements || !is_array($elements) || count($elements) == 0) {
+        return [
+            'status' => 'error',
+            'message' => 'No elements found in the flow data.'
+        ];
+    }
 
+    if ($current_question_id == null) {
 
-    if($current_question_id == null) {
-        
         //get the start element
         //this will be the element with a label of "Start"
         $startElement = null;
@@ -44,7 +36,7 @@ Route::get('/get-next-qtn', function () {
                 break;
             }
         }
-    
+
         //get the first question element
         //this will be the element that is connected to the start element (the start element can only have one connection)
         //go to the edges and find the edge that has the start element as the source
@@ -56,7 +48,7 @@ Route::get('/get-next-qtn', function () {
                 break;
             }
         }
-    
+
         //get the target of the starting edge
         $firstQuestionElementId = $startingEdge['target'];
         $firstQuestionElement = null;
@@ -69,8 +61,6 @@ Route::get('/get-next-qtn', function () {
 
         //get the question_id
         $next_question_id = $firstQuestionElement['data']['questionId'];
-
-
     } else {
         //get the current question element
         $currentQuestionElement = null;
@@ -93,7 +83,7 @@ Route::get('/get-next-qtn', function () {
 
         //first check the answer strictness
         $answer_strictness = $currentQuestionElement['data']['answerStrictness'];
-        if($answer_strictness == "Open-Ended") {
+        if ($answer_strictness == "Open-Ended") {
             // take the first array element of the outgoing edges and get its target
             $nextQuestionElementId = $outgoingEdges[0]['target'];
             $nextQuestionElement = null;
@@ -105,8 +95,6 @@ Route::get('/get-next-qtn', function () {
             }
             //get the question_id
             $next_question_id = $nextQuestionElement['data']['questionId'];
-            
-
         } else {
             //get the possible answers and the flows they lead to
             $possibleAnswers = $currentQuestionElement['data']['possibleAnswers'];
@@ -146,7 +134,6 @@ Route::get('/get-next-qtn', function () {
 
                 //get the question_id
                 $next_question_id = $nextQuestionElement['data']['questionId'];
-                
             } else {
                 //if no match, check if there is a violation response
                 $violationResponse = $currentQuestionElement['data']['violationResponse'];
@@ -163,26 +150,13 @@ Route::get('/get-next-qtn', function () {
                     ];
                 }
             }
-
         }
-
-
-
-        
     }
     
-    if($next_question_id) {
-        $next_question = SurveyQuestion::find($next_question_id);
+    // dd($next_question_id, $next_question, $next_question->question );
+    if ($next_question_id) {
+        $next_question = \App\Models\SurveyQuestion::find($next_question_id);
         return $next_question;
-    } else {
-        return [
-            'status' => 'completed',
-            'message' => 'No more questions in the survey.'
-        ];
     }
 
-    // dd($next_question_id, $next_question, $next_question->question );
-
-
-
-});
+}
