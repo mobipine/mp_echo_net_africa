@@ -100,9 +100,17 @@ class ProcessSurveyProgressCommand extends Command
                 
         
             if ($hasResponded) {
+                //get the response
+                $latestResponse = SurveyResponse::where('session_id', $progress->id)
+                    ->where('survey_id', $survey->id)
+                    ->where('question_id', $currentQuestion->id)
+                    ->latest()
+                    ->first();
+                $response = $latestResponse ? $latestResponse->survey_response : null;
+
                 // User has responded, send the next question
                 //TODO: MODIFY FUNCTION TO GET THE NEXT QUESTION FROM THE FLOW BUILDER
-                $nextQuestion = $currentQuestion->getNextQuestion($survey->id);
+                $nextQuestion = getNextQuestion($survey->id, $response, $currentQuestion->id);
 
                 if ($nextQuestion) {
                     // $message = $this->formatQuestionMessage($nextQuestion);

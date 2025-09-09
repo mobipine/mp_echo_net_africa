@@ -9,15 +9,21 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('survey_responses', function (Blueprint $table) {
-            $table->foreignId('session_id')->nullable()->constrained('shortcode_sessions')->onDelete('cascade')->after('survey_id');
+            // Drop the existing foreign key constraint
+            $table->dropForeign(['session_id']);
+
+            // Update the foreign key to reference the survey_progress table
+            $table->foreign('session_id')->references('id')->on('survey_progress')->onDelete('cascade');
         });
     }
 
     public function down(): void
     {
         Schema::table('survey_responses', function (Blueprint $table) {
+            // Drop the foreign key constraint referencing survey_progress
             $table->dropForeign(['session_id']);
-            $table->dropColumn('session_id');
+
+            
         });
     }
 };

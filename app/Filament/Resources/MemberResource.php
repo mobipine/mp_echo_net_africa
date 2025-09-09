@@ -22,7 +22,7 @@ class MemberResource extends Resource
 {
     protected static ?string $model = Member::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-users';
 
     public static function getNavigationBadge(): ?string
     {
@@ -39,6 +39,14 @@ class MemberResource extends Resource
                     ->relationship('group', 'name')
                     ->required(),
                 \Filament\Forms\Components\TextInput::make('name')->required()->placeholder('e.g. John Doe'),
+                \Filament\Forms\Components\TextInput::make('account_number')
+                    ->required()
+                    ->placeholder('e.g. ACC-0001')
+                    ->unique(ignoreRecord: true)
+                    ->maxLength(20)
+                    ->minLength(5)
+                    ->readOnly()
+                    ->visibleOn('edit'),
                 \Filament\Forms\Components\TextInput::make('email')->email()->placeholder('john.doe@example.com')->required()->maxLength(255)->unique(ignoreRecord: true),
                 \Filament\Forms\Components\TextInput::make('phone')->placeholder('e.g. 0712345678'),
                 \Filament\Forms\Components\TextInput::make('national_id')->required()->placeholder('e.g. 11111111')
@@ -104,7 +112,7 @@ class MemberResource extends Resource
                 // Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make()->color('gray')->icon('heroicon-o-eye')->label('View'),
                 Tables\Actions\DeleteAction::make(),
-                
+
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
