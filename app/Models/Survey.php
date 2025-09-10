@@ -15,7 +15,10 @@ class Survey extends Model
         'start_date',
         'end_date',
         'participant_uniqueness',
-        'flow_data'
+        'flow_data',
+        'continue_confirmation_interval_unit',
+        'continue_confirmation_interval',
+        'continue_confirmation_question',
     ];
 
     protected $casts = [
