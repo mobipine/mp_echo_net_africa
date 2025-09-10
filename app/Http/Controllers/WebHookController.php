@@ -39,6 +39,7 @@ class WebHookController extends Controller
             ->whereHas('member', function ($query) use ($msisdn) {
                 $query->where('phone', $msisdn);
             })
+            ->where('status','ACTIVE')
             ->whereNull('completed_at')
             ->latest('last_dispatched_at')
             ->first();
@@ -46,6 +47,20 @@ class WebHookController extends Controller
         if ($progress) {
             // Process the user's response
             return $this->processSurveyResponse($msisdn, $progress, $validatedData['message']);
+        }
+
+        $pendingProgress = SurveyProgress::with(['survey', 'currentQuestion'])
+            ->whereHas('member', function ($query) use ($msisdn) {
+                $query->where('phone', $msisdn);
+            })
+            ->whereNull('completed_at')
+            ->where('status','PENDING')
+            ->latest('last_dispatched_at')
+            ->first();
+
+        if ($pendingProgress) {
+            // Process the user's response
+            return $this->processSurveyResponse($msisdn, $pendingProgress, $validatedData['message']);
         }
 
         Log::info("No active survey or trigger word found for message: $message");
@@ -132,9 +147,46 @@ class WebHookController extends Controller
 
     public function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
     {
+
         //THIS FUNCTION SHOULD VALIDATE THE RESPONSE BASED ON THE QUESTION'S DATA TYPE AND STORE IT IF VALID
         $currentQuestion = $progress->currentQuestion;
         $survey = $progress->survey;
+
+
+        Log::info("The survey progress status is $progress->status");
+        //If the survey progress status is pending it means we had sent the confirmation message
+        if ($progress->status=="PENDING"){
+            Log::info("This is a confirmation message response");
+            $response=trim(strtolower($response));
+            if ($response=="yes"){
+                Log::info("The member wishes to continue with the survey. Updating survey progress to ACTIVE. Resending the previous question...");
+                $progress->update([
+                    'status'=>'ACTIVE',
+                ]);
+                $this->sendSMS($msisdn, $currentQuestion->question);
+                return response()->json([
+                    'status'=>'success',
+                    'message'=>'The member wishes to continue with the survey. Updating survey progress to ACTIVE. Resending the previous question...'
+                ]);
+            }
+            elseif ($response=="no"){
+                Log::info("The member does not wish to continue with the survey. Updating survey progress to CANCELLED");
+                $progress->update([
+                    'status'=>'CANCELLED'
+                ]);
+                return response()->json([
+                    'status'=>'success',
+                    'message'=>"The member does not wish to continue with the survey. Updating survey progress to CANCELLED"
+                ]);
+            }else{
+                Log::info("invalid response");
+                return response()->json([
+                    'status'=>'error',
+                    'message'=>"Invalid response, it's a yes or no question",
+                ]);
+            }
+             
+        }
 
         Log::info("This is the current question $currentQuestion");
 
