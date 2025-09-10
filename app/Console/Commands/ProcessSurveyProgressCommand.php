@@ -22,8 +22,7 @@ class ProcessSurveyProgressCommand extends Command
     {
         $progressRecords = SurveyProgress::with(['survey', 'currentQuestion', 'member'])
             ->whereNull('completed_at')
-            ->whereNot('status', 'CANCELLED')
-            ->whereNot('status', 'COMPLETED')
+            ->where('status', 'ACTIVE')
             ->get();
 
         foreach ($progressRecords as $progress) {
@@ -51,8 +50,8 @@ class ProcessSurveyProgressCommand extends Command
                     continue;
                 }
     
-                $interval = $groupSurvey->question_interval ?? 3; // Use the pivot value, or default to 3 days
-                $unit = $groupSurvey->question_interval_unit ?? 'days'; // Use the pivot value, or default to 'days'
+                $interval = $currentQuestion->question_interval ?? 3; // Use the pivot value, or default to 3 days
+                $unit = $currentQuestion->question_interval_unit ?? 'days'; // Use the pivot value, or default to 'days'
 
                 $endDate = GroupSurvey::where('group_id', $member->group_id)
                         ->where('survey_id',$survey->id)
@@ -89,12 +88,19 @@ class ProcessSurveyProgressCommand extends Command
                 continue;
             }
 
+            $confirmation_interval=$survey->continue_confirmation_interval;
+            $confirmation_interval_unit=$survey->continue_confirmation_interval_unit;
+
+            $confirmationDue=$lastDispatched->add($confirmation_interval, $confirmation_interval_unit);
+            $isconfirmationDue=$confirmationDue->lessThanOrEqualTo(now());
+
+            Log::info("If the user has not yet responded to the previous question sent in {$survey->title} and the time for to dispatch the confirmation question {$confirmationDue} has reached a confirmation message will be sent, if he has responded, the next question will be sent.");
+
             // Check if the user has responded since the last dispatch
             $hasResponded = SurveyProgress::where('member_id', $member->id)
                 ->where('survey_id', $survey->id)
                 ->where('has_responded', true)
-                ->whereNot('status', 'CANCELLED')
-                ->whereNot('status', 'COMPLETED')
+                ->where('status', 'ACTIVE')
                 ->exists();
                 
         
@@ -112,6 +118,7 @@ class ProcessSurveyProgressCommand extends Command
                 $nextQuestion = getNextQuestion($survey->id, $response, $currentQuestion->id);
 
                 if ($nextQuestion) {
+                    Log::info("The member responded to previous question. Sending the next question");
                     // $message = $this->formatQuestionMessage($nextQuestion);
                     $message = $nextQuestion->question; // Simplified for now
                     try {
@@ -135,17 +142,22 @@ class ProcessSurveyProgressCommand extends Command
                     Log::info("Survey {$survey->title} completed by {$member->phone}.");
                 }
 
-            } else {
+            } elseif($isconfirmationDue) {
+                $message = $survey->continue_confirmation_question;
+                Log::info("No response from member. Sending the confirmation message {$message}...");
                 // No response and it's been more than 3 days, resend the last question
                 // $message = $this->formatQuestionMessage($currentQuestion, true); // Add a reminder prefix
-                $message = $currentQuestion->question; // Simplified for now
+                 
                 try {
                     // $smsService->send($member->phone, $message);
                     $this->sendSMS($member->phone, $message);
-                    $progress->update(['last_dispatched_at' => now()]); // Update timestamp for next check
-                    Log::info("Reminder sent to {$member->phone} for survey {$survey->title}.");
+                    $progress->update([
+                        'last_dispatched_at' => now(),
+                        'status'=>'PENDING',
+                    ]); // Update timestamp and status
+                    Log::info("Confirmation sent to {$member->phone} for survey {$survey->title}.");
                 } catch (\Exception $e) {
-                    Log::error("Failed to send reminder to {$member->phone}: " . $e->getMessage());
+                    Log::error("Failed to send confirmation to {$member->phone}: " . $e->getMessage());
                 }
             }
         }
