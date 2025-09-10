@@ -25,12 +25,14 @@ class SendSurveyToGroupJob implements ShouldQueue
     {
         Log::info("In the Send Survey To Multiple Groups Job");
         // Find the first question once, outside the group loop, as it's the same for all groups.
-        $firstQuestion = $this->survey->questions()->orderBy('pivot_position')->first();
+        $firstQuestion = getNextQuestion($this->survey->id, $response = null, $current_question_id = null);
 
         if (!$firstQuestion) {
             Log::info("Survey '{$this->survey->title}' has no questions. No SMS sent.");
             return;
         }
+
+        Log::info("The first Question of {$this->survey->title} is {$firstQuestion->question} from the flow");
 
         foreach ($this->groupIds as $groupId) {
             $group = Group::find($groupId);
