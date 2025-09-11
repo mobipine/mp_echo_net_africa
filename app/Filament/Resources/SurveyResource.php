@@ -32,6 +32,26 @@ class SurveyResource extends Resource
                 Forms\Components\DatePicker::make('start_date')->native(false),
                 Forms\Components\DatePicker::make('end_date')->native(false),
                 Forms\Components\Toggle::make('participant_uniqueness'),
+                Forms\Components\TextInput::make('continue_confirmation_interval')
+                            ->label('Continue Confirmation Interval')
+                            ->numeric()
+                            ->helperText('If a user does not respond, after how long would you want them sent a confirmation message to know if they wish to continue with the survey?')
+                            ->required(),
+                 Forms\Components\Select::make('continue_confirmation_interval_unit')
+                            ->label('Continue Confirmation Interval Unit')
+                            ->native(false)
+                            ->options([
+                                'minutes' => 'Minutes',
+                                'hours' =>'Hours',
+                                'days'   => 'Days',
+                                'weeks'  => 'Weeks',
+                                'months' => 'Months',
+                            ])
+                            ->required(),
+                Forms\Components\TextInput::make('continue_confirmation_question')
+                            ->label('Continue Confirmation Question')
+                            ->helperText('If a user does not respond, what message would you want them to receive?')
+                            ->required(),
             ]);
     }
 

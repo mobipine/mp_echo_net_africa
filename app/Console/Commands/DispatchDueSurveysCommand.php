@@ -42,12 +42,14 @@ class DispatchDueSurveysCommand extends Command
                 // SendSurveyToGroupJob::dispatch($group, $survey);
 
                 $members = $group->members()->where('is_active', true)->get();
-                $firstQuestion = $survey->questions()->orderBy('pivot_position')->first();
+                $firstQuestion = getNextQuestion($survey->id, $response = null, $current_question_id = null);
 
                 if (!$firstQuestion) {
                     Log::info("Survey '{$survey->title}' has no questions. Exiting the  handle function of dispatch due survey command. No SMS sent.");
                     return;
                 }
+
+                Log::info("The first Question of {$survey->title} is {$firstQuestion} from the flow");
 
                 $message = "New Survey: {$survey->title}\n\n" . $this->formatQuestionMessage($firstQuestion);
                 $sentCount = 0;
@@ -99,8 +101,13 @@ class DispatchDueSurveysCommand extends Command
                                 } catch (\Exception $e) {
                                     Log::error("Failed to send initial SMS to {$member->name}: " . $e->getMessage());
                                 }
+
+                                $sentCount++;
                             }
+
                         } else {
+
+                            $sentCount++;
                             //create a new progress record
                             $newProgress = SurveyProgress::create([
                                 'survey_id' => $survey->id,

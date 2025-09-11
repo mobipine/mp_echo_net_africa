@@ -39,6 +39,25 @@ class SurveyQuestionResource extends Resource
                     ->reactive()
                     ->afterStateUpdated(fn (callable $set, $state) => $set('possible_answers', null)),
 
+                    // Add question interval and its unit
+                Forms\Components\TextInput::make('question_interval')
+                            ->label('Question Interval')
+                            ->numeric()
+                            ->helperText('After how long would you want the next question after this is dispatched?'),
+                 Forms\Components\Select::make('question_interval_unit')
+                            ->label('Interval Unit')
+                            ->native(false)
+                            ->options([
+                                'minutes' => 'Minutes',
+                                'hours' =>'Hours',
+                                'days'   => 'Days',
+                                'weeks'  => 'Weeks',
+                                'months' => 'Months',
+                            ])
+                            ->default('days'),
+
+                        
+
                 //do a repeater for possible_answers that only shows if answer_strictness is Multiple Choice with  afield for the letter and the answer
                 Forms\Components\Repeater::make('possible_answers')
                     ->schema([

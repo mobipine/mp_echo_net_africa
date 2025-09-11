@@ -13,6 +13,8 @@ class SurveyQuestion extends Model
         'data_type_violation_response',
         'answer_strictness',
         'possible_answers',
+        'question_interval',
+        'question_interval_unit',
     ];
 
     protected $casts = [
