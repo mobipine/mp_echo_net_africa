@@ -24,6 +24,20 @@ class Loan extends Model
         'loan_duration',
         'loan_purpose',
         'repayment_schedule',
+        'wizard_data',
+        'amortization_schedule',
+        'is_completed',
+        'submitted_at',
+        'approved_at',
+        'approved_by',
+    ];
+
+    // Cast the JSON fields
+    protected $casts = [
+        'wizard_data' => 'array',
+        'amortization_schedule' => 'array',
+        'release_date' => 'date',
+        'due_at' => 'datetime',
     ];
 
     public function member()
