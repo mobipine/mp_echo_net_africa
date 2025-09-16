@@ -41,6 +41,11 @@ class LoanRepayment extends Model
         return $this->belongsTo(User::class, 'recorded_by');
     }
 
+    public function transactions()
+    {
+        return $this->hasMany(Transaction::class);
+    }
+
     /**
      * Calculate the remaining balance for a loan
      */

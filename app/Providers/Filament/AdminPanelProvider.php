@@ -62,13 +62,12 @@ class AdminPanelProvider extends PanelProvider
                 'Poppins' //set custom panel font here
                 // 'Montserrat' //set custom panel font here
             )
-            // ->brandName('Echo Net Africa')
+            // ->brandName('Echo Network Africa Foundation')
             ->brandLogo(asset('images/echonet-logo.png'))
-            // ->brandLogo(asset('images/logo.svg'))
             ->brandLogoHeight('3.5rem')
+            // ->brandLogo(asset('images/logo.svg'))
             // ->favicon(asset('images/logo.svg'))
 
-            // ->brandIcon('trustfund-logo')
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
@@ -77,8 +76,6 @@ class AdminPanelProvider extends PanelProvider
 
             ->pages([
                 Pages\Dashboard::class,
-
-
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([

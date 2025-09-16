@@ -10,26 +10,7 @@ class Loan extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $fillable = [
-        'member_id',
-        'loan_product_id',
-        'loan_number',
-        'status',
-        'principal_amount',
-        'interest_rate',
-        'interest_cycle',
-        'repayment_amount',
-        'interest_amount',
-        'release_date',
-        'due_date',
-        'loan_duration',
-        'loan_purpose',
-        'repayment_schedule',
-        'approved_by',
-        'approved_at',
-        'session_data',
-        'is_completed',
-    ];
+    protected $guarded = ['id', 'created_at', 'updated_at', 'deleted_at'];
 
     protected $casts = [
         'session_data' => 'array',
@@ -41,11 +22,29 @@ class Loan extends Model
         'interest_amount' => 'decimal:2',
         'repayment_amount' => 'decimal:2',
         'is_completed' => 'boolean',
+        'loan_charges' => 'decimal:2',
+        'due_at' => 'datetime',
+    ];
+
+    protected $appends = [
+        'remaining_balance',
+        'total_repaid',
+        'is_fully_repaid',
+        'is_incomplete_application',
+        'member_name',
+        'member_email',
+        'member_phone',
+        'member_national_id',
+        'member_gender',
+        'member_marital_status',
+        'loan_product_name',
+        'approved_by_name',
+        'all_attributes',
     ];
 
     public function member()
     {
-        return $this->belongsTo(Member::class);
+        return $this->belongsTo(Member::class, 'member_id');
     }
 
     public function loanProduct()
@@ -66,6 +65,11 @@ class Loan extends Model
     public function amortizationSchedules()
     {
         return $this->hasMany(LoanAmortizationSchedule::class);
+    }
+
+    public function transactions()
+    {
+        return $this->hasMany(Transaction::class);
     }
 
     /**
@@ -101,8 +105,70 @@ class Loan extends Model
         return $this->is_completed;
     }
 
-    public function calculateLoanDetails()
+    /**
+     * Member accessors for form display
+     */
+    public function getMemberNameAttribute()
     {
-        // Placeholder for loan calculation logic based on attributes
+        return $this->member?->name;
+    }
+
+    public function getMemberEmailAttribute()
+    {
+        return $this->member?->email;
+    }
+
+    public function getMemberPhoneAttribute()
+    {
+        return $this->member?->phone;
+    }
+
+    public function getMemberNationalIdAttribute()
+    {
+        return $this->member?->national_id;
+    }
+
+    public function getMemberGenderAttribute()
+    {
+        return $this->member?->gender;
+    }
+
+    public function getMemberMaritalStatusAttribute()
+    {
+        return $this->member?->marital_status;
+    }
+
+    /**
+     * Loan product accessor for form display
+     */
+    public function getLoanProductNameAttribute()
+    {
+        return $this->loanProduct?->name;
+    }
+
+    /**
+     * Approval accessor for form display
+     */
+    public function getApprovedByNameAttribute()
+    {
+        return $this->approvedBy?->name;
+    }
+    
+
+    public function getAllAttributesAttribute()
+    {
+        //get the loan product for particular loan
+        $loanProduct = $this->loanProduct;
+        $allAttributes = $loanProduct->LoanProductAttributes->mapWithKeys(function ($item) {
+            return [$item->loanAttribute->slug => [
+                "name" => $item->loanAttribute->name,
+                "value" => $item->value,
+                "slug" => $item->loanAttribute->slug,
+                "id" => $item->loanAttribute->id,
+            ]];
+        });
+
+        // dd($allAttributes);
+        return $allAttributes;
     }
 }

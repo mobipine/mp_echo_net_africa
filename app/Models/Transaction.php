@@ -14,6 +14,7 @@ class Transaction extends Model
         'account_name',
         'loan_id',
         'member_id',
+        'repayment_id',
         'transaction_type',
         'dr_cr',
         'amount',
@@ -34,5 +35,10 @@ class Transaction extends Model
     public function member()
     {
         return $this->belongsTo(Member::class);
+    }
+
+    public function repayment()
+    {
+        return $this->belongsTo(LoanRepayment::class);
     }
 }

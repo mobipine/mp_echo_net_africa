@@ -18,6 +18,7 @@ use Filament\Support\RawJs;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Tables\Actions\Action;
+use Filament\Tables\Actions\ActionGroup;
 use Filament\Tables\Filters\SelectFilter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -46,7 +47,7 @@ class LoanResource extends Resource
                     ->native(false)
                     ->options(LoanProduct::all()->pluck('name', 'id')->toArray())
                     ->reactive()
-                    
+
                     ->required(),
 
                 TextInput::make('loan_number')
@@ -61,14 +62,14 @@ class LoanResource extends Resource
                     ->default('Pending Approval')
                     ->readOnly(),
 
-               
+
 
                 Forms\Components\TextInput::make('loan_duration')
                     ->label('Loan Duration')
                     // ->numeric()
                     ->placeholder('Enter Loan Duration depending on the interest cycle')
                     ->formatStateUsing(function ($state, $record) {
-                       return self::formatDuration($state, $record);
+                        return self::formatDuration($state, $record);
                     })
                     // ->helperText('Enter Loan Duration depending on the interest cycle')
                     ->required(),
@@ -81,7 +82,7 @@ class LoanResource extends Resource
                     ->mask(RawJs::make('$money($input)'))
                     ->stripCharacters(',')
                     ->numeric(),
-                    
+
                 Forms\Components\DatePicker::make('release_date')
                     ->label('Release Date')
                     ->reactive()
@@ -150,15 +151,15 @@ class LoanResource extends Resource
                     ->sortable()
                     ->searchable(),
 
-                
+
                 Tables\Columns\TextColumn::make('release_date')
                     ->date()
                     ->searchable()
                     // ->format('Y-m-d')
                     ->sortable(),
-                    //loan duration is a select field, so we can use it directly
+                //loan duration is a select field, so we can use it directly
                 Tables\Columns\TextColumn::make('loan_duration')
-                //get the loan cycle of the loan product and append it to the duration
+                    //get the loan cycle of the loan product and append it to the duration
                     ->formatStateUsing(function ($state, $record) {
                         return self::formatDuration($state, $record);
                     })
@@ -207,77 +208,85 @@ class LoanResource extends Resource
                         true => 'Complete',
                         false => 'Incomplete',
                     ]),
-                    // ->query(fn (Builder $query): Builder => $query->whereNotNull('session_data')),
+                // ->query(fn (Builder $query): Builder => $query->whereNotNull('session_data')),
             ])
             ->actions([
-                // Tables\Actions\ViewAction::make(),
-                Action::make('approve')
-                    ->label('Approve')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->visible(fn (Loan $record): bool => $record->status === 'Pending Approval')
-                    ->requiresConfirmation()
-                    ->modalHeading('Approve Loan')
-                    ->modalDescription('Are you sure you want to approve this loan? This will create the necessary transactions.')
-                    ->action(function (Loan $record) {
-                        $record->update([
-                            'status' => 'Approved',
-                            'approved_by' => Auth::id(),
-                            'approved_at' => now(),
-                        ]);
-                        
-                        // Create transactions only when loan is approved
-                        static::createLoanTransactions($record);
-                        
-                        // Generate amortization schedule
-                        LoanAmortizationSchedule::generateSchedule($record);
-                        
-                        \Filament\Notifications\Notification::make()
-                            ->success()
-                            ->title('Loan Approved')
-                            ->body('The loan has been approved, transactions created, and amortization schedule generated.')
-                            ->send();
-                    }),
-                Action::make('reject')
-                    ->label('Reject')
-                    ->icon('heroicon-o-x-circle')
-                    ->color('danger')
-                    ->visible(fn (Loan $record): bool => $record->status === 'Pending Approval')
-                    ->requiresConfirmation()
-                    ->modalHeading('Reject Loan')
-                    ->modalDescription('Are you sure you want to reject this loan application?')
-                    ->action(function (Loan $record) {
-                        $record->update([
-                            'status' => 'Rejected',
-                            'approved_by' => Auth::id(),
-                            'approved_at' => now(),
-                        ]);
-                        
-                        \Filament\Notifications\Notification::make()
-                            ->success()
-                            ->title('Loan Rejected')
-                            ->body('The loan application has been rejected.')
-                            ->send();
-                    }),
+                ActionGroup::make([
+                    Tables\Actions\ViewAction::make(),
 
-                Action::make('complete_application')
-                    ->label('Complete Application')
-                    ->icon('heroicon-o-pencil-square')
-                    ->color('warning')
-                    ->visible(fn (Loan $record): bool => !$record->is_completed && $record->status === 'Incomplete Application')
-                    ->url(fn (Loan $record): string => route('filament.admin.pages.loan-application', ['session_data' => $record->session_data]))
-                    ->openUrlInNewTab(),
+                    Action::make('approve')
+                        //TODO: create a custom permission for this action
+                        ->label('Approve')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->visible(fn(Loan $record): bool => $record->status === 'Pending Approval')
+                        ->requiresConfirmation()
+                        ->modalHeading('Approve Loan')
+                        ->modalDescription('Are you sure you want to approve this loan? This will create the necessary transactions.')
+                        ->action(function (Loan $record) {
+                            LoanAmortizationSchedule::generateSchedule($record);
+                            $record->update([
+                                'status' => 'Approved',
+                                'approved_by' => Auth::id(),
+                                'approved_at' => now(),
+                            ]);
 
-                Action::make('reverse_reject')
-                    ->label('Reverse Reject')
-                    ->icon('heroicon-o-arrow-left')
-                    ->color('warning')
-                    ->visible(fn (Loan $record): bool => $record->status === 'Rejected')
-                    ->action(function (Loan $record) {
-                        $record->update([
-                            'status' => 'Pending Approval',
-                        ]);
-                    }),
+                            // Create transactions only when loan is approved
+                            static::createLoanTransactions($record);
+
+                            // Generate amortization schedule
+                            // LoanAmortizationSchedule::generateSchedule($record);
+
+                            \Filament\Notifications\Notification::make()
+                                ->success()
+                                ->title('Loan Approved')
+                                ->body('The loan has been approved, transactions created, and amortization schedule generated.')
+                                ->send();
+                        }),
+                        
+                    Action::make('reject')
+                        //TODO: create a custom permission for this action
+                        ->label('Reject')
+                        ->icon('heroicon-o-x-circle')
+                        ->color('danger')
+                        ->visible(fn(Loan $record): bool => $record->status === 'Pending Approval')
+                        ->requiresConfirmation()
+                        ->modalHeading('Reject Loan')
+                        ->modalDescription('Are you sure you want to reject this loan application?')
+                        ->action(function (Loan $record) {
+                            $record->update([
+                                'status' => 'Rejected',
+                                'approved_by' => Auth::id(),
+                                'approved_at' => now(),
+                            ]);
+
+                            \Filament\Notifications\Notification::make()
+                                ->success()
+                                ->title('Loan Rejected')
+                                ->body('The loan application has been rejected.')
+                                ->send();
+                        }),
+
+                    Action::make('complete_application')
+                        ->label('Complete Application')
+                        ->icon('heroicon-o-pencil-square')
+                        ->color('warning')
+                        ->visible(fn(Loan $record): bool => !$record->is_completed && $record->status === 'Incomplete Application')
+                        ->url(fn(Loan $record): string => route('filament.admin.pages.loan-application', ['session_data' => $record->session_data]))
+                        ->openUrlInNewTab(),
+
+                    Action::make('reverse_reject')
+                        //TODO: create a custom permission for this action
+                        ->label('Reverse Rejection')
+                        ->icon('heroicon-o-arrow-left')
+                        ->color('warning')
+                        ->visible(fn(Loan $record): bool => $record->status === 'Rejected')
+                        ->action(function (Loan $record) {
+                            $record->update([
+                                'status' => 'Pending Approval',
+                            ]);
+                        }),
+                ]),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -289,7 +298,9 @@ class LoanResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            RelationManagers\LoanRepaymentsRelationManager::class,
+            RelationManagers\TransactionsRelationManager::class,
+            RelationManagers\LoanAmortizationScheduleRelationManager::class,
         ];
     }
 
@@ -298,11 +309,13 @@ class LoanResource extends Resource
         return [
             'index' => Pages\ListLoans::route('/'),
             'create' => Pages\CreateLoan::route('/create'),
-            // 'edit' => Pages\EditLoan::route('/{record}/edit'),
+            'view' => Pages\ViewLoan::route('/{record}'),
+            'edit' => Pages\EditLoan::route('/{record}/edit'),
         ];
     }
 
-    public static function formatDuration($state, $record) {
+    public static function formatDuration($state, $record)
+    {
         // return $state . ' ' . $record->loanProduct->interest_cycle;
 
         $slug = 'interest_cycle';
@@ -312,17 +325,16 @@ class LoanResource extends Resource
 
         $loanAttribute = $loan_product->loanProductAttributes()->where('loan_attribute_id', $attributeId)->first();
         // dd($loanAttribute, $loanAttribute->value);
-        if($loanAttribute->value == "Daily") {
+        if ($loanAttribute->value == "Daily") {
             $units = 'days';
-        } elseif($loanAttribute->value == "Weekly") {
+        } elseif ($loanAttribute->value == "Weekly") {
             $units = 'weeks';
-        } elseif($loanAttribute->value == "Monthly") {
+        } elseif ($loanAttribute->value == "Monthly") {
             $units = 'months';
-        } elseif($loanAttribute->value == "Yearly") {
+        } elseif ($loanAttribute->value == "Yearly") {
             $units = 'years';
         } else {
             $units = 'N/A';
-
         }
         return $state . ' ' . $units;
     }

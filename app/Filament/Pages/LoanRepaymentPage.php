@@ -144,6 +144,15 @@ class LoanRepaymentPage extends Page implements HasForms
     public function submit()
     {
         $data = $this->form->getState();
+
+        //make sure the amount is not greater than the remaining balance
+
+        $res = $this->validateSubmission($data);
+
+        if (!$res['success']) {
+
+            return;
+        }
         
         // Create the loan repayment record
         $repayment = LoanRepayment::create([
@@ -165,7 +174,7 @@ class LoanRepaymentPage extends Page implements HasForms
         Notification::make()
             ->success()
             ->title('Repayment Recorded Successfully')
-            ->body('The loan repayment has been recorded and transactions have been created.')
+            ->body('The loan repayment has been recorded successfully.')
             ->send();
             
         // Reset the form after submission
@@ -186,6 +195,7 @@ class LoanRepaymentPage extends Page implements HasForms
             'account_name' => 'Bank',
             'loan_id' => $loan->id,
             'member_id' => $repayment->member_id,
+            'repayment_id' => $repayment->id,
             'transaction_type' => 'loan_repayment',
             'dr_cr' => 'dr',
             'amount' => $amount,
@@ -198,6 +208,7 @@ class LoanRepaymentPage extends Page implements HasForms
             'account_name' => 'Loans Receivable',
             'loan_id' => $loan->id,
             'member_id' => $repayment->member_id,
+            'repayment_id' => $repayment->id,
             'transaction_type' => 'loan_repayment',
             'dr_cr' => 'cr',
             'amount' => $amount,
@@ -207,7 +218,31 @@ class LoanRepaymentPage extends Page implements HasForms
 
         // Update loan status if fully repaid
         if ($loan->remaining_balance <= 0) {
-            $loan->update(['status' => 'Completed']);
+            $loan->update(['status' => 'Fully Repaid']);
         }
+    }
+
+    private function validateSubmission($data) {
+        $data = $this->form->getState();
+        $loan = Loan::find($data['loan_id']);
+        if ($data['amount'] > $loan->remaining_balance) {
+            Notification::make()
+                ->title('Repayment Amount is greater than the remaining balance')
+                ->danger()
+                ->send();
+            
+            return [
+                'success' => false,
+                'message' => 'Repayment Amount is greater than the remaining balance',
+            ];
+        }
+
+        return [
+            'success' => true,
+            'message' => "Form validated successfully",
+        ];
+
+
+
     }
 }
