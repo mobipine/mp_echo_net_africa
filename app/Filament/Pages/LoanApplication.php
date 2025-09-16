@@ -93,12 +93,7 @@ class LoanApplication extends Page implements HasForms
                         // Let the wizard handle the step change
                     })
                 )
-                // ->submitAction(
-                //     fn (Action $action) => $action
-                //         ->label('Submit Application')
-                //         ->action('submit')
-                //         ->color('primary')
-                // ),
+               
                 ->submitAction(
                     Action::make('submit')
                         ->label('Submit Application')
@@ -456,7 +451,7 @@ class LoanApplication extends Page implements HasForms
             $existingLoan = Loan::where('member_id', $data['member_id'])
                 ->where('loan_product_id', $data['loan_product_id'])
                 ->whereNotNull('session_data')
-                ->where('status', 'Pending Approval')
+                ->where('status', 'Incomplete Application')
                 ->first();
 
             $loanData = [
@@ -477,8 +472,9 @@ class LoanApplication extends Page implements HasForms
                 'collateral_value' => (float) str_replace(',', '', $data['collateral_value'] ?? 0),
                 'collateral_description' => $data['collateral_description'] ?? '',
                 'additional_notes' => $data['additional_notes'] ?? '',
+                'status' => 'Pending Approval',
                 // 'session_data' => null, // Clear session data as application is complete
-                'is_completed' => true,
+                'is_completed' => 1,
             ];
 
             if ($existingLoan) {
@@ -489,7 +485,7 @@ class LoanApplication extends Page implements HasForms
                 Loan::create(array_merge($loanData, [
                     'member_id' => $data['member_id'],
                     'loan_product_id' => $data['loan_product_id'],
-                    'status' => 'Pending Approval',
+                    'status' => 'Incomplete Application',
                 ]));
             }
 
@@ -500,6 +496,8 @@ class LoanApplication extends Page implements HasForms
                 ->body('Loan application submitted successfully!')
                 ->success()
                 ->send();
+
+            
                 
         } catch (\Exception $e) {
             Log::error('Loan application submission error: ' . $e->getMessage());
@@ -552,15 +550,6 @@ class LoanApplication extends Page implements HasForms
         $accountNumber = $member ? $member->account_number : 'ACC-0000';
         return 'LN' . str_pad(Loan::count() + 1, 6, '0', STR_PAD_LEFT) . ' - (' . $accountNumber . ')';
     }
-
-    // public function setLoanAttributes(Forms\Set $set, $loanProduct): void
-    // {
-    //     if ($loanProduct && $loanProduct->LoanProductAttributes) {
-    //         foreach ($loanProduct->LoanProductAttributes as $attribute) {
-    //             $set($attribute->attribute_name, $attribute->attribute_value);
-    //         }
-    //     }
-    // }
 
     public function setLoanAttributes(callable $set, $loanProduct)
     {
@@ -657,7 +646,7 @@ class LoanApplication extends Page implements HasForms
                 $existingLoan = Loan::where('member_id', $formData['member_id'])
                     ->where('loan_product_id', $formData['loan_product_id'])
                     ->whereNotNull('session_data')
-                    ->where('status', 'Pending Approval')
+                    ->where('status', 'Incomplete Application')
                     ->first();
 
                 if ($existingLoan) {
@@ -666,7 +655,7 @@ class LoanApplication extends Page implements HasForms
                     Loan::create([
                         'member_id' => $formData['member_id'],
                         'loan_product_id' => $formData['loan_product_id'],
-                        'status' => 'Pending Approval',
+                        'status' => 'Incomplete Application',
                         'session_data' => $formData,
                         'loan_number' => $this->generateLoanNumber($formData['member_id']),
                         'principal_amount' => 0.0,

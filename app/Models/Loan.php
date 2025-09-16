@@ -28,6 +28,7 @@ class Loan extends Model
         'approved_by',
         'approved_at',
         'session_data',
+        'is_completed',
     ];
 
     protected $casts = [
@@ -39,6 +40,7 @@ class Loan extends Model
         'interest_rate' => 'decimal:2',
         'interest_amount' => 'decimal:2',
         'repayment_amount' => 'decimal:2',
+        'is_completed' => 'boolean',
     ];
 
     public function member()
@@ -96,7 +98,7 @@ class Loan extends Model
      */
     public function getIsIncompleteApplicationAttribute()
     {
-        return !is_null($this->session_data);
+        return $this->is_completed;
     }
 
     public function calculateLoanDetails()

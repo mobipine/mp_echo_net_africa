@@ -145,6 +145,7 @@ class LoanResource extends Resource
                         'primary' => 'Approved',
                         'danger' => 'Rejected',
                         'blue' => 'Completed',
+                        'fuchsia' => 'Incomplete Application',
                     ])
                     ->sortable()
                     ->searchable(),
@@ -198,6 +199,7 @@ class LoanResource extends Resource
                         'Approved' => 'Approved',
                         'Rejected' => 'Rejected',
                         'Completed' => 'Completed',
+                        'Incomplete Application' => 'Incomplete Application',
                     ]),
                 SelectFilter::make('is_completed')
                     ->label('Application Status')
@@ -208,7 +210,7 @@ class LoanResource extends Resource
                     // ->query(fn (Builder $query): Builder => $query->whereNotNull('session_data')),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                // Tables\Actions\ViewAction::make(),
                 Action::make('approve')
                     ->label('Approve')
                     ->icon('heroicon-o-check-circle')
@@ -257,13 +259,25 @@ class LoanResource extends Resource
                             ->body('The loan application has been rejected.')
                             ->send();
                     }),
+
                 Action::make('complete_application')
                     ->label('Complete Application')
                     ->icon('heroicon-o-pencil-square')
                     ->color('warning')
-                    ->visible(fn (Loan $record): bool => $record->is_incomplete_application)
+                    ->visible(fn (Loan $record): bool => !$record->is_completed && $record->status === 'Incomplete Application')
                     ->url(fn (Loan $record): string => route('filament.admin.pages.loan-application', ['session_data' => $record->session_data]))
                     ->openUrlInNewTab(),
+
+                Action::make('reverse_reject')
+                    ->label('Reverse Reject')
+                    ->icon('heroicon-o-arrow-left')
+                    ->color('warning')
+                    ->visible(fn (Loan $record): bool => $record->status === 'Rejected')
+                    ->action(function (Loan $record) {
+                        $record->update([
+                            'status' => 'Pending Approval',
+                        ]);
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
