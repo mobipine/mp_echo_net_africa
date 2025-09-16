@@ -34,11 +34,21 @@ class TransactionResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('chartOfAccount.name')
+                Tables\Columns\TextColumn::make('account_name')
                     ->label('Account')
                     ->sortable()
                     ->searchable(),
-                Tables\Columns\TextColumn::make('transaction_type'),
+                Tables\Columns\TextColumn::make('loan.loan_number')
+                    ->label('Loan Number')
+                    ->sortable()
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('member.name')
+                    ->label('Member')
+                    ->sortable()
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('transaction_type')
+                    ->label('Type')
+                    ->sortable(),
                 
                 //badge column for dr_cr
                 Tables\Columns\BadgeColumn::make('dr_cr')
@@ -53,13 +63,30 @@ class TransactionResource extends Resource
                 Tables\Columns\TextColumn::make('transaction_date')
                     ->date()
                     ->sortable(),
-                    
+                Tables\Columns\TextColumn::make('description')
+                    ->limit(50)
+                    ->tooltip(function (Tables\Columns\TextColumn $column): ?string {
+                        $state = $column->getState();
+                        if (strlen($state) <= 50) {
+                            return null;
+                        }
+                        return $state;
+                    }),
             ])
             ->filters([
-                //
+                Tables\Filters\SelectFilter::make('transaction_type')
+                    ->options([
+                        'loan_issue' => 'Loan Issue',
+                        'loan_repayment' => 'Loan Repayment',
+                    ]),
+                Tables\Filters\SelectFilter::make('dr_cr')
+                    ->options([
+                        'dr' => 'Debit',
+                        'cr' => 'Credit',
+                    ]),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\ViewAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -79,8 +106,6 @@ class TransactionResource extends Resource
     {
         return [
             'index' => Pages\ListTransactions::route('/'),
-            'create' => Pages\CreateTransaction::route('/create'),
-            'edit' => Pages\EditTransaction::route('/{record}/edit'),
         ];
     }
 }

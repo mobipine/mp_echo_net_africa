@@ -63,7 +63,7 @@ class GroupPolicy
      */
     public function forceDelete(User $user, Group $group): bool
     {
-        return $user->can('{{ ForceDelete }}');
+        return $user->can('force_delete_group');
     }
 
     /**
@@ -71,7 +71,7 @@ class GroupPolicy
      */
     public function forceDeleteAny(User $user): bool
     {
-        return $user->can('{{ ForceDeleteAny }}');
+        return $user->can('force_delete_any_group');
     }
 
     /**
@@ -79,7 +79,7 @@ class GroupPolicy
      */
     public function restore(User $user, Group $group): bool
     {
-        return $user->can('{{ Restore }}');
+        return $user->can('restore_group');
     }
 
     /**
@@ -87,7 +87,7 @@ class GroupPolicy
      */
     public function restoreAny(User $user): bool
     {
-        return $user->can('{{ RestoreAny }}');
+        return $user->can('restore_any_group');
     }
 
     /**
@@ -95,7 +95,7 @@ class GroupPolicy
      */
     public function replicate(User $user, Group $group): bool
     {
-        return $user->can('{{ Replicate }}');
+        return $user->can('replicate_group');
     }
 
     /**
@@ -103,6 +103,6 @@ class GroupPolicy
      */
     public function reorder(User $user): bool
     {
-        return $user->can('{{ Reorder }}');
+        return $user->can('reorder_group');
     }
 }
