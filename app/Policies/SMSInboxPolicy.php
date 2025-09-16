@@ -3,10 +3,10 @@
 namespace App\Policies;
 
 use App\Models\User;
-use App\Models\LoanProduct;
+use App\Models\SMSInbox;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
-class LoanProductPolicy
+class SMSInboxPolicy
 {
     use HandlesAuthorization;
 
@@ -15,15 +15,15 @@ class LoanProductPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->can('view_any_loan::product');
+        return $user->can('view_any_s::m::s');
     }
 
     /**
      * Determine whether the user can view the model.
      */
-    public function view(User $user, LoanProduct $loanProduct): bool
+    public function view(User $user, SMSInbox $sMSInbox): bool
     {
-        return $user->can('view_loan::product');
+        return $user->can('view_s::m::s');
     }
 
     /**
@@ -31,23 +31,23 @@ class LoanProductPolicy
      */
     public function create(User $user): bool
     {
-        return $user->can('create_loan::product');
+        return $user->can('create_s::m::s');
     }
 
     /**
      * Determine whether the user can update the model.
      */
-    public function update(User $user, LoanProduct $loanProduct): bool
+    public function update(User $user, SMSInbox $sMSInbox): bool
     {
-        return $user->can('update_loan::product');
+        return $user->can('update_s::m::s');
     }
 
     /**
      * Determine whether the user can delete the model.
      */
-    public function delete(User $user, LoanProduct $loanProduct): bool
+    public function delete(User $user, SMSInbox $sMSInbox): bool
     {
-        return $user->can('delete_loan::product');
+        return $user->can('delete_s::m::s');
     }
 
     /**
@@ -55,15 +55,15 @@ class LoanProductPolicy
      */
     public function deleteAny(User $user): bool
     {
-        return $user->can('delete_any_loan::product');
+        return $user->can('delete_any_s::m::s');
     }
 
     /**
      * Determine whether the user can permanently delete.
      */
-    public function forceDelete(User $user, LoanProduct $loanProduct): bool
+    public function forceDelete(User $user, SMSInbox $sMSInbox): bool
     {
-        return $user->can('force_delete_loan::product');
+        return $user->can('force_delete_s::m::s');
     }
 
     /**
@@ -71,15 +71,15 @@ class LoanProductPolicy
      */
     public function forceDeleteAny(User $user): bool
     {
-        return $user->can('force_delete_any_loan::product');
+        return $user->can('force_delete_any_s::m::s');
     }
 
     /**
      * Determine whether the user can restore.
      */
-    public function restore(User $user, LoanProduct $loanProduct): bool
+    public function restore(User $user, SMSInbox $sMSInbox): bool
     {
-        return $user->can('restore_loan::product');
+        return $user->can('restore_s::m::s');
     }
 
     /**
@@ -87,15 +87,15 @@ class LoanProductPolicy
      */
     public function restoreAny(User $user): bool
     {
-        return $user->can('restore_any_loan::product');
+        return $user->can('restore_any_s::m::s');
     }
 
     /**
      * Determine whether the user can replicate.
      */
-    public function replicate(User $user, LoanProduct $loanProduct): bool
+    public function replicate(User $user, SMSInbox $sMSInbox): bool
     {
-        return $user->can('replicate_loan::product');
+        return $user->can('replicate_s::m::s');
     }
 
     /**
@@ -103,6 +103,6 @@ class LoanProductPolicy
      */
     public function reorder(User $user): bool
     {
-        return $user->can('reorder_loan::product');
+        return $user->can('reorder_s::m::s');
     }
 }

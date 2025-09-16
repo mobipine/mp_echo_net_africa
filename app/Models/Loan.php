@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Loan extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'member_id',
@@ -24,6 +25,20 @@ class Loan extends Model
         'loan_duration',
         'loan_purpose',
         'repayment_schedule',
+        'approved_by',
+        'approved_at',
+        'session_data',
+    ];
+
+    protected $casts = [
+        'session_data' => 'array',
+        'approved_at' => 'datetime',
+        'release_date' => 'date',
+        'due_date' => 'date',
+        'principal_amount' => 'decimal:2',
+        'interest_rate' => 'decimal:2',
+        'interest_amount' => 'decimal:2',
+        'repayment_amount' => 'decimal:2',
     ];
 
     public function member()
@@ -34,6 +49,54 @@ class Loan extends Model
     public function loanProduct()
     {
         return $this->belongsTo(LoanProduct::class);
+    }
+
+    public function approvedBy()
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function repayments()
+    {
+        return $this->hasMany(LoanRepayment::class);
+    }
+
+    public function amortizationSchedules()
+    {
+        return $this->hasMany(LoanAmortizationSchedule::class);
+    }
+
+    /**
+     * Calculate the remaining balance for this loan
+     */
+    public function getRemainingBalanceAttribute()
+    {
+        $totalRepaid = $this->repayments()->sum('amount');
+        return $this->repayment_amount - $totalRepaid;
+    }
+
+    /**
+     * Get total repaid amount for this loan
+     */
+    public function getTotalRepaidAttribute()
+    {
+        return $this->repayments()->sum('amount');
+    }
+
+    /**
+     * Check if loan is fully repaid
+     */
+    public function getIsFullyRepaidAttribute()
+    {
+        return $this->remaining_balance <= 0;
+    }
+
+    /**
+     * Check if loan application is incomplete (has session data)
+     */
+    public function getIsIncompleteApplicationAttribute()
+    {
+        return !is_null($this->session_data);
     }
 
     public function calculateLoanDetails()
