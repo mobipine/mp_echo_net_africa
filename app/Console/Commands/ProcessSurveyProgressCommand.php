@@ -143,7 +143,21 @@ class ProcessSurveyProgressCommand extends Command
                 }
 
             } elseif($isconfirmationDue) {
-                $message = $survey->continue_confirmation_question;
+                
+                $continue_confirmation_question= $survey->continue_confirmation_question;
+                $placeholders = [
+                    '{member}' => $member->name,
+                    '{group}' => $member->group->name,
+                ];
+                $message = str_replace(
+                    array_keys($placeholders),
+                    array_values($placeholders),
+                    $continue_confirmation_question
+                );
+
+                Log::info("This is the formated message $message");
+
+                
                 Log::info("No response from member. Sending the confirmation message {$message}...");
                 // No response and it's been more than 3 days, resend the last question
                 // $message = $this->formatQuestionMessage($currentQuestion, true); // Add a reminder prefix

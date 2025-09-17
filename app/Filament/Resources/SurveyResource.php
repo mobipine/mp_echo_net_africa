@@ -50,7 +50,7 @@ class SurveyResource extends Resource
                             ->required(),
                 Forms\Components\TextInput::make('continue_confirmation_question')
                             ->label('Continue Confirmation Question')
-                            ->helperText('If a user does not respond, what message would you want them to receive?')
+                            ->helperText('If a user does not respond, what message would you want them to receive? Use {member} where you want the name of the member to appear and {group} where you want the group name to appear.')
                             ->required(),
             ]);
     }
