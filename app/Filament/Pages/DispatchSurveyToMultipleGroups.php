@@ -22,7 +22,9 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
     protected static ?string $navigationIcon = 'heroicon-o-chat-bubble-left-ellipsis';
     protected static string $view = 'filament.pages.send-survey';
     protected static ?string $navigationGroup = 'Surveys';
-    protected static ?string $title = 'Dispatch Survey';
+
+    protected static ?string $title = 'Dispatch Surveys';
+
 
     public $group_ids = [];
     public $survey_id = null;

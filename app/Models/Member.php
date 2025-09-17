@@ -4,9 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Member extends Model
 {
+    use SoftDeletes;
     protected $fillable = [
         'group_id', 'name', 'email', 'phone', 'national_id',
         'gender', 'dob', 'marital_status', 'profile_picture','is_active'
@@ -45,6 +47,16 @@ class Member extends Model
     public function officials(): HasMany
     {
         return $this->hasMany(Official::class);
+    }
+
+    public function loans()
+    {
+        return $this->hasMany(Loan::class);
+    }
+
+    public function loanRepayments()
+    {
+        return $this->hasMany(LoanRepayment::class);
     }
 
     //create a boot function that will create a unique account number for each member on creation
