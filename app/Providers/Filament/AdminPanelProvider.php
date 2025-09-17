@@ -62,8 +62,8 @@ class AdminPanelProvider extends PanelProvider
                 'Poppins' //set custom panel font here
                 // 'Montserrat' //set custom panel font here
             )
-            ->brandName('TrustFund')
-            // ->brandLogo(asset('images/logo.svg'))
+            ->brandName('Echo Network Africa Foundation')
+            ->brandLogo(asset('images/ENAF.svg'))
             // ->brandLogoHeight('1rem')
             // ->favicon(asset('images/logo.svg'))
 
