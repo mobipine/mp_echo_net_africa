@@ -4,19 +4,25 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\MemberResource\Pages;
 use App\Filament\Resources\MemberResource\RelationManagers;
+use App\Imports\MembersImport;
 use App\Models\Member;
 use Filament\Facades\Filament;
 use Filament\Forms;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Actions\Action;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use Maatwebsite\Excel\Facades\Excel;
+use pxlrbt\FilamentExcel\Actions\Tables\ExportBulkAction;
+use pxlrbt\FilamentExcel\Exports\ExcelExport;
 
 class MemberResource extends Resource
 {
@@ -89,6 +95,46 @@ class MemberResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->headerActions([
+                Action::make('import')
+                    ->label('Import Members')
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->form([
+                        Forms\Components\FileUpload::make('file')
+                            ->label('Excel File')
+                            ->acceptedFileTypes([
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+                                'application/vnd.ms-excel',
+                                'text/csv'
+                            ])
+                            ->required()
+                            ->disk('local')
+                            ->directory('imports')
+                            ->helperText('Download sample template first to ensure correct format')
+                    ])
+                    ->action(function (array $data) {
+                        $filePath = Storage::disk('local')->path($data['file']);
+                        
+                        Excel::import(new MembersImport, $filePath);
+                        
+                        // Clean up the uploaded file
+                        Storage::disk('local')->delete($data['file']);
+                        
+                        // Get import results from session
+                        $results = session('import_results', ['imported' => 0, 'skipped' => 0]);
+                        
+                        // Show success notification with results
+                        Notification::make()
+                            ->title('Import Completed')
+                            ->body("Successfully imported {$results['imported']} members. Skipped {$results['skipped']} rows due to errors or duplicates.")
+                            ->success()
+                            ->send();
+                    })
+                    ->after(function () {
+                        // Clear the session data
+                        session()->forget('import_results');
+                    })
+            ])
             ->columns([
                 // \Filament\Tables\Columns\ImageColumn::make('profile_picture')->label('pfp')->circular()
                 //     ->disk('public')
@@ -98,12 +144,12 @@ class MemberResource extends Resource
                 \Filament\Tables\Columns\TextColumn::make('name')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('group.name')->label('Group')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('email')->sortable()->searchable(),
-                \Filament\Tables\Columns\TextColumn::make('phone')->sortable(),
-                \Filament\Tables\Columns\TextColumn::make('national_id')->sortable(),
-                \Filament\Tables\Columns\TextColumn::make('gender')->sortable(),
-                \Filament\Tables\Columns\TextColumn::make('dob')->date()->sortable(),
-                \Filament\Tables\Columns\TextColumn::make('marital_status')->sortable(),
-                \Filament\Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable(),
+                \Filament\Tables\Columns\TextColumn::make('phone')->sortable()->toggleable(isToggledHiddenByDefault:true),
+                \Filament\Tables\Columns\TextColumn::make('national_id')->sortable()->toggleable(isToggledHiddenByDefault:true),
+                \Filament\Tables\Columns\TextColumn::make('gender')->sortable()->toggleable(isToggledHiddenByDefault:true),
+                \Filament\Tables\Columns\TextColumn::make('dob')->date()->sortable()->toggleable(isToggledHiddenByDefault:true),
+                \Filament\Tables\Columns\TextColumn::make('marital_status')->sortable()->toggleable(isToggledHiddenByDefault:true),
+                \Filament\Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault:true),
             ])
             ->filters([
                 //
@@ -117,6 +163,13 @@ class MemberResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
+                     ExportBulkAction::make()
+                        ->exports([
+                            ExcelExport::make()
+                                ->fromTable()
+                            
+                        ])
+                    ->label('Export to Excel'),
                 ]),
             ]);
     }
