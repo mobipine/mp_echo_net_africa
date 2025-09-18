@@ -31,6 +31,24 @@ class SendSurveyToGroupJob implements ShouldQueue
             Log::info("Survey '{$this->survey->title}' has no questions. No SMS sent.");
             return;
         }
+         $firstQuestion = getNextQuestion($this->survey->id, $response = null, $current_question_id = null);
+
+             if (!$firstQuestion) {
+                 Log::info("Survey '{$this->survey->title}' has no questions. Exiting the  handle function of dispatch due survey command. No SMS sent.");
+                 return;
+             }
+             Log::info("The first Question of {$this->survey->title} is {$firstQuestion} from the flow");
+             //Formatting the question if multiple choice
+             Log::info("the question is $firstQuestion->answer_strictness");
+
+             $message = "New Survey: {$this->survey->title}\n\n" . "Question 1: {$firstQuestion->question}\n"; 
+             if ($firstQuestion->answer_strictness=="Multiple Choice"){
+                 foreach ($firstQuestion->possible_answers as $answer) {
+                     $message .= "{$answer['letter']}. {$answer['answer']}\n";
+                 }
+                 Log::info("The message to be sent is {$message}");
+             }
+             $message .= "Please reply with your answer.";
 
         Log::info("The first Question of {$this->survey->title} is {$firstQuestion->question} from the flow");
 
@@ -84,7 +102,7 @@ class SendSurveyToGroupJob implements ShouldQueue
 
                 Log::info("Saving the first question for {$this->survey->title} in the SMSInbox table and preparing it to be sent.");
                 // Prepare and log the SMS for sending
-                $message = "New Survey: {$this->survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
+                
                 
                 try {
                     SMSInbox::create([

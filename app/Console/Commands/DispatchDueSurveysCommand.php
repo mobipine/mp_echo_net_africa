@@ -51,7 +51,16 @@ class DispatchDueSurveysCommand extends Command
 
                 Log::info("The first Question of {$survey->title} is {$firstQuestion} from the flow");
 
-                $message = "New Survey: {$survey->title}\n\n" . $this->formatQuestionMessage($firstQuestion);
+                //Formatting the question if multiple choice
+                $message = "New Survey: {$survey->title}\n\n" . "Question 1: {$firstQuestion->question}\n"; 
+                if ($firstQuestion->answer_strictness=="Multiple Choice"){
+                    foreach ($firstQuestion->possible_answers as $answer) {
+                        $message .= "{$answer['letter']}. {$answer['answer']}\n";
+                    }
+                    Log::info("The message to be sent is {$message}");
+                }
+                $message .= "Please reply with your answer.";
+
                 $sentCount = 0;
 
                 foreach ($members as $member) {
@@ -88,8 +97,6 @@ class DispatchDueSurveysCommand extends Command
                                     'source' => 'manual'
                                 ]);
 
-                                //send the first question
-                                $message = "New Survey: {$survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
                                 try {
                                     SMSInbox::create([
                                         'message'      => $message,
@@ -118,8 +125,6 @@ class DispatchDueSurveysCommand extends Command
                                 'source' => 'manual'
                             ]);
 
-                            //send the first question
-                            $message = "New Survey: {$survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
                             try {
                                 SMSInbox::create([
                                     'message'      => $message,
@@ -152,9 +157,4 @@ class DispatchDueSurveysCommand extends Command
         $this->info("Dispatched jobs for {$dueAssignments->count()} survey assignments.");
     }
 
-
-    public function formatQuestionMessage(SurveyQuestion $question): string
-    {
-        return "Question 1: {$question->question}\nPlease reply with your answer.";
-    }
 }
