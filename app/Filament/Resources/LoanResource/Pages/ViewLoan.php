@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\LoanResource\Pages;
 
 use App\Filament\Resources\LoanResource;
+use App\Models\Loan;
 use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Forms;
@@ -80,6 +81,18 @@ class ViewLoan extends ViewRecord
         return [
             // Actions\EditAction::make(),
             // Actions\DeleteAction::make(),
+
+            //add an approve action if the status is pending approval
+            Actions\Action::make('approve')
+                ->label('Approve Loan')
+                ->icon('heroicon-o-check-circle')
+                ->color('success')
+                ->visible(fn(Loan $record): bool => $record->status === 'Pending Approval')
+                ->action(function (Loan $record) {
+                    $record->update([
+                        'status' => 'Approved',
+                    ]);
+                }),
         ];
     }
 

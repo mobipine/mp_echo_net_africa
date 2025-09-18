@@ -54,6 +54,7 @@ EXPOSE 80
 
 # Laravel specific commands
 RUN php artisan storage:link && \
+    php artisan migrate && \
     mkdir -p bootstrap/cache && \
     touch storage/logs/laravel.log && \
     chmod -R 777 storage && \

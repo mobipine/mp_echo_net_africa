@@ -6,6 +6,8 @@ use App\Models\Loan;
 use App\Models\LoanRepayment;
 use App\Models\Member;
 use App\Models\Transaction;
+use App\Services\RepaymentAllocationService;
+use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use Filament\Forms;
 use Filament\Forms\Components\DatePicker;
@@ -19,7 +21,6 @@ use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\RawJs;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 class LoanRepaymentPage extends Page implements HasForms
@@ -76,11 +77,24 @@ class LoanRepaymentPage extends Page implements HasForms
                         }
                         return Loan::where('member_id', $this->member_id)
                             ->where('status', 'Approved')
-                            ->whereRaw('repayment_amount > COALESCE((SELECT SUM(amount) FROM loan_repayments WHERE loan_id = loans.id), 0)')
                             ->get()
+                            ->filter(function ($loan) {
+                                return $loan->remaining_balance > 0;
+                            })
                             ->mapWithKeys(function ($loan) {
                                 $remaining = $loan->remaining_balance;
-                                return [$loan->id => "{$loan->loan_number} - KES " . number_format($remaining, 2) . " remaining"];
+                                $charges = $loan->getOutstandingLoanCharges();
+                                $interest = $loan->getOutstandingInterest();
+                                $principal = $loan->getOutstandingPrincipal();
+                                
+                                $breakdown = [];
+                                if ($charges > 0) $breakdown[] = "Charges: KES " . number_format($charges, 2);
+                                if ($interest > 0) $breakdown[] = "Interest: KES " . number_format($interest, 2);
+                                if ($principal > 0) $breakdown[] = "Principal: KES " . number_format($principal, 2);
+                                
+                                $breakdownText = $breakdown ? " (" . implode(", ", $breakdown) . ")" : "";
+                                
+                                return [$loan->id => "{$loan->loan_number} - KES " . number_format($remaining, 2) . " owed{$breakdownText}"];
                             });
                     })
                     ->reactive()
@@ -182,58 +196,82 @@ class LoanRepaymentPage extends Page implements HasForms
     }
 
     /**
-     * Create transactions for loan repayment
+     * Create transactions for loan repayment with interest allocation
      */
     private function createRepaymentTransactions(LoanRepayment $repayment)
     {
         $loan = $repayment->loan;
         $amount = $repayment->amount;
-
-        // Create simplified transaction records
-        // Debit: Bank Account (money coming in)
-        Transaction::create([
-            'account_name' => 'Bank',
-            'loan_id' => $loan->id,
-            'member_id' => $repayment->member_id,
-            'repayment_id' => $repayment->id,
-            'transaction_type' => 'loan_repayment',
-            'dr_cr' => 'dr',
-            'amount' => $amount,
-            'transaction_date' => $repayment->repayment_date,
-            'description' => "Loan repayment from member {$repayment->member->name}",
-        ]);
-
-        // Credit: Loans Receivable Account (reducing the receivable)
-        Transaction::create([
-            'account_name' => 'Loans Receivable',
-            'loan_id' => $loan->id,
-            'member_id' => $repayment->member_id,
-            'repayment_id' => $repayment->id,
-            'transaction_type' => 'loan_repayment',
-            'dr_cr' => 'cr',
-            'amount' => $amount,
-            'transaction_date' => $repayment->repayment_date,
-            'description' => "Loan repayment from member {$repayment->member->name}",
-        ]);
+        
+        // Get account name based on payment method
+        $accountName = $this->getAccountNameForPaymentMethod($repayment->payment_method);
+        
+        // Use the repayment allocation service
+        $allocationService = new RepaymentAllocationService();
+        $transactionData = $allocationService->createRepaymentTransactions(
+            $loan, 
+            (float) $amount, 
+            $repayment->payment_method, 
+            $accountName
+        );
+        
+        // Create transactions
+        foreach ($transactionData as $data) {
+            Transaction::create(array_merge($data, [
+                'repayment_id' => $repayment->id,
+                'transaction_date' => $repayment->repayment_date,
+            ]));
+        }
 
         // Update loan status if fully repaid
         if ($loan->remaining_balance <= 0) {
             $loan->update(['status' => 'Fully Repaid']);
         }
     }
+    
+    /**
+     * Get the appropriate account name based on payment method
+     */
+    private function getAccountNameForPaymentMethod(string $paymentMethod): string
+    {
+        return match ($paymentMethod) {
+            'cash' => config('repayment_priority.accounts.cash'),
+            'bank_transfer' => config('repayment_priority.accounts.bank'),
+            'mobile_money' => config('repayment_priority.accounts.mobile_money'),
+            'cheque' => config('repayment_priority.accounts.bank'),
+            default => config('repayment_priority.accounts.bank'),
+        };
+    }
 
     private function validateSubmission($data) {
         $data = $this->form->getState();
         $loan = Loan::find($data['loan_id']);
-        if ($data['amount'] > $loan->remaining_balance) {
+        // Get the current amount owed (including charges and interest)
+        $currentAmountOwed = $loan->remaining_balance;
+        
+        if ($data['amount'] > $currentAmountOwed) {
             Notification::make()
-                ->title('Repayment Amount is greater than the remaining balance')
+                ->title('Invalid Amount')
+                ->body("The repayment amount cannot be greater than the current amount owed (KES " . number_format($currentAmountOwed, 2) . ").")
                 ->danger()
                 ->send();
             
             return [
                 'success' => false,
-                'message' => 'Repayment Amount is greater than the remaining balance',
+                'message' => 'Repayment Amount is greater than the current amount owed',
+            ];
+        }
+        
+        if ($data['amount'] <= 0) {
+            Notification::make()
+                ->title('Invalid Amount')
+                ->body('The repayment amount must be greater than zero.')
+                ->danger()
+                ->send();
+            
+            return [
+                'success' => false,
+                'message' => 'Repayment amount must be greater than zero',
             ];
         }
 
