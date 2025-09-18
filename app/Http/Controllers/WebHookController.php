@@ -154,6 +154,7 @@ class WebHookController extends Controller
 
 
         Log::info("The survey progress status is $progress->status");
+        
         //If the survey progress status is pending it means we had sent the confirmation message
         if ($progress->status=="PENDING"){
             Log::info("This is a confirmation message response");
@@ -202,16 +203,32 @@ class WebHookController extends Controller
 
         if ($currentQuestion->answer_data_type === 'Alphanumeric' && !ctype_alnum(str_replace(' ', '', $response))) {
             $this->sendSMS($msisdn, $currentQuestion->data_type_violation_response);
+            Log::info("the response violates the questions strictness");
             return response()->json(['status' => 'error', 'message' => 'Invalid response.']);
         }
 
+
+    $userResponse = trim($response);  
+
+    $actualAnswer = null;
+
+    if ($currentQuestion->answer_strictness === "Multiple Choice") {
+        foreach ($currentQuestion->possible_answers as $answer) {
+            if (strcasecmp($answer['letter'], $userResponse) === 0) {
+                $actualAnswer = $answer['answer']; // e.g. "No"
+                break;
+            }
+        }
+    } else {
+        $actualAnswer = $userResponse; // For non-multiple-choice, just store as is
+    }
 
         // Store the response
         SurveyResponse::create([
             'survey_id' => $survey->id,
             'msisdn' => $msisdn,
             'question_id' => $currentQuestion->id,
-            'survey_response' => $response,
+            'survey_response' => $actualAnswer,
             'session_id' => $progress->id,//this is a foreign key to the survey_progress table
         ]);
 
