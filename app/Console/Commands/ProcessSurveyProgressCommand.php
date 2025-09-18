@@ -20,10 +20,19 @@ class ProcessSurveyProgressCommand extends Command
 
     public function handle()
     {
+        Log::info("in the command");
+
         $progressRecords = SurveyProgress::with(['survey', 'currentQuestion', 'member'])
             ->whereNull('completed_at')
             ->where('status', 'ACTIVE')
             ->get();
+
+        if($progressRecords->isEmpty()){
+            Log::info("No acive progress record");
+            return;
+        }
+
+        Log::info("looping through active progress records");
 
         foreach ($progressRecords as $progress) {
             $member = $progress->member;
@@ -49,6 +58,7 @@ class ProcessSurveyProgressCommand extends Command
                     Log::warning("Group-survey relationship not found for survey ID: {$survey->id}.");
                     continue;
                 }
+                Log::info("the progress was initiated from a group survey");
     
                 $interval = $currentQuestion->question_interval ?? 3; // Use the pivot value, or default to 3 days
                 $unit = $currentQuestion->question_interval_unit ?? 'days'; // Use the pivot value, or default to 'days'
@@ -80,6 +90,7 @@ class ProcessSurveyProgressCommand extends Command
 
             $nextDue = $lastDispatched->add($interval, $unit);
             Log::info("Next Due Date $nextDue");
+            Log::info("the current question is $currentQuestion");
 
             $isDue = $nextDue->lessThanOrEqualTo(now()); 
 
@@ -120,7 +131,25 @@ class ProcessSurveyProgressCommand extends Command
                 if ($nextQuestion) {
                     Log::info("The member responded to previous question. Sending the next question");
                     // $message = $this->formatQuestionMessage($nextQuestion);
-                    $message = $nextQuestion->question; // Simplified for now
+
+                    Log::info($nextQuestion);
+
+                    Log::info("The question is {$nextQuestion->answer_strictness}");
+
+                    //Formatting the question if multiple choice
+                    if ($nextQuestion->answer_strictness=="Multiple Choice"){
+
+                        $message = "{$nextQuestion->question}\n"; 
+                        
+                        foreach ($nextQuestion->possible_answers as $answer) {
+                            $message .= "{$answer['letter']}. {$answer['answer']}\n";
+                        }
+                        Log::info("The message to be sent is {$message}");
+
+                    }else{
+                        $message = $nextQuestion->question; 
+                    }
+                    
                     try {
                         // $smsService->send($member->phone, $message);
                         $this->sendSMS($member->phone, $message);
