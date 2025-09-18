@@ -209,6 +209,7 @@ class WebHookController extends Controller
 
 
     $userResponse = trim($response);  
+    Log::info($userResponse);
 
     $actualAnswer = null;
 
@@ -222,6 +223,7 @@ class WebHookController extends Controller
     } else {
         $actualAnswer = $userResponse; // For non-multiple-choice, just store as is
     }
+    Log::info($actualAnswer);
 
         // Store the response
         SurveyResponse::create([
@@ -237,7 +239,7 @@ class WebHookController extends Controller
         Log::info("Response recorded for question ID: {$currentQuestion->id}. Waiting for next scheduled dispatch.");
 
         // Check if this was the last question in the survey.
-        $nextQuestion = getNextQuestion($survey->id, $response, $currentQuestion->id);
+        $nextQuestion = getNextQuestion($survey->id,  $actualAnswer, $currentQuestion->id);
         // dd($nextQuestion);
         if (!$nextQuestion || (is_array($nextQuestion) && isset($nextQuestion['status']) && $nextQuestion['status'] == 'completed')) {
             // If no more questions, end the survey and send the final response
