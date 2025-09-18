@@ -344,10 +344,22 @@ class LoanResource extends Resource
      */
     private static function createLoanTransactions(Loan $loan)
     {
-        // Create simplified transaction records
-        // Debit: Loans Receivable Account
+        $attributes = $loan->all_attributes;
+        $loanCharges = (float) ($attributes['loan_charges']['value'] ?? 0);
+        $applyChargesOnIssuance = config('repayment_priority.charges.apply_on_issuance', true);
+        $deductFromPrincipal = config('repayment_priority.charges.deduct_from_principal', false);
+        
+        // Calculate net disbursement amount
+        $netDisbursement = $loan->principal_amount;
+        if ($applyChargesOnIssuance && $loanCharges > 0) {
+            if ($deductFromPrincipal) {
+                $netDisbursement = $loan->principal_amount - $loanCharges;
+            }
+        }
+
+        // Create loan receivable transaction
         Transaction::create([
-            'account_name' => 'Loans Receivable',
+            'account_name' => config('repayment_priority.accounts.loans_receivable'),
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
             'transaction_type' => 'loan_issue',
@@ -357,16 +369,45 @@ class LoanResource extends Resource
             'description' => "Loan issued to member {$loan->member->name}",
         ]);
 
-        // Credit: Bank Account
+        // Create bank disbursement transaction
         Transaction::create([
-            'account_name' => 'Bank',
+            'account_name' => config('repayment_priority.accounts.bank'),
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
             'transaction_type' => 'loan_issue',
             'dr_cr' => 'cr',
-            'amount' => $loan->principal_amount,
+            'amount' => $netDisbursement,
             'transaction_date' => $loan->release_date,
-            'description' => "Bank payment for loan issued to member {$loan->member->name}",
+            'description' => "Bank disbursement for loan issued to member {$loan->member->name}",
         ]);
+
+        // Create loan charges transactions if applicable
+        if ($applyChargesOnIssuance && $loanCharges > 0) {
+            // Credit loan charges income
+            Transaction::create([
+                'account_name' => config('repayment_priority.accounts.loan_charges_income'),
+                'loan_id' => $loan->id,
+                'member_id' => $loan->member_id,
+                'transaction_type' => 'loan_charges',
+                'dr_cr' => 'cr',
+                'amount' => $loanCharges,
+                'transaction_date' => $loan->release_date,
+                'description' => "Loan charges income for loan issued to member {$loan->member->name}",
+            ]);
+
+            // If charges are not deducted from principal, create receivable entry
+            if (!$deductFromPrincipal) {
+                Transaction::create([
+                    'account_name' => config('repayment_priority.accounts.loan_charges_receivable'),
+                    'loan_id' => $loan->id,
+                    'member_id' => $loan->member_id,
+                    'transaction_type' => 'loan_charges',
+                    'dr_cr' => 'dr',
+                    'amount' => $loanCharges,
+                    'transaction_date' => $loan->release_date,
+                    'description' => "Loan charges receivable for loan issued to member {$loan->member->name}",
+                ]);
+            }
+        }
     }
 }

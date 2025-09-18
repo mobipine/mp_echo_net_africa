@@ -21,3 +21,6 @@ Schedule::call(function () {
 Schedule::command('surveys:dispatch-due')->everyMinute();
 Schedule::command('surveys:process-progress')->everyMinute();
 
+// Loan interest accrual - run daily at 9 AM
+Schedule::command('loans:accrue-interest')->dailyAt('09:00');
+

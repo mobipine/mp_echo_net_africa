@@ -53,6 +53,11 @@ onMounted(async () => {
 })
 
 function onNodeClick({ node }) {
+  if (!node) {
+    console.warn('Invalid node click event')
+    return
+  }
+  
   selected.value = node
   open.value = true
 }
@@ -122,14 +127,18 @@ function getNodeAnswers(id) {
 
 function getLinkedFlowValue(index) {
   console.log('Getting linked flow for index:', index);
-  const selectedElement = this.elements.find(el => el.id === this.selected.id);
+  if (!selected.value || !elements.value) return '';
+  
+  const selectedElement = elements.value.find(el => el.id === selected.value.id);
   return selectedElement?.data?.possibleAnswers?.[index]?.linkedFlow || '';
 }
 
 function setLinkedFlowValue(index, value) {
   console.log('Setting linked flow for index:', index, 'to value:', value);
   
-  const selectedElement = this.elements.find(el => el.id === this.selected.id);
+  if (!selected.value || !elements.value) return;
+  
+  const selectedElement = elements.value.find(el => el.id === selected.value.id);
   if (selectedElement?.data?.possibleAnswers?.[index]) {
     selectedElement.data.possibleAnswers[index].linkedFlow = value;
   }
@@ -137,6 +146,11 @@ function setLinkedFlowValue(index, value) {
 
 // Handle connections between questions based on answers
 onConnect((params) => {
+  if (!params || !params.source || !params.target) {
+    console.warn('Invalid connection params:', params)
+    return
+  }
+
   const sourceElement = elements.value.find(el => el.id === params.source)
   const sourceEdges = edges.value.filter(edge => edge.source === params.source)
 
@@ -200,7 +214,7 @@ onConnect((params) => {
                       <!-- title -->
                       <DialogTitle as="h3" class="text-base font-semibold text-gray-900">
                         <div class="text-base font-semibold leading-6 text-gray-900" style="color: #000000 !important;">
-                          <span class="relative">{{ selected.label }}</span>
+                          <span class="relative">{{ selected?.label || 'Unknown Node' }}</span>
                           <!-- <span class="relative">{{ selected.label }}
                             <span class="absolute -top-1 -right-3 text-xs">{{
                             selected.id
@@ -214,11 +228,11 @@ onConnect((params) => {
 
                         <!-- setup for mcqs -->
                         <template
-                          v-if="(selected.data.answerStrictness == 'Multiple Choice' && getNodeAnswers(selected.id).length > 0)">
+                          v-if="(selected?.data?.answerStrictness == 'Multiple Choice' && getNodeAnswers(selected?.id).length > 0)">
                           <!-- create an interface with inputs in which one can set the possible answers to the linked flows -->
                           <!-- an answer can go to one flow only but a flow can be connected to multiple answers -->
                           <div class="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
-                            <div class="col-span-6 sm:col-span-3" v-for="(answer, index) in getNodeAnswers(selected.id)"
+                            <div class="col-span-6 sm:col-span-3" v-for="(answer, index) in getNodeAnswers(selected?.id)"
                               :key="`answer-${index}`">
                               <label :for="`answer-${index}`"
                                 class="block text-sm font-medium leading-6 text-gray-900 dark:text-slate-500">
@@ -234,8 +248,8 @@ onConnect((params) => {
                                 @input="setLinkedFlowValue(index, $event.target.value)"
                                 class="p-3 mt-2 block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
                                 <option value="" disabled>Select a flow</option>
-                                <option v-if="getLinkedFlow(selected.id).length > 0"
-                                  v-for="node in getLinkedFlow(selected.id)" :key="node.id" :value="node.id">
+                                <option v-if="getLinkedFlow(selected?.id).length > 0"
+                                  v-for="node in getLinkedFlow(selected?.id)" :key="node.id" :value="node.id">
                                   {{ node.label }}
                                 </option>
                               </select>
@@ -249,16 +263,16 @@ onConnect((params) => {
                         <div class="col-span-6 sm:col-span-3 mt-4">
                           <button type="button"
                             class="inline-flex justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
-                            @click="removeNode(selected.id)">Remove Node & Connections</button>
+                            @click="removeNode(selected?.id)">Remove Node & Connections</button>
                         </div>
 
                         <!-- add a template that enabled one to be able to edit the link labels or remove them entirely -->
-                        <template v-if="getLinkedFlow(selected.id).length > 0">
+                        <template v-if="getLinkedFlow(selected?.id).length > 0">
                           <div class="mt-6">
                             <h4 class="text-sm font-medium text-gray-900 mb-2">Connected Flows:</h4>
 
                             <div class="space-y-4 max-h-60 overflow-y-auto">
-                              <div v-for="(flow, index) in getLinkedFlow(selected.id)" :key="flow.id"
+                              <div v-for="(flow, index) in getLinkedFlow(selected?.id)" :key="flow.id"
                                 class="flex items-center space-x-2">
                                 <!-- {{ flow }} -->
                                 <!-- <span class="text-sm text-gray-700">{{ flow.label }} (ID: {{ flow.id }})</span> -->

@@ -27,6 +27,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Transaction;
+use App\Services\RepaymentAllocationService;
 use Illuminate\Support\Facades\Log;
 
 class LoanRepaymentsRelationManager extends RelationManager
@@ -285,19 +286,6 @@ class LoanRepaymentsRelationManager extends RelationManager
             ->paginated([10, 25, 50])
             ->poll('30s'); // Auto-refresh every 30 seconds
     }
-    /**
-     * Get the appropriate account name based on payment method
-     */
-    private function getAccountNameForPaymentMethod(string $paymentMethod): string
-    {
-        return match ($paymentMethod) {
-            'cash' => 'Cash Account',
-            'bank_transfer' => 'Bank Account',
-            'mobile_money' => 'Mobile Money Account',
-            'cheque' => 'Bank Account',
-            default => 'Bank Account',
-        };
-    }
 
     /**
      * Create adjustment transactions when repayment amount is edited
@@ -310,62 +298,16 @@ class LoanRepaymentsRelationManager extends RelationManager
                                " (Difference: KES " . number_format(abs($difference), 2) . ")";
         
         try {
+            // Use the repayment allocation service to determine how to allocate the difference
+            $allocationService = new RepaymentAllocationService();
+            $allocation = $allocationService->allocateRepayment($loan, abs($difference));
+            
             if ($difference > 0) {
-                // Increase in repayment amount - additional money coming in
-                // Debit: Bank Account (additional money coming in)
-                Transaction::create([
-                    'account_name' => "Bank",
-                    'loan_id' => $loan->id,
-                    'member_id' => $repayment->member_id,
-                    'repayment_id' => $repayment->id,
-                    'transaction_type' => 'repayment_adjustment',
-                    'dr_cr' => 'dr',
-                    'amount' => $difference,
-                    'transaction_date' => $repayment->repayment_date,
-                    'description' => $adjustmentDescription,
-                ]);
-
-                // Credit: Loans Receivable Account (additional reduction)
-                Transaction::create([
-                    'account_name' => 'Loans Receivable',
-                    'loan_id' => $loan->id,
-                    'member_id' => $repayment->member_id,
-                    'repayment_id' => $repayment->id,
-                    'transaction_type' => 'repayment_adjustment',
-                    'dr_cr' => 'cr',
-                    'amount' => $difference,
-                    'transaction_date' => $repayment->repayment_date,
-                    'description' => $adjustmentDescription,
-                ]);
+                // Increase in repayment amount - create additional transactions
+                $this->createAdditionalRepaymentTransactions($repayment, $allocation, $adjustmentDescription);
             } else {
-                // Decrease in repayment amount - reversing some money
-                $absoluteDifference = abs($difference);
-                
-                // Credit: Bank Account (money going out/reversed)
-                Transaction::create([
-                    'account_name' => "Bank",
-                    'loan_id' => $loan->id,
-                    'member_id' => $repayment->member_id,
-                    'repayment_id' => $repayment->id,
-                    'transaction_type' => 'repayment_adjustment',
-                    'dr_cr' => 'cr',
-                    'amount' => $absoluteDifference,
-                    'transaction_date' => $repayment->repayment_date,
-                    'description' => $adjustmentDescription,
-                ]);
-
-                // Debit: Loans Receivable Account (adding back to receivable)
-                Transaction::create([
-                    'account_name' => 'Loans Receivable',
-                    'loan_id' => $loan->id,
-                    'member_id' => $repayment->member_id,
-                    'repayment_id' => $repayment->id,
-                    'transaction_type' => 'repayment_adjustment',
-                    'dr_cr' => 'dr',
-                    'amount' => $absoluteDifference,
-                    'transaction_date' => $repayment->repayment_date,
-                    'description' => $adjustmentDescription,
-                ]);
+                // Decrease in repayment amount - create reversal transactions
+                $this->createReversalTransactions($repayment, $allocation, $adjustmentDescription);
             }
         } catch (\Exception $e) {
             Log::error('Error creating adjustment transactions: ' . $e->getMessage(), [
@@ -374,5 +316,145 @@ class LoanRepaymentsRelationManager extends RelationManager
                 'difference' => $difference,
             ]);
         }
+    }
+    
+    /**
+     * Create additional repayment transactions for increased amount
+     */
+    private function createAdditionalRepaymentTransactions($repayment, array $allocation, string $description): void
+    {
+        $loan = $repayment->loan ?? $this->ownerRecord;
+        $accountName = $this->getAccountNameForPaymentMethod($repayment->payment_method);
+        
+        // Create interest payment transactions if applicable
+        if ($allocation['interest_payment'] > 0) {
+            Transaction::create([
+                'account_name' => $accountName,
+                'loan_id' => $loan->id,
+                'member_id' => $repayment->member_id,
+                'repayment_id' => $repayment->id,
+                'transaction_type' => 'interest_payment',
+                'dr_cr' => 'dr',
+                'amount' => $allocation['interest_payment'],
+                'transaction_date' => $repayment->repayment_date,
+                'description' => $description,
+            ]);
+            
+            Transaction::create([
+                'account_name' => config('repayment_priority.accounts.interest_receivable'),
+                'loan_id' => $loan->id,
+                'member_id' => $repayment->member_id,
+                'repayment_id' => $repayment->id,
+                'transaction_type' => 'interest_payment',
+                'dr_cr' => 'cr',
+                'amount' => $allocation['interest_payment'],
+                'transaction_date' => $repayment->repayment_date,
+                'description' => $description,
+            ]);
+        }
+        
+        // Create principal payment transactions if applicable
+        if ($allocation['principal_payment'] > 0) {
+            Transaction::create([
+                'account_name' => $accountName,
+                'loan_id' => $loan->id,
+                'member_id' => $repayment->member_id,
+                'repayment_id' => $repayment->id,
+                'transaction_type' => 'principal_payment',
+                'dr_cr' => 'dr',
+                'amount' => $allocation['principal_payment'],
+                'transaction_date' => $repayment->repayment_date,
+                'description' => $description,
+            ]);
+            
+            Transaction::create([
+                'account_name' => config('repayment_priority.accounts.loans_receivable'),
+                'loan_id' => $loan->id,
+                'member_id' => $repayment->member_id,
+                'repayment_id' => $repayment->id,
+                'transaction_type' => 'principal_payment',
+                'dr_cr' => 'cr',
+                'amount' => $allocation['principal_payment'],
+                'transaction_date' => $repayment->repayment_date,
+                'description' => $description,
+            ]);
+        }
+    }
+    
+    /**
+     * Create reversal transactions for decreased amount
+     */
+    private function createReversalTransactions($repayment, array $allocation, string $description): void
+    {
+        $loan = $repayment->loan ?? $this->ownerRecord;
+        $accountName = $this->getAccountNameForPaymentMethod($repayment->payment_method);
+        
+        // Create interest reversal transactions if applicable
+        if ($allocation['interest_payment'] > 0) {
+            Transaction::create([
+                'account_name' => $accountName,
+                'loan_id' => $loan->id,
+                'member_id' => $repayment->member_id,
+                'repayment_id' => $repayment->id,
+                'transaction_type' => 'interest_payment_reversal',
+                'dr_cr' => 'cr',
+                'amount' => $allocation['interest_payment'],
+                'transaction_date' => $repayment->repayment_date,
+                'description' => $description,
+            ]);
+            
+            Transaction::create([
+                'account_name' => config('repayment_priority.accounts.interest_receivable'),
+                'loan_id' => $loan->id,
+                'member_id' => $repayment->member_id,
+                'repayment_id' => $repayment->id,
+                'transaction_type' => 'interest_payment_reversal',
+                'dr_cr' => 'dr',
+                'amount' => $allocation['interest_payment'],
+                'transaction_date' => $repayment->repayment_date,
+                'description' => $description,
+            ]);
+        }
+        
+        // Create principal reversal transactions if applicable
+        if ($allocation['principal_payment'] > 0) {
+            Transaction::create([
+                'account_name' => $accountName,
+                'loan_id' => $loan->id,
+                'member_id' => $repayment->member_id,
+                'repayment_id' => $repayment->id,
+                'transaction_type' => 'principal_payment_reversal',
+                'dr_cr' => 'cr',
+                'amount' => $allocation['principal_payment'],
+                'transaction_date' => $repayment->repayment_date,
+                'description' => $description,
+            ]);
+            
+            Transaction::create([
+                'account_name' => config('repayment_priority.accounts.loans_receivable'),
+                'loan_id' => $loan->id,
+                'member_id' => $repayment->member_id,
+                'repayment_id' => $repayment->id,
+                'transaction_type' => 'principal_payment_reversal',
+                'dr_cr' => 'dr',
+                'amount' => $allocation['principal_payment'],
+                'transaction_date' => $repayment->repayment_date,
+                'description' => $description,
+            ]);
+        }
+    }
+    
+    /**
+     * Get the appropriate account name based on payment method
+     */
+    private function getAccountNameForPaymentMethod(string $paymentMethod): string
+    {
+        return match ($paymentMethod) {
+            'cash' => config('repayment_priority.accounts.cash'),
+            'bank_transfer' => config('repayment_priority.accounts.bank'),
+            'mobile_money' => config('repayment_priority.accounts.mobile_money'),
+            'cheque' => config('repayment_priority.accounts.bank'),
+            default => config('repayment_priority.accounts.bank'),
+        };
     }
 }

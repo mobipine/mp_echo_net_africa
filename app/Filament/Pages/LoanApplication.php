@@ -458,7 +458,8 @@ class LoanApplication extends Page implements HasForms
                 'loan_number' => $data['loan_number'] ?? $this->generateLoanNumber($data['member_id']),
                 'principal_amount' => (float) str_replace(',', '', $data['principal_amount'] ?? 0),
                 'interest_rate' => (float) ($data['interest_rate'] ?? 0),
-                'interest_amount' => (float) str_replace(',', '', $data['interest_amount'] ?? 0),
+                // 'interest_amount' => (float) str_replace(',', '', $data['interest_amount'] ?? 0),
+                'interest_amount' => 0,
                 'repayment_amount' => (float) str_replace(',', '', $data['repayment_amount'] ?? 0),
                 'release_date' => $data['release_date'] ?? null,
                 'due_at' => $data['due_at'] ?? null,
@@ -600,6 +601,10 @@ class LoanApplication extends Page implements HasForms
             $repaymentAmount = $principalAmount + $interestAmount;
             
             $set('interest_amount', number_format($interestAmount, 2, '.', ''));
+            $set('repayment_amount', number_format($repaymentAmount, 2, '.', ''));
+        } elseif( $interestRate == 0) {
+            $repaymentAmount = $principalAmount;
+            $set('interest_amount', number_format(0, 2, '.', ''));
             $set('repayment_amount', number_format($repaymentAmount, 2, '.', ''));
         }
     }

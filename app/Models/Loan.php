@@ -73,12 +73,87 @@ class Loan extends Model
     }
 
     /**
-     * Calculate the remaining balance for this loan
+     * Calculate the current amount owed for this loan (including charges and accrued interest)
      */
     public function getRemainingBalanceAttribute()
     {
-        $totalRepaid = $this->repayments()->sum('amount');
-        return $this->repayment_amount - $totalRepaid;
+        // Get outstanding loan charges
+        $outstandingCharges = $this->getOutstandingLoanCharges();
+        
+        // Get outstanding interest
+        $outstandingInterest = $this->getOutstandingInterest();
+        
+        // Get outstanding principal
+        $outstandingPrincipal = $this->getOutstandingPrincipal();
+        
+        return $outstandingCharges + $outstandingInterest + $outstandingPrincipal;
+    }
+    
+    /**
+     * Get outstanding loan charges
+     */
+    public function getOutstandingLoanCharges(): float
+    {
+        $attributes = $this->all_attributes;
+        $loanCharges = (float) ($attributes['loan_charges']['value'] ?? 0);
+        
+        if ($loanCharges <= 0) {
+            return 0;
+        }
+        
+        // Get total charges applied
+        $totalChargesApplied = $this->transactions()
+            ->where('transaction_type', 'loan_charges')
+            ->where('dr_cr', 'cr')
+            ->sum('amount');
+            
+        // Get total charges paid
+        $totalChargesPaid = $this->transactions()
+            ->where('transaction_type', 'charges_payment')
+            ->where('dr_cr', 'cr')
+            ->sum('amount');
+            
+        return max(0, $totalChargesApplied - $totalChargesPaid);
+    }
+    
+    /**
+     * Get outstanding interest
+     */
+    public function getOutstandingInterest(): float
+    {
+        // Get total interest accrued
+        $totalInterestAccrued = $this->transactions()
+            ->where('transaction_type', 'interest_accrual')
+            ->where('dr_cr', 'dr')
+            ->sum('amount');
+            
+        // Get total interest paid
+        $totalInterestPaid = $this->transactions()
+            ->where('transaction_type', 'interest_payment')
+            ->where('dr_cr', 'cr')
+            ->sum('amount');
+            
+        return max(0, $totalInterestAccrued - $totalInterestPaid);
+    }
+    
+    /**
+     * Get outstanding principal
+     */
+    public function getOutstandingPrincipal(): float
+    {
+        // Get total principal disbursed
+        $totalPrincipalDisbursed = $this->transactions()
+            ->where('transaction_type', 'loan_issue')
+            ->where('dr_cr', 'dr')
+            ->sum('amount');
+            
+        // Get total principal repaid
+        $totalPrincipalRepaid = $this->transactions()
+            ->where('transaction_type', 'principal_payment')
+            ->where('dr_cr', 'cr')
+            ->sum('amount');
+            
+        return max(0, $totalPrincipalDisbursed - $totalPrincipalRepaid);
     }
 
     /**
