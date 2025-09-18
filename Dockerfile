@@ -4,7 +4,7 @@ FROM webdevops/php-nginx:8.3
 ##change the shell
 SHELL ["/bin/bash", "-c"]
 
-ENV PHP_MAX_EXECUTION_TIME 110
+ENV PHP_MAX_EXECUTION_TIME=110
 # Copy the project files into the container
 COPY . /production/echonetafrica
 
@@ -54,7 +54,7 @@ EXPOSE 80
 
 # Laravel specific commands
 RUN php artisan storage:link && \
-    php artisan migrate && \
+    php artisan migrate --force && \
     mkdir -p bootstrap/cache && \
     touch storage/logs/laravel.log && \
     chmod -R 777 storage && \
@@ -63,6 +63,8 @@ RUN php artisan storage:link && \
     chown -R www-data:www-data public && \
     chmod -R 777 bootstrap
 
+# Database configuration arguments
+# Note: For production, consider using Docker secrets instead of ARG for sensitive data like DB_PASSWORD
 ARG DB_CONNECTION
 ARG DB_HOST
 ARG DB_PORT
