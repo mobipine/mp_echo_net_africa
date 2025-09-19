@@ -62,8 +62,10 @@ RUN php artisan storage:link && \
     chown -R www-data:www-data public && \
     chmod -R 777 bootstrap
 
-# Copy supervisor configuration
+# Copy supervisor configuration and startup script
 COPY docker-configs/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY docker-configs/start.sh /usr/local/bin/start.sh
+RUN chmod +x /usr/local/bin/start.sh
 
 # Copy crontab file
 COPY docker-configs/laravel-cron /etc/cron.d/laravel-cron
@@ -74,8 +76,12 @@ RUN chmod 0644 /etc/cron.d/laravel-cron
 # Apply cron job
 RUN crontab /etc/cron.d/laravel-cron
 
-# Create the log file to be able to run tail
-RUN touch /var/log/cron.log
+# Create the log directories and files
+RUN mkdir -p /var/log/supervisor && \
+    mkdir -p /var/run && \
+    touch /var/log/cron.log && \
+    touch /var/log/supervisor/supervisord.log && \
+    chmod 755 /var/log/supervisor
 
 # Database configuration arguments
 ARG DB_CONNECTION
@@ -87,5 +93,5 @@ ARG DB_PASSWORD
 
 EXPOSE 80
 
-# Use supervisor to manage multiple processes
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Use startup script to ensure directories exist
+CMD ["/usr/local/bin/start.sh"]
