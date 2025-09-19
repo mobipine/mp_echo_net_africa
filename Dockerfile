@@ -38,6 +38,15 @@ ENV WEB_DOCUMENT_ROOT=$WEB_PATH
 ARG LARAVEL_PATH=/production/echonetafrica
 WORKDIR $LARAVEL_PATH
 
+# Create necessary directories before composer install
+RUN mkdir -p bootstrap/cache && \
+    mkdir -p storage/logs && \
+    mkdir -p storage/framework/sessions && \
+    mkdir -p storage/framework/views && \
+    mkdir -p storage/framework/cache && \
+    chmod -R 775 bootstrap/cache && \
+    chmod -R 775 storage
+
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
 
@@ -46,7 +55,6 @@ RUN npm install && npm run build
 
 # Laravel specific commands
 RUN php artisan storage:link && \
-    mkdir -p bootstrap/cache && \
     touch storage/logs/laravel.log && \
     chmod -R 777 storage && \
     chmod -R 777 public && \
