@@ -88,5 +88,6 @@ RUN mkdir -p /var/log/supervisor && \
     chmod 755 /var/log/supervisor && \
     chown application:application /tmp
 
-# Use webdevops entrypoint which handles all services
-CMD ["/entrypoint"]
+# Start base services via webdevops entrypoint (expects a command)
+# Run supervisord which manages nginx, php-fpm, our queue workers, and cron
+CMD ["supervisord"]
