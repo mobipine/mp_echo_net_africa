@@ -15,8 +15,6 @@ RUN apt-get update && apt-get install -y \
     libxml2-dev \
     zip \
     libzip-dev \
-    cron \
-    supervisor \
     && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
 
 # Install Node.js and npm
@@ -61,14 +59,17 @@ RUN php artisan storage:link && \
     chown -R www-data:www-data public && \
     chmod -R 777 bootstrap
 
-# Copy supervisor configuration for additional services
-COPY docker-configs/supervisord.conf /opt/docker/etc/supervisor.d/laravel.conf
+# Enable cron service in webdevops base image
+ENV SERVICE_CRON_ENABLED=1
 
 # Copy crontab file for Laravel scheduler and install it properly
 COPY docker-configs/laravel-cron /tmp/laravel-cron
 RUN chmod 0644 /tmp/laravel-cron && \
     crontab -u application /tmp/laravel-cron && \
     rm /tmp/laravel-cron
+
+# Copy supervisor configuration for Laravel queue workers only
+COPY docker-configs/supervisord.conf /opt/docker/etc/supervisor.d/laravel.conf
 
 # Database configuration arguments
 ARG DB_CONNECTION
@@ -86,3 +87,6 @@ RUN mkdir -p /var/log/supervisor && \
     touch /var/log/cron.log && \
     chmod 755 /var/log/supervisor && \
     chown application:application /tmp
+
+# Use webdevops entrypoint which handles all services
+CMD ["/entrypoint"]
