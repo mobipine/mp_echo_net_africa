@@ -40,10 +40,13 @@ RUN npm install && npm run build
 
 # Install Composer and PHP dependencies
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-RUN composer install
 
-# Copy the project files into the container
-COPY . .
+# Create necessary directories and set permissions before composer install
+RUN mkdir -p bootstrap/cache storage/logs storage/framework/cache storage/framework/sessions storage/framework/views
+RUN chmod -R 775 bootstrap/cache storage
+RUN chown -R www-data:www-data bootstrap/cache storage
+
+RUN composer install --no-dev --optimize-autoloader
 
 EXPOSE 80
 

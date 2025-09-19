@@ -41,7 +41,7 @@ docker rm trustfund-app 2>/dev/null || true
 echo "🚀 Starting TrustFund application..."
 docker run -d \
     --name trustfund-app \
-    -p 80:80 \
+    -p 8089:80 \
     -v $(pwd)/storage:/production/echonetafrica/storage \
     -v $(pwd)/bootstrap/cache:/production/echonetafrica/bootstrap/cache \
     trustfund-app
