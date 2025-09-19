@@ -64,9 +64,11 @@ RUN php artisan storage:link && \
 # Copy supervisor configuration for additional services
 COPY docker-configs/supervisord.conf /opt/docker/etc/supervisor.d/laravel.conf
 
-# Copy crontab file for Laravel scheduler
-COPY docker-configs/laravel-cron /etc/cron.d/laravel-cron
-RUN chmod 0644 /etc/cron.d/laravel-cron && crontab /etc/cron.d/laravel-cron
+# Copy crontab file for Laravel scheduler and install it properly
+COPY docker-configs/laravel-cron /tmp/laravel-cron
+RUN chmod 0644 /tmp/laravel-cron && \
+    crontab -u application /tmp/laravel-cron && \
+    rm /tmp/laravel-cron
 
 # Database configuration arguments
 ARG DB_CONNECTION
