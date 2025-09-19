@@ -1,0 +1,58 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Documentation
+README.md
+*.md
+
+# Development files
+.env
+.env.example
+.env.local
+.env.testing
+.env.development
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node modules (will be installed during build)
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Vendor (will be installed during build)
+vendor
+
+# Storage and cache (will be created during build)
+storage/logs
+storage/framework/cache
+storage/framework/sessions
+storage/framework/views
+bootstrap/cache
+
+# Build artifacts
+public/build
+public/hot
+public/storage
+
+# Test files
+tests
+phpunit.xml
+.phpunit.result.cache
+
+# Deployment scripts
+deploy.sh
