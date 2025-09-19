@@ -1,4 +1,3 @@
-# Use webdevops/php-nginx as base image
 FROM webdevops/php-nginx:8.3
 
 ##change the shell
@@ -62,26 +61,12 @@ RUN php artisan storage:link && \
     chown -R www-data:www-data public && \
     chmod -R 777 bootstrap
 
-# Copy supervisor configuration and startup script
-COPY docker-configs/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-COPY docker-configs/start.sh /usr/local/bin/start.sh
-RUN chmod +x /usr/local/bin/start.sh
+# Copy supervisor configuration for additional services
+COPY docker-configs/supervisord.conf /opt/docker/etc/supervisor.d/laravel.conf
 
-# Copy crontab file
+# Copy crontab file for Laravel scheduler
 COPY docker-configs/laravel-cron /etc/cron.d/laravel-cron
-
-# Give execution rights on the cron job
-RUN chmod 0644 /etc/cron.d/laravel-cron
-
-# Apply cron job
-RUN crontab /etc/cron.d/laravel-cron
-
-# Create the log directories and files
-RUN mkdir -p /var/log/supervisor && \
-    mkdir -p /var/run && \
-    touch /var/log/cron.log && \
-    touch /var/log/supervisor/supervisord.log && \
-    chmod 755 /var/log/supervisor
+RUN chmod 0644 /etc/cron.d/laravel-cron && crontab /etc/cron.d/laravel-cron
 
 # Database configuration arguments
 ARG DB_CONNECTION
@@ -93,5 +78,9 @@ ARG DB_PASSWORD
 
 EXPOSE 80
 
-# Use startup script to ensure directories exist
-CMD ["/usr/local/bin/start.sh"]
+# Create necessary directories for logging and ensure proper permissions
+RUN mkdir -p /var/log/supervisor && \
+    mkdir -p /tmp && \
+    touch /var/log/cron.log && \
+    chmod 755 /var/log/supervisor && \
+    chown application:application /tmp
