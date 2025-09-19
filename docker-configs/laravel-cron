@@ -1,0 +1,11 @@
+# Laravel Cron Jobs
+# This will run Laravel's task scheduler every minute
+# Laravel will then determine which tasks should actually run based on your schedule
+* * * * * www-data cd /production/echonetafrica && php artisan schedule:run >> /var/log/cron.log 2>&1
+
+# Example: If you have specific commands that need to run at different intervals
+# You can add them here instead of using Laravel's scheduler
+# 0 * * * * www-data cd /production/echonetafrica && php artisan your:hourly-command >> /var/log/cron.log 2>&1
+# 0 0 * * * www-data cd /production/echonetafrica && php artisan your:daily-command >> /var/log/cron.log 2>&1
+
+# Don't remove the empty line at the end - cron needs it
