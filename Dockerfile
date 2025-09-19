@@ -40,7 +40,7 @@ RUN npm install && npm run build
 
 # Install Composer and PHP dependencies
 RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-RUN composer install --no-dev --optimize-autoloader
+RUN composer install
 
 # Copy the project files into the container
 COPY . .
