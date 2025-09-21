@@ -98,20 +98,27 @@ class Loan extends Model
         // rather than the income entry. This ensures that when charges are deducted
         // from principal on issuance (no receivable created), outstanding charges are zero.
 
-        $receivableAccount = config('repayment_priority.accounts.loan_charges_receivable');
+        // Get account name from loan product, fallback to config
+        $receivableAccountName = $this->loanProduct->getAccountName('loan_charges_receivable') ?? config('repayment_priority.accounts.loan_charges_receivable');
 
         // Sum debits and credits on the receivable account for this loan
         $debitedToReceivable = $this->transactions()
-            ->where('account_name', $receivableAccount)
+            ->where('account_name', $receivableAccountName)
             ->where('dr_cr', 'dr')
             ->sum('amount');
 
         $creditedToReceivable = $this->transactions()
-            ->where('account_name', $receivableAccount)
+            ->where('account_name', $receivableAccountName)
             ->where('dr_cr', 'cr')
             ->sum('amount');
 
-        return max(0, $debitedToReceivable - $creditedToReceivable);
+        // Add charges payment reversals (which increase outstanding balance)
+        $totalChargesReversals = $this->transactions()
+            ->where('transaction_type', 'charges_payment_reversal')
+            ->where('dr_cr', 'dr')
+            ->sum('amount');
+
+        return max(0, $debitedToReceivable - $creditedToReceivable + $totalChargesReversals);
     }
     
     /**
@@ -131,7 +138,13 @@ class Loan extends Model
             ->where('dr_cr', 'cr')
             ->sum('amount');
             
-        return max(0, $totalInterestAccrued - $totalInterestPaid);
+        // Add interest payment reversals (which increase outstanding balance)
+        $totalInterestReversals = $this->transactions()
+            ->where('transaction_type', 'interest_payment_reversal')
+            ->where('dr_cr', 'dr')
+            ->sum('amount');
+            
+        return max(0, $totalInterestAccrued - $totalInterestPaid + $totalInterestReversals);
     }
     
     /**
@@ -145,13 +158,19 @@ class Loan extends Model
             ->where('dr_cr', 'dr')
             ->sum('amount');
             
-        // Get total principal repaid
+        // Get total principal repaid (including reversals)
         $totalPrincipalRepaid = $this->transactions()
             ->where('transaction_type', 'principal_payment')
             ->where('dr_cr', 'cr')
             ->sum('amount');
             
-        return max(0, $totalPrincipalDisbursed - $totalPrincipalRepaid);
+        // Subtract principal payment reversals (which increase outstanding balance)
+        $totalPrincipalReversals = $this->transactions()
+            ->where('transaction_type', 'principal_payment_reversal')
+            ->where('dr_cr', 'dr')
+            ->sum('amount');
+            
+        return max(0, $totalPrincipalDisbursed - $totalPrincipalRepaid + $totalPrincipalReversals);
     }
 
     /**

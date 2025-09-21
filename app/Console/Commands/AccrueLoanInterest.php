@@ -101,12 +101,13 @@ class AccrueLoanInterest extends Command
     }
 
     /**
-     * Check if a loan should accrue interest based on accrual moment
+     * Check if a loan should accrue interest based on accrual moment and cycle
      */
     private function shouldAccrueInterest(Loan $loan): bool
     {
         $attributes = $loan->all_attributes;
         $accrualMoment = $attributes['interest_accrual_moment']['value'] ?? 'After First Cycle';
+        $cycle = $attributes['interest_cycle']['value'] ?? 'Monthly';
         
         if ($accrualMoment === 'Loan issue') {
             // Interest accrues immediately when loan is issued
@@ -114,18 +115,45 @@ class AccrueLoanInterest extends Command
         }
         
         if ($accrualMoment === 'After First Cycle') {
-            // Check if first cycle has passed
-            $cycle = $attributes['interest_cycle']['value'] ?? 'Monthly';
-            $firstCycleDate = $this->getFirstCycleDate($loan->release_date, $cycle);
-            
-            return now()->gte($firstCycleDate);
+            // Check if we're due for the next cycle
+            return $this->isDueForNextCycle($loan, $cycle);
         }
         
         return false;
     }
 
     /**
-     * Calculate interest for a specific loan
+     * Check if loan is due for the next interest accrual cycle
+     */
+    private function isDueForNextCycle(Loan $loan, string $cycle): bool
+    {
+        $lastAccrualDate = $this->getLastInterestAccrualDate($loan);
+        $referenceDate = $lastAccrualDate ?: Carbon::parse($loan->release_date);
+        $currentDate = now();
+        
+        // Calculate the next cycle date
+        $nextCycleDate = $this->getNextCycleDate($referenceDate, $cycle);
+        
+        // Check if current date is past the next cycle date
+        return $currentDate->gte($nextCycleDate);
+    }
+
+    /**
+     * Get the next cycle date based on the cycle type
+     */
+    private function getNextCycleDate(Carbon $referenceDate, string $cycle): Carbon
+    {
+        return match ($cycle) {
+            'Daily' => $referenceDate->copy()->addDay(),
+            'Weekly' => $referenceDate->copy()->addWeek(),
+            'Monthly' => $referenceDate->copy()->addMonth(),
+            'Yearly' => $referenceDate->copy()->addYear(),
+            default => $referenceDate->copy()->addMonth(),
+        };
+    }
+
+    /**
+     * Calculate interest for a specific loan for the current cycle
      */
     private function calculateInterestForLoan(Loan $loan): float
     {
@@ -140,85 +168,82 @@ class AccrueLoanInterest extends Command
 
         $principal = (float) $loan->principal_amount;
         $lastAccrualDate = $this->getLastInterestAccrualDate($loan);
-        $currentDate = now();
+        $referenceDate = $lastAccrualDate ?: Carbon::parse($loan->release_date);
         
-        // Calculate days since last accrual
-        $daysSinceLastAccrual = $lastAccrualDate ? $lastAccrualDate->diffInDays($currentDate) : Carbon::parse($loan->release_date)->diffInDays($currentDate);
+        // Calculate the period for the current cycle
+        $cyclePeriod = $this->getCyclePeriodInDays($cycle);
         
-        if ($daysSinceLastAccrual <= 0) {
+        // For the first accrual, calculate from release date to first cycle
+        // For subsequent accruals, calculate for exactly one cycle period
+        if (!$lastAccrualDate) {
+            // First accrual: calculate from release date to first cycle date
+            $firstCycleDate = $this->getNextCycleDate($referenceDate, $cycle);
+            $daysForCalculation = $referenceDate->diffInDays($firstCycleDate);
+        } else {
+            // Subsequent accruals: calculate for exactly one cycle period
+            $daysForCalculation = $cyclePeriod;
+        }
+        
+        if ($daysForCalculation <= 0) {
             return 0;
         }
 
         switch ($interestType) {
             case 'Simple':
-                return $this->calculateSimpleInterest($principal, $interestRate, $daysSinceLastAccrual, $cycle);
+                return $this->calculateSimpleInterest($principal, $interestRate, $daysForCalculation, $cycle);
                 
             case 'Flat':
-                return $this->calculateFlatInterest($principal, $interestRate, $daysSinceLastAccrual, $cycle);
+                return $this->calculateFlatInterest($principal, $interestRate, $daysForCalculation, $cycle);
                 
             case 'ReducingBalance':
-                return $this->calculateReducingBalanceInterest($loan, $interestRate, $daysSinceLastAccrual, $cycle);
+                return $this->calculateReducingBalanceInterest($loan, $interestRate, $daysForCalculation, $cycle);
                 
             default:
-                return $this->calculateSimpleInterest($principal, $interestRate, $daysSinceLastAccrual, $cycle);
+                return $this->calculateSimpleInterest($principal, $interestRate, $daysForCalculation, $cycle);
         }
     }
 
     /**
-     * Calculate simple interest
+     * Get the number of days in a cycle period
+     */
+    private function getCyclePeriodInDays(string $cycle): int
+    {
+        return match ($cycle) {
+            'Daily' => 1,
+            'Weekly' => 7,
+            'Monthly' => 30, // Using 30 days as standard month
+            'Yearly' => 365,
+            default => 30,
+        };
+    }
+
+    /**
+     * Calculate simple interest for the given period
      */
     private function calculateSimpleInterest(float $principal, float $rate, int $days, string $cycle): float
     {
-        $daysPerYear = $this->getDaysPerYear($cycle);
-        return ($principal * $rate * $days) / ($daysPerYear * 100);
+        // Simple interest formula: (Principal × Rate × Time) / (365 × 100)
+        // Rate is annual percentage, so we use 365 days per year
+        return ($principal * $rate * $days) / (365 * 100);
     }
 
     /**
-     * Calculate flat interest
+     * Calculate flat interest for the given period
      */
     private function calculateFlatInterest(float $principal, float $rate, int $days, string $cycle): float
     {
-        $daysPerYear = $this->getDaysPerYear($cycle);
-        return ($principal * $rate * $days) / ($daysPerYear * 100);
+        // Flat interest uses the same formula as simple interest
+        return ($principal * $rate * $days) / (365 * 100);
     }
 
     /**
-     * Calculate reducing balance interest
+     * Calculate reducing balance interest for the given period
      */
     private function calculateReducingBalanceInterest(Loan $loan, float $rate, int $days, string $cycle): float
     {
         $remainingBalance = $loan->remaining_balance;
-        $daysPerYear = $this->getDaysPerYear($cycle);
-        return ($remainingBalance * $rate * $days) / ($daysPerYear * 100);
-    }
-
-    /**
-     * Get days per year based on cycle
-     */
-    private function getDaysPerYear(string $cycle): int
-    {
-        return match ($cycle) {
-            'Daily' => 365,
-            'Weekly' => 52,
-            'Monthly' => 12,
-            'Yearly' => 1,
-            default => 12,
-        };
-    }
-
-    /**
-     * Get first cycle date
-     */
-    private function getFirstCycleDate(Carbon $releaseDate, string $cycle): Carbon
-    {
-        $releaseDate = Carbon::parse($releaseDate);
-        return match ($cycle) {
-            'Daily' => $releaseDate->addDay(),
-            'Weekly' => $releaseDate->addWeek(),
-            'Monthly' => $releaseDate->addMonth(),
-            'Yearly' => $releaseDate->addYear(),
-            default => $releaseDate->addMonth(),
-        };
+        // Reducing balance interest on remaining balance
+        return ($remainingBalance * $rate * $days) / (365 * 100);
     }
 
     /**
@@ -239,9 +264,17 @@ class AccrueLoanInterest extends Command
      */
     private function createInterestAccrualTransactions(Loan $loan, float $interestAmount): void
     {
+        // Get account info from loan product, fallback to config
+        $interestReceivableName = $loan->loanProduct->getAccountName('interest_receivable') ?? config('repayment_priority.accounts.interest_receivable');
+        $interestReceivableNumber = $loan->loanProduct->getAccountNumber('interest_receivable');
+        
+        $interestIncomeName = $loan->loanProduct->getAccountName('interest_income') ?? config('repayment_priority.accounts.interest_income');
+        $interestIncomeNumber = $loan->loanProduct->getAccountNumber('interest_income');
+
         // Debit: Interest Receivable (Asset - money owed to us)
         Transaction::create([
-            'account_name' => 'Interest Receivable',
+            'account_name' => $interestReceivableName,
+            'account_number' => $interestReceivableNumber,
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
             'transaction_type' => 'interest_accrual',
@@ -253,7 +286,8 @@ class AccrueLoanInterest extends Command
 
         // Credit: Interest Income (Revenue - income earned)
         Transaction::create([
-            'account_name' => 'Interest Income',
+            'account_name' => $interestIncomeName,
+            'account_number' => $interestIncomeNumber,
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
             'transaction_type' => 'interest_accrual',

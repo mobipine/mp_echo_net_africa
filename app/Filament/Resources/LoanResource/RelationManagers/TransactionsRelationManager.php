@@ -43,8 +43,13 @@ class TransactionsRelationManager extends RelationManager
                         ->label('Transaction Type')
                         ->options([
                             'loan_issue' => 'Loan Issue',
-                            'loan_repayment' => 'Loan Repayment',
+                            'principal_payment' => 'Principal Payment',
                             'interest_payment' => 'Interest Payment',
+                            'charges_payment' => 'Charges Payment',
+                            'principal_payment_reversal' => 'Principal Payment Reversal',
+                            'interest_payment_reversal' => 'Interest Payment Reversal',
+                            'charges_payment_reversal' => 'Charges Payment Reversal',
+                            'interest_accrual' => 'Interest Accrual',
                             'penalty' => 'Penalty',
                             'adjustment' => 'Adjustment',
                         ])
@@ -82,6 +87,12 @@ class TransactionsRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('account_name')
             ->columns([
+                TextColumn::make('id')
+                    ->label('ID')
+                    ->sortable()
+                    ->weight('bold')
+                    ->toggleable(),
+                    
                 TextColumn::make('account_name')
                     ->label('Account')
                     ->searchable()
@@ -91,15 +102,25 @@ class TransactionsRelationManager extends RelationManager
                     ->label('Type')
                     ->colors([
                         'primary' => 'loan_issue',
-                        'success' => 'loan_repayment',
+                        'success' => 'principal_payment',
                         'warning' => 'interest_payment',
-                        'danger' => 'penalty',
-                        'secondary' => 'adjustment',
+                        'info' => 'charges_payment',
+                        'danger' => 'principal_payment_reversal',
+                        'secondary' => 'interest_payment_reversal',
+                        'gray' => 'charges_payment_reversal',
+                        'purple' => 'interest_accrual',
+                        'orange' => 'penalty',
+                        'slate' => 'adjustment',
                     ])
                     ->formatStateUsing(fn (string $state): string => match ($state) {
                         'loan_issue' => 'Loan Issue',
-                        'loan_repayment' => 'Loan Repayment',
+                        'principal_payment' => 'Principal Payment',
                         'interest_payment' => 'Interest Payment',
+                        'charges_payment' => 'Charges Payment',
+                        'principal_payment_reversal' => 'Principal Payment Reversal',
+                        'interest_payment_reversal' => 'Interest Payment Reversal',
+                        'charges_payment_reversal' => 'Charges Payment Reversal',
+                        'interest_accrual' => 'Interest Accrual',
                         'penalty' => 'Penalty',
                         'adjustment' => 'Adjustment',
                         default => $state,
@@ -147,8 +168,13 @@ class TransactionsRelationManager extends RelationManager
                     ->label('Transaction Type')
                     ->options([
                         'loan_issue' => 'Loan Issue',
-                        'loan_repayment' => 'Loan Repayment',
+                        'principal_payment' => 'Principal Payment',
                         'interest_payment' => 'Interest Payment',
+                        'charges_payment' => 'Charges Payment',
+                        'principal_payment_reversal' => 'Principal Payment Reversal',
+                        'interest_payment_reversal' => 'Interest Payment Reversal',
+                        'charges_payment_reversal' => 'Charges Payment Reversal',
+                        'interest_accrual' => 'Interest Accrual',
                         'penalty' => 'Penalty',
                         'adjustment' => 'Adjustment',
                     ]),
@@ -175,6 +201,6 @@ class TransactionsRelationManager extends RelationManager
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
-            ->defaultSort('transaction_date', 'desc');
+            ->defaultSort('id', 'asc');
     }
 }

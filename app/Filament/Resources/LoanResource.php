@@ -9,6 +9,7 @@ use App\Models\LoanAttribute;
 use App\Models\LoanProduct;
 use App\Models\Transaction;
 use App\Models\LoanAmortizationSchedule;
+use App\Models\ChartofAccounts;
 use Filament\Forms;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -145,7 +146,7 @@ class LoanResource extends Resource
                         'yellow' => 'Pending Approval',
                         'primary' => 'Approved',
                         'danger' => 'Rejected',
-                        'blue' => 'Completed',
+                        'blue' => 'Fully Repaid',
                         'fuchsia' => 'Incomplete Application',
                     ])
                     ->sortable()
@@ -199,7 +200,7 @@ class LoanResource extends Resource
                         'Pending Approval' => 'Pending Approval',
                         'Approved' => 'Approved',
                         'Rejected' => 'Rejected',
-                        'Completed' => 'Completed',
+                        'Fully Repaid' => 'Fully Repaid',
                         'Incomplete Application' => 'Incomplete Application',
                     ]),
                 SelectFilter::make('is_completed')
@@ -340,6 +341,31 @@ class LoanResource extends Resource
     }
 
     /**
+     * Get account name for a given account type from loan product
+     */
+    private static function getAccountNameFromLoanProduct(Loan $loan, string $accountType): ?string
+    {
+        return $loan->loanProduct->getAccountName($accountType);
+    }
+
+    /**
+     * Get account number for a given account type from loan product
+     */
+    private static function getAccountNumberFromLoanProduct(Loan $loan, string $accountType): ?string
+    {
+        return $loan->loanProduct->getAccountNumber($accountType);
+    }
+
+    /**
+     * Get account number for a given account name
+     */
+    private static function getAccountNumber(string $accountName): ?string
+    {
+        $account = ChartofAccounts::where('name', $accountName)->first();
+        return $account?->account_code;
+    }
+
+    /**
      * Create transactions when loan is approved
      */
     private static function createLoanTransactions(Loan $loan)
@@ -358,8 +384,12 @@ class LoanResource extends Resource
         }
 
         // Create loan receivable transaction
+        $loansReceivableName = self::getAccountNameFromLoanProduct($loan, 'loans_receivable') ?? config('repayment_priority.accounts.loans_receivable');
+        $loansReceivableNumber = self::getAccountNumberFromLoanProduct($loan, 'loans_receivable');
+        
         Transaction::create([
-            'account_name' => config('repayment_priority.accounts.loans_receivable'),
+            'account_name' => $loansReceivableName,
+            'account_number' => $loansReceivableNumber,
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
             'transaction_type' => 'loan_issue',
@@ -370,8 +400,12 @@ class LoanResource extends Resource
         ]);
 
         // Create bank disbursement transaction
+        $bankAccountName = self::getAccountNameFromLoanProduct($loan, 'bank') ?? config('repayment_priority.accounts.bank');
+        $bankAccountNumber = self::getAccountNumberFromLoanProduct($loan, 'bank');
+        
         Transaction::create([
-            'account_name' => config('repayment_priority.accounts.bank'),
+            'account_name' => $bankAccountName,
+            'account_number' => $bankAccountNumber,
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
             'transaction_type' => 'loan_issue',
@@ -384,8 +418,12 @@ class LoanResource extends Resource
         // Create loan charges transactions if applicable
         if ($applyChargesOnIssuance && $loanCharges > 0) {
             // Credit loan charges income
+            $chargesIncomeName = self::getAccountNameFromLoanProduct($loan, 'loan_charges_income') ?? config('repayment_priority.accounts.loan_charges_income');
+            $chargesIncomeNumber = self::getAccountNumberFromLoanProduct($loan, 'loan_charges_income');
+            
             Transaction::create([
-                'account_name' => config('repayment_priority.accounts.loan_charges_income'),
+                'account_name' => $chargesIncomeName,
+                'account_number' => $chargesIncomeNumber,
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
                 'transaction_type' => 'loan_charges',
@@ -397,8 +435,12 @@ class LoanResource extends Resource
 
             // If charges are not deducted from principal, create receivable entry
             if (!$deductFromPrincipal) {
+                $chargesReceivableName = self::getAccountNameFromLoanProduct($loan, 'loan_charges_receivable') ?? config('repayment_priority.accounts.loan_charges_receivable');
+                $chargesReceivableNumber = self::getAccountNumberFromLoanProduct($loan, 'loan_charges_receivable');
+                
                 Transaction::create([
-                    'account_name' => config('repayment_priority.accounts.loan_charges_receivable'),
+                    'account_name' => $chargesReceivableName,
+                    'account_number' => $chargesReceivableNumber,
                     'loan_id' => $loan->id,
                     'member_id' => $loan->member_id,
                     'transaction_type' => 'loan_charges',
