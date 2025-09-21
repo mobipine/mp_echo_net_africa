@@ -35,6 +35,9 @@ ENV WEB_DOCUMENT_ROOT=$WEB_PATH
 ARG LARAVEL_PATH=/production/echonetafrica
 WORKDIR $LARAVEL_PATH
 
+# Provide environment file for the application
+COPY docker-configs/.env.local ./.env
+
 # Create necessary directories before composer install
 RUN mkdir -p bootstrap/cache && \
     mkdir -p storage/logs && \

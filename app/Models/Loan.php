@@ -94,26 +94,24 @@ class Loan extends Model
      */
     public function getOutstandingLoanCharges(): float
     {
-        $attributes = $this->all_attributes;
-        $loanCharges = (float) ($attributes['loan_charges']['value'] ?? 0);
-        
-        if ($loanCharges <= 0) {
-            return 0;
-        }
-        
-        // Get total charges applied
-        $totalChargesApplied = $this->transactions()
-            ->where('transaction_type', 'loan_charges')
+        // Outstanding charges should be based on the balance of Loan Charges Receivable
+        // rather than the income entry. This ensures that when charges are deducted
+        // from principal on issuance (no receivable created), outstanding charges are zero.
+
+        $receivableAccount = config('repayment_priority.accounts.loan_charges_receivable');
+
+        // Sum debits and credits on the receivable account for this loan
+        $debitedToReceivable = $this->transactions()
+            ->where('account_name', $receivableAccount)
+            ->where('dr_cr', 'dr')
+            ->sum('amount');
+
+        $creditedToReceivable = $this->transactions()
+            ->where('account_name', $receivableAccount)
             ->where('dr_cr', 'cr')
             ->sum('amount');
-            
-        // Get total charges paid
-        $totalChargesPaid = $this->transactions()
-            ->where('transaction_type', 'charges_payment')
-            ->where('dr_cr', 'cr')
-            ->sum('amount');
-            
-        return max(0, $totalChargesApplied - $totalChargesPaid);
+
+        return max(0, $debitedToReceivable - $creditedToReceivable);
     }
     
     /**

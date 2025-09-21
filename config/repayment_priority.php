@@ -52,7 +52,7 @@ return [
         'apply_on_issuance' => true,
         
         // Whether charges are deducted from principal or added to total
-        'deduct_from_principal' => false,
+        'deduct_from_principal' => true,
         
         // Minimum charge amount
         'minimum_amount' => 0.00,

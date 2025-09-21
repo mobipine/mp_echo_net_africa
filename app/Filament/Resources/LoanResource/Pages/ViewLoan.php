@@ -83,16 +83,16 @@ class ViewLoan extends ViewRecord
             // Actions\DeleteAction::make(),
 
             //add an approve action if the status is pending approval
-            Actions\Action::make('approve')
-                ->label('Approve Loan')
-                ->icon('heroicon-o-check-circle')
-                ->color('success')
-                ->visible(fn(Loan $record): bool => $record->status === 'Pending Approval')
-                ->action(function (Loan $record) {
-                    $record->update([
-                        'status' => 'Approved',
-                    ]);
-                }),
+            // Actions\Action::make('approve')
+            //     ->label('Approve Loan')
+            //     ->icon('heroicon-o-check-circle')
+            //     ->color('success')
+            //     ->visible(fn(Loan $record): bool => $record->status === 'Pending Approval')
+            //     ->action(function (Loan $record) {
+            //         $record->update([
+            //             'status' => 'Approved',
+            //         ]);
+            //     }),
         ];
     }
 

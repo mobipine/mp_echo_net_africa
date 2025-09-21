@@ -130,26 +130,20 @@ class RepaymentAllocationService
      */
     private function getOutstandingLoanCharges(Loan $loan): float
     {
-        $attributes = $loan->all_attributes;
-        $loanCharges = (float) ($attributes['loan_charges']['value'] ?? 0);
-        
-        if ($loanCharges <= 0) {
-            return 0;
-        }
-        
-        // Get total charges applied
-        $totalChargesApplied = Transaction::where('loan_id', $loan->id)
-            ->where('transaction_type', 'loan_charges')
+        // Mirror Loan::getOutstandingLoanCharges(): base on receivable account balance
+        $receivableAccount = config('repayment_priority.accounts.loan_charges_receivable');
+
+        $debitedToReceivable = Transaction::where('loan_id', $loan->id)
+            ->where('account_name', $receivableAccount)
+            ->where('dr_cr', 'dr')
+            ->sum('amount');
+
+        $creditedToReceivable = Transaction::where('loan_id', $loan->id)
+            ->where('account_name', $receivableAccount)
             ->where('dr_cr', 'cr')
             ->sum('amount');
-            
-        // Get total charges paid
-        $totalChargesPaid = Transaction::where('loan_id', $loan->id)
-            ->where('transaction_type', 'charges_payment')
-            ->where('dr_cr', 'cr')
-            ->sum('amount');
-            
-        return max(0, $totalChargesApplied - $totalChargesPaid);
+
+        return max(0, (float)($debitedToReceivable - $creditedToReceivable));
     }
 
     /**
