@@ -73,25 +73,25 @@ class LoanAmortizationScheduleRelationManager extends RelationManager
                     ->sortable()
                     ->color(fn ($state) => $state <= 0 ? 'success' : 'warning'),
                     
-                BadgeColumn::make('status')
-                    ->label('Status')
-                    ->colors([
-                        'success' => 'paid',
-                        'warning' => 'pending',
-                        'danger' => 'overdue',
-                    ])
-                    ->formatStateUsing(function ($state, $record) {
-                        // You can implement logic to determine payment status
-                        // For now, we'll show a simple status
-                        $today = now();
-                        if ($record->payment_date < $today) {
-                            return 'Overdue';
-                        } elseif ($record->payment_date == $today) {
-                            return 'Due Today';
-                        } else {
-                            return 'Pending';
-                        }
-                    }),
+                // BadgeColumn::make('status')
+                //     ->label('Status')
+                //     ->colors([
+                //         'success' => 'paid',
+                //         'warning' => 'pending',
+                //         'danger' => 'overdue',
+                //     ])
+                //     ->formatStateUsing(function ($state, $record) {
+                //         // You can implement logic to determine payment status
+                //         // For now, we'll show a simple status
+                //         $today = now();
+                //         if ($record->payment_date < $today) {
+                //             return 'Overdue';
+                //         } elseif ($record->payment_date == $today) {
+                //             return 'Due Today';
+                //         } else {
+                //             return 'Pending';
+                //         }
+                //     }),
             ])
             ->filters([
                 SelectFilter::make('status')

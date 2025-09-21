@@ -9,6 +9,22 @@ use Illuminate\Support\Facades\Log;
 class RepaymentAllocationService
 {
     /**
+     * Get account name for a given account type from loan product
+     */
+    private function getAccountNameFromLoanProduct(Loan $loan, string $accountType): ?string
+    {
+        return $loan->loanProduct->getAccountName($accountType);
+    }
+
+    /**
+     * Get account number for a given account type from loan product
+     */
+    private function getAccountNumberFromLoanProduct(Loan $loan, string $accountType): ?string
+    {
+        return $loan->loanProduct->getAccountNumber($accountType);
+    }
+
+    /**
      * Allocate repayment amount between loan charges, principal and interest
      */
     public function allocateRepayment(Loan $loan, float $repaymentAmount): array
@@ -131,15 +147,16 @@ class RepaymentAllocationService
     private function getOutstandingLoanCharges(Loan $loan): float
     {
         // Mirror Loan::getOutstandingLoanCharges(): base on receivable account balance
-        $receivableAccount = config('repayment_priority.accounts.loan_charges_receivable');
+        // Get account name from loan product, fallback to config
+        $receivableAccountName = $this->getAccountNameFromLoanProduct($loan, 'loan_charges_receivable') ?? config('repayment_priority.accounts.loan_charges_receivable');
 
         $debitedToReceivable = Transaction::where('loan_id', $loan->id)
-            ->where('account_name', $receivableAccount)
+            ->where('account_name', $receivableAccountName)
             ->where('dr_cr', 'dr')
             ->sum('amount');
 
         $creditedToReceivable = Transaction::where('loan_id', $loan->id)
-            ->where('account_name', $receivableAccount)
+            ->where('account_name', $receivableAccountName)
             ->where('dr_cr', 'cr')
             ->sum('amount');
 
@@ -163,7 +180,13 @@ class RepaymentAllocationService
             ->where('dr_cr', 'cr')
             ->sum('amount');
             
-        return max(0, $totalInterestAccrued - $totalInterestPaid);
+        // Add interest payment reversals (which increase outstanding balance)
+        $totalInterestReversals = Transaction::where('loan_id', $loan->id)
+            ->where('transaction_type', 'interest_payment_reversal')
+            ->where('dr_cr', 'dr')
+            ->sum('amount');
+            
+        return max(0, $totalInterestAccrued - $totalInterestPaid + $totalInterestReversals);
     }
 
     /**
@@ -183,7 +206,13 @@ class RepaymentAllocationService
             ->where('dr_cr', 'cr')
             ->sum('amount');
             
-        return max(0, $totalPrincipalDisbursed - $totalPrincipalRepaid);
+        // Add principal payment reversals (which increase outstanding balance)
+        $totalPrincipalReversals = Transaction::where('loan_id', $loan->id)
+            ->where('transaction_type', 'principal_payment_reversal')
+            ->where('dr_cr', 'dr')
+            ->sum('amount');
+            
+        return max(0, $totalPrincipalDisbursed - $totalPrincipalRepaid + $totalPrincipalReversals);
     }
 
     /**
@@ -218,12 +247,18 @@ class RepaymentAllocationService
      */
     private function createChargesPaymentTransactions(Loan $loan, float $amount, string $accountName = ""): array
     {
-        $accountName = $accountName ?? config('repayment_priority.accounts.bank');
+        // Get account info from loan product, fallback to config
+        $bankAccountName = $this->getAccountNameFromLoanProduct($loan, 'bank') ?? config('repayment_priority.accounts.bank');
+        $bankAccountNumber = $this->getAccountNumberFromLoanProduct($loan, 'bank');
+        
+        $chargesReceivableName = $this->getAccountNameFromLoanProduct($loan, 'loan_charges_receivable') ?? config('repayment_priority.accounts.loan_charges_receivable');
+        $chargesReceivableNumber = $this->getAccountNumberFromLoanProduct($loan, 'loan_charges_receivable');
         
         return [
             // Debit: Bank/Cash Account (money coming in)
             [
-                'account_name' => $accountName,
+                'account_name' => $bankAccountName,
+                'account_number' => $bankAccountNumber,
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
                 'transaction_type' => 'charges_payment',
@@ -235,7 +270,8 @@ class RepaymentAllocationService
             
             // Credit: Loan Charges Receivable (reducing receivable)
             [
-                'account_name' => config('repayment_priority.accounts.loan_charges_receivable'),
+                'account_name' => $chargesReceivableName,
+                'account_number' => $chargesReceivableNumber,
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
                 'transaction_type' => 'charges_payment',
@@ -252,12 +288,18 @@ class RepaymentAllocationService
      */
     private function createInterestPaymentTransactions(Loan $loan, float $amount, string $accountName = ""): array
     {
-        $accountName = $accountName ?? config('repayment_priority.accounts.bank');
+        // Get account info from loan product, fallback to config
+        $bankAccountName = $this->getAccountNameFromLoanProduct($loan, 'bank') ?? config('repayment_priority.accounts.bank');
+        $bankAccountNumber = $this->getAccountNumberFromLoanProduct($loan, 'bank');
+        
+        $interestReceivableName = $this->getAccountNameFromLoanProduct($loan, 'interest_receivable') ?? config('repayment_priority.accounts.interest_receivable');
+        $interestReceivableNumber = $this->getAccountNumberFromLoanProduct($loan, 'interest_receivable');
         
         return [
             // Debit: Bank/Cash Account (money coming in)
             [
-                'account_name' => $accountName,
+                'account_name' => $bankAccountName,
+                'account_number' => $bankAccountNumber,
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
                 'transaction_type' => 'interest_payment',
@@ -269,7 +311,8 @@ class RepaymentAllocationService
             
             // Credit: Interest Receivable (reducing receivable)
             [
-                'account_name' => config('repayment_priority.accounts.interest_receivable'),
+                'account_name' => $interestReceivableName,
+                'account_number' => $interestReceivableNumber,
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
                 'transaction_type' => 'interest_payment',
@@ -286,12 +329,18 @@ class RepaymentAllocationService
      */
     private function createPrincipalPaymentTransactions(Loan $loan, float $amount, string $accountName = ""): array
     {
-        $accountName = $accountName ?? config('repayment_priority.accounts.bank');
+        // Get account info from loan product, fallback to config
+        $bankAccountName = $this->getAccountNameFromLoanProduct($loan, 'bank') ?? config('repayment_priority.accounts.bank');
+        $bankAccountNumber = $this->getAccountNumberFromLoanProduct($loan, 'bank');
+        
+        $loansReceivableName = $this->getAccountNameFromLoanProduct($loan, 'loans_receivable') ?? config('repayment_priority.accounts.loans_receivable');
+        $loansReceivableNumber = $this->getAccountNumberFromLoanProduct($loan, 'loans_receivable');
         
         return [
             // Debit: Bank/Cash Account (money coming in)
             [
-                'account_name' => $accountName,
+                'account_name' => $bankAccountName,
+                'account_number' => $bankAccountNumber,
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
                 'transaction_type' => 'principal_payment',
@@ -303,7 +352,8 @@ class RepaymentAllocationService
             
             // Credit: Loans Receivable (reducing receivable)
             [
-                'account_name' => config('repayment_priority.accounts.loans_receivable'),
+                'account_name' => $loansReceivableName,
+                'account_number' => $loansReceivableNumber,
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
                 'transaction_type' => 'principal_payment',

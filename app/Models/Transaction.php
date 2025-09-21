@@ -12,6 +12,7 @@ class Transaction extends Model
     protected $table = 'transactions';
     protected $fillable = [
         'account_name',
+        'account_number',
         'loan_id',
         'member_id',
         'repayment_id',
@@ -40,5 +41,10 @@ class Transaction extends Model
     public function repayment()
     {
         return $this->belongsTo(LoanRepayment::class);
+    }
+
+    public function chartOfAccount()
+    {
+        return $this->belongsTo(ChartofAccounts::class, 'account_number', 'account_code');
     }
 }

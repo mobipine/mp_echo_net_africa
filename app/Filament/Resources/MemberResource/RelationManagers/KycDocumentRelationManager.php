@@ -6,6 +6,7 @@ use App\Models\DocsMeta;
 use Filament\Forms;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class KycDocumentRelationManager extends RelationManager
@@ -31,9 +32,17 @@ class KycDocumentRelationManager extends RelationManager
     public function table(Tables\Table $table): Tables\Table
     {
         return $table->columns([
-            Tables\Columns\TextColumn::make('document_type')->sortable()->searchable(),
-            // Tables\Columns\TextColumn::make('file_path'),
-            //display a link to the file
+            
+
+            //show the name of the document type
+            Tables\Columns\TextColumn::make('document_type')
+                ->formatStateUsing(function ($state) {
+                    return DocsMeta::where('id', $state)->first()->name;
+                })
+                ->sortable()
+                ->searchable(),
+            
+
             Tables\Columns\TextColumn::make('file_path')
                 ->url(function ($record) {
                     // dd($record);
