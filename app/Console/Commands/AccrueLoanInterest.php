@@ -77,7 +77,7 @@ class AccrueLoanInterest extends Command
         if ($dryRun) {
             $this->info("🔍 DRY RUN COMPLETE:");
             $this->info("  • {$processedCount} loans would be processed");
-            $this->info("  • Total interest: KES " . number_format($totalInterestAccrued, 2));
+            $this->info("  • Total interest: KES " . number_format($totalInterestAccrued, 2));            
         } else {
             $this->info("✅ Interest accrual completed successfully!");
             $this->info("  • {$processedCount} loans processed");
@@ -179,6 +179,8 @@ class AccrueLoanInterest extends Command
             // First accrual: calculate from release date to first cycle date
             $firstCycleDate = $this->getNextCycleDate($referenceDate, $cycle);
             $daysForCalculation = $referenceDate->diffInDays($firstCycleDate);
+
+            // dd($daysForCalculation);
         } else {
             // Subsequent accruals: calculate for exactly one cycle period
             $daysForCalculation = $cyclePeriod;
@@ -222,8 +224,11 @@ class AccrueLoanInterest extends Command
      */
     private function calculateSimpleInterest(float $principal, float $rate, int $days, string $cycle): float
     {
+
+        // dd($principal, $rate, $days);
         // Simple interest formula: (Principal × Rate × Time) / (365 × 100)
         // Rate is annual percentage, so we use 365 days per year
+       
         return ($principal * $rate * $days) / (365 * 100);
     }
 
