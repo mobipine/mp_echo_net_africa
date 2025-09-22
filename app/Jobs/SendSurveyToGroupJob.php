@@ -41,14 +41,7 @@ class SendSurveyToGroupJob implements ShouldQueue
              //Formatting the question if multiple choice
              Log::info("the question is $firstQuestion->answer_strictness");
 
-             $message = "New Survey: {$this->survey->title}\n\n" . "Question 1: {$firstQuestion->question}\n"; 
-             if ($firstQuestion->answer_strictness=="Multiple Choice"){
-                 foreach ($firstQuestion->possible_answers as $answer) {
-                     $message .= "{$answer['letter']}. {$answer['answer']}\n";
-                 }
-                 Log::info("The message to be sent is {$message}");
-             }
-             $message .= "Please reply with your answer.";
+             
 
         Log::info("The first Question of {$this->survey->title} is {$firstQuestion->question} from the flow");
 
@@ -65,6 +58,28 @@ class SendSurveyToGroupJob implements ShouldQueue
             $sentCount = 0;
 
             foreach ($members as $member) {
+                $message = "Hello {$member->name}, {$firstQuestion->question}\n"; 
+                if ($firstQuestion->answer_strictness=="Multiple Choice"){
+                    foreach ($firstQuestion->possible_answers as $answer) {
+                        $message .= "{$answer['letter']}. {$answer['answer']}\n";
+                    }
+                    Log::info("The message to be sent is {$message}");
+                }
+                $message .= "Please reply with your answer.";
+                
+                $placeholders = [
+                        '{member}' => $member->name,
+                        '{group}' => $member->group->name,
+                        '{id}' => $member->national_id,
+                        '{gender}'=>$member->gender,
+                        '{dob}'=>$member->dob, //To be just the year
+                    ];
+                    $message = str_replace(
+                        array_keys($placeholders),
+                        array_values($placeholders),
+                        $message
+                    );
+                    
                 if (empty($member->phone)) {
                     continue;
                 }

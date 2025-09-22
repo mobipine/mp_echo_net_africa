@@ -52,18 +52,34 @@ class DispatchDueSurveysCommand extends Command
                 Log::info("The first Question of {$survey->title} is {$firstQuestion} from the flow");
 
                 //Formatting the question if multiple choice
-                $message = "New Survey: {$survey->title}\n\n" . "Question 1: {$firstQuestion->question}\n"; 
-                if ($firstQuestion->answer_strictness=="Multiple Choice"){
-                    foreach ($firstQuestion->possible_answers as $answer) {
-                        $message .= "{$answer['letter']}. {$answer['answer']}\n";
-                    }
-                    Log::info("The message to be sent is {$message}");
-                }
-                $message .= "Please reply with your answer.";
+                
 
                 $sentCount = 0;
 
                 foreach ($members as $member) {
+
+                    $message = "Hello {$member->name}, {$firstQuestion->question}\n"; 
+                    if ($firstQuestion->answer_strictness=="Multiple Choice"){
+                        foreach ($firstQuestion->possible_answers as $answer) {
+                            $message .= "{$answer['letter']}. {$answer['answer']}\n";
+                        }
+                        Log::info("The message to be sent is {$message}");
+                    }
+                    $message .= "Please reply with your answer.";
+
+                    $placeholders = [
+                        '{member}' => $member->name,
+                        '{group}' => $member->group->name,
+                        '{id}' => $member->national_id,
+                        '{gender}'=>$member->gender,
+                        '{dob}'=>$member->dob, //To be just the year
+                    ];
+                    $message = str_replace(
+                        array_keys($placeholders),
+                        array_values($placeholders),
+                        $message
+                    );
+
                     if (!empty($member->phone)) {
                         //find a record with the survey id and member id that is not completed
                         $progress = SurveyProgress::where('survey_id', $survey->id)
