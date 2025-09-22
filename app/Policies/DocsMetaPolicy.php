@@ -55,7 +55,7 @@ class DocsMetaPolicy
      */
     public function deleteAny(User $user): bool
     {
-        return $user->can('delete_any_docs::meta');
+        return $user->can('{{ DeleteAny }}');
     }
 
     /**
@@ -63,7 +63,7 @@ class DocsMetaPolicy
      */
     public function forceDelete(User $user, DocsMeta $docsMeta): bool
     {
-        return $user->can('force_delete_docs::meta');
+        return $user->can('{{ ForceDelete }}');
     }
 
     /**
@@ -71,7 +71,7 @@ class DocsMetaPolicy
      */
     public function forceDeleteAny(User $user): bool
     {
-        return $user->can('force_delete_any_docs::meta');
+        return $user->can('{{ ForceDeleteAny }}');
     }
 
     /**
@@ -79,7 +79,7 @@ class DocsMetaPolicy
      */
     public function restore(User $user, DocsMeta $docsMeta): bool
     {
-        return $user->can('restore_docs::meta');
+        return $user->can('{{ Restore }}');
     }
 
     /**
@@ -87,7 +87,7 @@ class DocsMetaPolicy
      */
     public function restoreAny(User $user): bool
     {
-        return $user->can('restore_any_docs::meta');
+        return $user->can('{{ RestoreAny }}');
     }
 
     /**
@@ -95,7 +95,7 @@ class DocsMetaPolicy
      */
     public function replicate(User $user, DocsMeta $docsMeta): bool
     {
-        return $user->can('replicate_docs::meta');
+        return $user->can('{{ Replicate }}');
     }
 
     /**

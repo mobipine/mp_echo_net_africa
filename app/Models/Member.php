@@ -59,6 +59,22 @@ class Member extends Model
         return $this->hasMany(LoanRepayment::class);
     }
 
+    /**
+     * Get the user account associated with this member.
+     */
+    public function user()
+    {
+        return $this->hasOne(User::class);
+    }
+
+    /**
+     * Check if this member has a user account.
+     */
+    public function hasUserAccount(): bool
+    {
+        return !is_null($this->user);
+    }
+
     //create a boot function that will create a unique account number for each member on creation
     //the account number should be in the format ACC-0001, ACC-0002, etc.
     protected static function boot()

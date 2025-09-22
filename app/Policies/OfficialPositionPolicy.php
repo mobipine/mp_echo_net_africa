@@ -55,7 +55,7 @@ class OfficialPositionPolicy
      */
     public function deleteAny(User $user): bool
     {
-        return $user->can('delete_any_official::position');
+        return $user->can('{{ DeleteAny }}');
     }
 
     /**
@@ -63,7 +63,7 @@ class OfficialPositionPolicy
      */
     public function forceDelete(User $user, OfficialPosition $officialPosition): bool
     {
-        return $user->can('force_delete_official::position');
+        return $user->can('{{ ForceDelete }}');
     }
 
     /**
@@ -71,7 +71,7 @@ class OfficialPositionPolicy
      */
     public function forceDeleteAny(User $user): bool
     {
-        return $user->can('force_delete_any_official::position');
+        return $user->can('{{ ForceDeleteAny }}');
     }
 
     /**
@@ -79,7 +79,7 @@ class OfficialPositionPolicy
      */
     public function restore(User $user, OfficialPosition $officialPosition): bool
     {
-        return $user->can('restore_official::position');
+        return $user->can('{{ Restore }}');
     }
 
     /**
@@ -87,7 +87,7 @@ class OfficialPositionPolicy
      */
     public function restoreAny(User $user): bool
     {
-        return $user->can('restore_any_official::position');
+        return $user->can('{{ RestoreAny }}');
     }
 
     /**
@@ -95,7 +95,7 @@ class OfficialPositionPolicy
      */
     public function replicate(User $user, OfficialPosition $officialPosition): bool
     {
-        return $user->can('replicate_official::position');
+        return $user->can('{{ Replicate }}');
     }
 
     /**

@@ -24,6 +24,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 use Carbon\Carbon;
 
 class LoanResource extends Resource
@@ -216,11 +217,10 @@ class LoanResource extends Resource
                     Tables\Actions\ViewAction::make(),
 
                     Action::make('approve')
-                        //TODO: create a custom permission for this action
                         ->label('Approve')
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
-                        ->visible(fn(Loan $record): bool => $record->status === 'Pending Approval')
+                        ->visible(fn(Loan $record): bool => $record->status === 'Pending Approval' && Gate::allows('approve_loan'))
                         ->requiresConfirmation()
                         ->modalHeading('Approve Loan')
                         ->modalDescription('Are you sure you want to approve this loan? This will create the necessary transactions.')
@@ -246,11 +246,10 @@ class LoanResource extends Resource
                         }),
                         
                     Action::make('reject')
-                        //TODO: create a custom permission for this action
                         ->label('Reject')
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
-                        ->visible(fn(Loan $record): bool => $record->status === 'Pending Approval')
+                        ->visible(fn(Loan $record): bool => $record->status === 'Pending Approval' && Gate::allows('reject_loan'))
                         ->requiresConfirmation()
                         ->modalHeading('Reject Loan')
                         ->modalDescription('Are you sure you want to reject this loan application?')
@@ -277,11 +276,10 @@ class LoanResource extends Resource
                         ->openUrlInNewTab(),
 
                     Action::make('reverse_reject')
-                        //TODO: create a custom permission for this action
                         ->label('Reverse Rejection')
                         ->icon('heroicon-o-arrow-left')
                         ->color('warning')
-                        ->visible(fn(Loan $record): bool => $record->status === 'Rejected')
+                        ->visible(fn(Loan $record): bool => $record->status === 'Rejected' && Gate::allows('reverse_reject_loan'))
                         ->action(function (Loan $record) {
                             $record->update([
                                 'status' => 'Pending Approval',
@@ -303,6 +301,19 @@ class LoanResource extends Resource
             RelationManagers\TransactionsRelationManager::class,
             RelationManagers\LoanAmortizationScheduleRelationManager::class,
         ];
+    }
+
+    //check if user has member_id and oly show loans for members in the same group
+    public static function getEloquentQuery(): Builder
+    {
+        $member_id = Auth::user()->member_id;
+        if ($member_id) {
+        $group_id = \App\Models\Member::find($member_id)->group_id;
+        return parent::getEloquentQuery()->where('member_id', $member_id)->orWhereHas('member', function ($query) use ($group_id) {
+                $query->where('group_id', $group_id);
+            });
+        }
+        return parent::getEloquentQuery();
     }
 
     public static function getPages(): array

@@ -26,6 +26,7 @@ class User extends Authenticatable implements FilamentUser
         'email',
         'password',
         'profile_picture',
+        'member_id',
     ];
 
     /**
@@ -57,5 +58,21 @@ class User extends Authenticatable implements FilamentUser
         // return str_ends_with($this->email, '@gmail.com') && $this->hasVerifiedEmail();
         // return str_ends_with($this->email, '');
         return true;
+    }
+
+    /**
+     * Get the member associated with this user.
+     */
+    public function member()
+    {
+        return $this->belongsTo(Member::class);
+    }
+
+    /**
+     * Check if this user is a member.
+     */
+    public function isMember(): bool
+    {
+        return !is_null($this->member_id);
     }
 }

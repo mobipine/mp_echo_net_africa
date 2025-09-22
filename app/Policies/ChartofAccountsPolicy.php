@@ -55,7 +55,7 @@ class ChartofAccountsPolicy
      */
     public function deleteAny(User $user): bool
     {
-        return $user->can('delete_any_chartof::accounts');
+        return $user->can('{{ DeleteAny }}');
     }
 
     /**
@@ -63,7 +63,7 @@ class ChartofAccountsPolicy
      */
     public function forceDelete(User $user, ChartofAccounts $chartofAccounts): bool
     {
-        return $user->can('force_delete_chartof::accounts');
+        return $user->can('{{ ForceDelete }}');
     }
 
     /**
@@ -71,7 +71,7 @@ class ChartofAccountsPolicy
      */
     public function forceDeleteAny(User $user): bool
     {
-        return $user->can('force_delete_any_chartof::accounts');
+        return $user->can('{{ ForceDeleteAny }}');
     }
 
     /**
@@ -79,7 +79,7 @@ class ChartofAccountsPolicy
      */
     public function restore(User $user, ChartofAccounts $chartofAccounts): bool
     {
-        return $user->can('restore_chartof::accounts');
+        return $user->can('{{ Restore }}');
     }
 
     /**
@@ -87,7 +87,7 @@ class ChartofAccountsPolicy
      */
     public function restoreAny(User $user): bool
     {
-        return $user->can('restore_any_chartof::accounts');
+        return $user->can('{{ RestoreAny }}');
     }
 
     /**
@@ -95,7 +95,7 @@ class ChartofAccountsPolicy
      */
     public function replicate(User $user, ChartofAccounts $chartofAccounts): bool
     {
-        return $user->can('replicate_chartof::accounts');
+        return $user->can('{{ Replicate }}');
     }
 
     /**

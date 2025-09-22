@@ -55,7 +55,7 @@ class MemberPolicy
      */
     public function deleteAny(User $user): bool
     {
-        return $user->can('delete_any_member');
+        return $user->can('{{ DeleteAny }}');
     }
 
     /**
@@ -63,7 +63,7 @@ class MemberPolicy
      */
     public function forceDelete(User $user, Member $member): bool
     {
-        return $user->can('force_delete_member');
+        return $user->can('{{ ForceDelete }}');
     }
 
     /**
@@ -71,7 +71,7 @@ class MemberPolicy
      */
     public function forceDeleteAny(User $user): bool
     {
-        return $user->can('force_delete_any_member');
+        return $user->can('{{ ForceDeleteAny }}');
     }
 
     /**
@@ -79,7 +79,7 @@ class MemberPolicy
      */
     public function restore(User $user, Member $member): bool
     {
-        return $user->can('restore_member');
+        return $user->can('{{ Restore }}');
     }
 
     /**
@@ -87,7 +87,7 @@ class MemberPolicy
      */
     public function restoreAny(User $user): bool
     {
-        return $user->can('restore_any_member');
+        return $user->can('{{ RestoreAny }}');
     }
 
     /**
@@ -95,7 +95,7 @@ class MemberPolicy
      */
     public function replicate(User $user, Member $member): bool
     {
-        return $user->can('replicate_member');
+        return $user->can('{{ Replicate }}');
     }
 
     /**

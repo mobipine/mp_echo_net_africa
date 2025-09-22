@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\UserResource\Pages;
 use App\Filament\Resources\UserResource\RelationManagers;
+use App\Models\Member;
 use App\Models\Role;
 use App\Models\User;
 use Filament\Forms;
@@ -33,7 +34,10 @@ class UserResource extends Resource
             ->schema([
                 \Filament\Forms\Components\TextInput::make('name')->required(),
 
-                \Filament\Forms\Components\TextInput::make('email')->email()->required(),
+                \Filament\Forms\Components\TextInput::make('email')
+                ->email()
+                ->required()
+                ->unique(ignoreRecord: true),
                 
                 Forms\Components\TextInput::make('password')
                     ->password()
@@ -41,6 +45,14 @@ class UserResource extends Resource
                     ->dehydrated(fn($state) => filled($state))
                     ->required(fn($context) => $context === 'create'),
                 
+                Forms\Components\Select::make('member_id')
+                    ->label('Member')
+                    ->relationship('member', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->nullable()
+                    ->helperText('Select a member to link this user account to. Leave empty for non-member users.'),
+
                 Forms\Components\Select::make('roles')
                     ->relationship('roles', 'name')
                     ->multiple()
@@ -73,6 +85,11 @@ class UserResource extends Resource
                 \Filament\Tables\Columns\TextColumn::make('id')->sortable(),
                 \Filament\Tables\Columns\TextColumn::make('name')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('email')->sortable()->searchable(),
+                \Filament\Tables\Columns\TextColumn::make('member.name')
+                    ->label('Member')
+                    ->sortable()
+                    ->searchable()
+                    ->placeholder('Not a member'),
                 \Filament\Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable(),
                 ImageColumn::make('profile_picture')
                     ->label('Profile Picture')

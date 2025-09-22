@@ -55,7 +55,7 @@ class SMSInboxPolicy
      */
     public function deleteAny(User $user): bool
     {
-        return $user->can('delete_any_s::m::s');
+        return $user->can('{{ DeleteAny }}');
     }
 
     /**
@@ -63,7 +63,7 @@ class SMSInboxPolicy
      */
     public function forceDelete(User $user, SMSInbox $sMSInbox): bool
     {
-        return $user->can('force_delete_s::m::s');
+        return $user->can('{{ ForceDelete }}');
     }
 
     /**
@@ -71,7 +71,7 @@ class SMSInboxPolicy
      */
     public function forceDeleteAny(User $user): bool
     {
-        return $user->can('force_delete_any_s::m::s');
+        return $user->can('{{ ForceDeleteAny }}');
     }
 
     /**
@@ -79,7 +79,7 @@ class SMSInboxPolicy
      */
     public function restore(User $user, SMSInbox $sMSInbox): bool
     {
-        return $user->can('restore_s::m::s');
+        return $user->can('{{ Restore }}');
     }
 
     /**
@@ -87,7 +87,7 @@ class SMSInboxPolicy
      */
     public function restoreAny(User $user): bool
     {
-        return $user->can('restore_any_s::m::s');
+        return $user->can('{{ RestoreAny }}');
     }
 
     /**
@@ -95,7 +95,7 @@ class SMSInboxPolicy
      */
     public function replicate(User $user, SMSInbox $sMSInbox): bool
     {
-        return $user->can('replicate_s::m::s');
+        return $user->can('{{ Replicate }}');
     }
 
     /**

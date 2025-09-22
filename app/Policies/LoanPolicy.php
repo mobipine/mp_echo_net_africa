@@ -55,7 +55,7 @@ class LoanPolicy
      */
     public function deleteAny(User $user): bool
     {
-        return $user->can('delete_any_loan');
+        return $user->can('{{ DeleteAny }}');
     }
 
     /**
@@ -63,7 +63,7 @@ class LoanPolicy
      */
     public function forceDelete(User $user, Loan $loan): bool
     {
-        return $user->can('force_delete_loan');
+        return $user->can('{{ ForceDelete }}');
     }
 
     /**
@@ -71,7 +71,7 @@ class LoanPolicy
      */
     public function forceDeleteAny(User $user): bool
     {
-        return $user->can('force_delete_any_loan');
+        return $user->can('{{ ForceDeleteAny }}');
     }
 
     /**
@@ -79,7 +79,7 @@ class LoanPolicy
      */
     public function restore(User $user, Loan $loan): bool
     {
-        return $user->can('restore_loan');
+        return $user->can('{{ Restore }}');
     }
 
     /**
@@ -87,7 +87,7 @@ class LoanPolicy
      */
     public function restoreAny(User $user): bool
     {
-        return $user->can('restore_any_loan');
+        return $user->can('{{ RestoreAny }}');
     }
 
     /**
@@ -95,7 +95,7 @@ class LoanPolicy
      */
     public function replicate(User $user, Loan $loan): bool
     {
-        return $user->can('replicate_loan');
+        return $user->can('{{ Replicate }}');
     }
 
     /**
