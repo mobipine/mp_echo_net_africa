@@ -152,6 +152,18 @@ class ProcessSurveyProgressCommand extends Command
                     
                     try {
                         // $smsService->send($member->phone, $message);
+                        $placeholders = [
+                            '{member}' => $member->name,
+                            '{group}' => $member->group->name,
+                            '{id}' => $member->national_id,
+                            '{gender}'=>$member->gender,
+                            '{dob}'=>$member->dob, //To be just the year
+                        ];
+                        $message = str_replace(
+                            array_keys($placeholders),
+                            array_values($placeholders),
+                            $message
+                        );
                         $this->sendSMS($member->phone, $message);
                         $progress->update([
                             'current_question_id' => $nextQuestion->id,
