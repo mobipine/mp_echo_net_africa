@@ -70,13 +70,14 @@ class SurveyResponseResource extends Resource
 
 
                 //i want columns for id	survey_name form the survey id, msisdn	question	survey_response	created_at	updated_at	
-                Tables\Columns\TextColumn::make('id')->sortable(),
-                Tables\Columns\TextColumn::make('survey.title')->label('Survey Name')->sortable()->searchable(),
-                Tables\Columns\TextColumn::make('msisdn')->label('MSISDN')->sortable()->searchable(),
+                Tables\Columns\TextColumn::make('id')->sortable()->toggleable(isToggledHiddenByDefault:true),
+                Tables\Columns\TextColumn::make('survey.title')->label('Survey Name')->sortable()->searchable()->toggleable(isToggledHiddenByDefault:true),
+                Tables\Columns\TextColumn::make('member.name')->label('Member Name')->sortable()->searchable()->placeholder('Unknown')->toggleable(isToggledHiddenByDefault:false),
+                Tables\Columns\TextColumn::make('msisdn')->label('Phone Number')->sortable()->searchable()->toggleable(isToggledHiddenByDefault:true),
                 Tables\Columns\TextColumn::make('question.question')->label('Question')->sortable()->searchable(),
                 Tables\Columns\TextColumn::make('survey_response')->label('Response')->limit(50)->sortable(),
-                Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable(),
-                Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable(),
+                Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault:true),
+                Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault:true),
 
             ])
             ->filters([
