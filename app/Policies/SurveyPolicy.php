@@ -55,7 +55,7 @@ class SurveyPolicy
      */
     public function deleteAny(User $user): bool
     {
-        return $user->can('{{ DeleteAny }}');
+        return $user->can('delete_any_survey');
     }
 
     /**
@@ -63,7 +63,7 @@ class SurveyPolicy
      */
     public function forceDelete(User $user, Survey $survey): bool
     {
-        return $user->can('{{ ForceDelete }}');
+        return $user->can('force_delete_survey');
     }
 
     /**
@@ -71,7 +71,7 @@ class SurveyPolicy
      */
     public function forceDeleteAny(User $user): bool
     {
-        return $user->can('{{ ForceDeleteAny }}');
+        return $user->can('force_delete_any_survey');
     }
 
     /**
@@ -79,7 +79,7 @@ class SurveyPolicy
      */
     public function restore(User $user, Survey $survey): bool
     {
-        return $user->can('{{ Restore }}');
+        return $user->can('restore_survey');
     }
 
     /**
@@ -87,7 +87,7 @@ class SurveyPolicy
      */
     public function restoreAny(User $user): bool
     {
-        return $user->can('{{ RestoreAny }}');
+        return $user->can('restore_any_survey');
     }
 
     /**
@@ -95,7 +95,7 @@ class SurveyPolicy
      */
     public function replicate(User $user, Survey $survey): bool
     {
-        return $user->can('{{ Replicate }}');
+        return $user->can('replicate_survey');
     }
 
     /**
