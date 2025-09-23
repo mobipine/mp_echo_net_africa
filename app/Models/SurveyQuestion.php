@@ -15,6 +15,7 @@ class SurveyQuestion extends Model
         'possible_answers',
         'question_interval',
         'question_interval_unit',
+        'purpose',
     ];
 
     protected $casts = [
