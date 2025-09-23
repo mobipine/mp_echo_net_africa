@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class SurveyResponse extends Model
 {
-    protected $fillable = ['survey_id', 'msisdn', 'question_id', 'survey_response', 'session_id'];
+    protected $fillable = ['survey_id', 'msisdn', 'question_id', 'survey_response', 'session_id','inbox_id'];
 
     public function survey()
     {
@@ -25,6 +25,10 @@ class SurveyResponse extends Model
     public function member()
     {
         return $this->belongsTo(\App\Models\Member::class, 'msisdn', 'phone');
+    }
+    public function inbox()
+    {
+        return $this->belongsTo(SMSInbox::class, 'inbox_id');
     }
 
 }
