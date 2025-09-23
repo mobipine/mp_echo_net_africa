@@ -44,24 +44,24 @@ class SurveyQuestionResource extends Resource
                     ])
                     ->default('regular')
                     ->required()
-                    ->reactive()
-                    ->afterStateUpdated(function ($state, callable $set) {
-                        if ($state === 'edit_group') {
-                            // force Multiple Choice
-                            $set('answer_strictness', 'Multiple Choice');
+                    ->reactive(),
+                    // ->afterStateUpdated(function ($state, callable $set) {
+                    //     if ($state === 'edit_group') {
+                    //         // force Multiple Choice
+                    //         $set('answer_strictness', 'Multiple Choice');
 
-                            // fetch groups from DB
-                            $groups = Group::all()->map(function ($group, $index) {
-                                return [
-                                    'letter' => chr(65 + $index), // A, B, C, ...
-                                    'answer' => $group->name,     // Or whichever column you want
-                                ];
-                            })->toArray();
+                    //         // fetch groups from DB
+                    //         $groups = Group::all()->map(function ($group, $index) {
+                    //             return [
+                    //                 'letter' => chr(65 + $index), // A, B, C, ...
+                    //                 'answer' => $group->name,     // Or whichever column you want
+                    //             ];
+                    //         })->toArray();
 
-                            // prefill possible answers
-                            $set('possible_answers', $groups);
-                        }
-                    }),
+                    //         // prefill possible answers
+                    //         $set('possible_answers', $groups);
+                    //     }
+                    // }),
 
 
                 Forms\Components\Select::make('answer_strictness')

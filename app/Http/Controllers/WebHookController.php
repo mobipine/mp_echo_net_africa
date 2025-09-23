@@ -240,6 +240,10 @@ class WebHookController extends Controller
             Log::info("the response violates the questions strictness");
             return response()->json(['status' => 'error', 'message' => 'Invalid response.']);
         }
+        $inbox_id = SMSInbox::where('phone_number', $msisdn)
+                    ->latest()
+                    ->first()
+                    ->id;
 
 
         // Store the response
@@ -248,6 +252,7 @@ class WebHookController extends Controller
             'msisdn' => $msisdn,
             'question_id' => $currentQuestion->id,
             'survey_response' => $actualAnswer,
+            'inbox_id' => $inbox_id,
             'session_id' => $progress->id,//this is a foreign key to the survey_progress table
         ]);
 
@@ -364,11 +369,18 @@ class WebHookController extends Controller
         $member->save();  
         $survey = $progress->survey;
 
+        $inbox_id = SMSInbox::where('phone_number', $msisdn)
+                    ->latest()
+                    ->first()
+                    ->id;
+        
+
         SurveyResponse::create([
             'survey_id' => $survey->id,
             'msisdn' => $msisdn,
             'question_id' => $currentQuestion->id,
             'survey_response' => $actualAnswer,
+            'inbox_id' => $inbox_id,
             'session_id' => $progress->id,//this is a foreign key to the survey_progress table
         ]);
 
