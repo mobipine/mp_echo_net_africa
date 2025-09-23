@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Group;
 use App\Models\Survey;
 use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
@@ -39,30 +40,23 @@ class WebHookController extends Controller
             ->whereHas('member', function ($query) use ($msisdn) {
                 $query->where('phone', $msisdn);
             })
-            ->where('status','ACTIVE')
+            ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS', 'PENDING'])
             ->whereNull('completed_at')
             ->latest('last_dispatched_at')
             ->first();
 
+        // Process the user's response
         if ($progress) {
-            // Process the user's response
-            return $this->processSurveyResponse($msisdn, $progress, $validatedData['message']);
+            if ($progress->status=="ACTIVE"){
+                return $this->processSurveyResponse($msisdn, $progress, $validatedData['message']);
+            } elseif($progress->status=='PENDING'){
+                return $this->processSurveyResponse($msisdn, $progress, $validatedData['message']);
+            }elseif($progress->status=='UPDATING_DETAILS'){
+                return $this->updateUserDetails($msisdn, $progress, $validatedData['message']);
+            }       
         }
 
-        $pendingProgress = SurveyProgress::with(['survey', 'currentQuestion'])
-            ->whereHas('member', function ($query) use ($msisdn) {
-                $query->where('phone', $msisdn);
-            })
-            ->whereNull('completed_at')
-            ->where('status','PENDING')
-            ->latest('last_dispatched_at')
-            ->first();
-
-        if ($pendingProgress) {
-            // Process the user's response
-            return $this->processSurveyResponse($msisdn, $pendingProgress, $validatedData['message']);
-        }
-
+        
         Log::info("No active survey or trigger word found for message: $message");
 
         return response()->json(['status' => 'ignored', 'message' => 'No active survey or trigger word found.']);
@@ -154,40 +148,80 @@ class WebHookController extends Controller
 
 
         Log::info("The survey progress status is $progress->status");
+
+        $userResponse = trim($response);  
+        Log::info($userResponse);
+
+        $actualAnswer = null;
+
+        if ($currentQuestion->answer_strictness === "Multiple Choice") {
+            foreach ($currentQuestion->possible_answers as $answer) {
+                if (strcasecmp($answer['letter'], $userResponse) === 0) {
+                    $actualAnswer = $answer['answer']; // e.g. "No"
+                    break;
+                }
+            }
+        } else {
+            $actualAnswer = $userResponse; // For non-multiple-choice, just store as is
+        }
+
+        Log::info("The user selected $userResponse the actual answer is $actualAnswer");
+
+        //Handle editing the user details
+        if ($currentQuestion->purpose=="confirm"){
+            if ($actualAnswer=='Edit'){
+                Log::info("The user wishes to edit some details");
+                $progress->update([
+                    'status'=>'UPDATING_DETAILS',
+                ]);
+            }
+        }
+        
         
         //If the survey progress status is pending it means we had sent the confirmation message
-        if ($progress->status=="PENDING"){
-            Log::info("This is a confirmation message response");
-            $response=trim(strtolower($response));
-            if ($response=="yes"){
-                Log::info("The member wishes to continue with the survey. Updating survey progress to ACTIVE. Resending the previous question...");
-                $progress->update([
-                    'status'=>'ACTIVE',
-                ]);
-                $this->sendSMS($msisdn, $currentQuestion->question);
-                return response()->json([
-                    'status'=>'success',
-                    'message'=>'The member wishes to continue with the survey. Updating survey progress to ACTIVE. Resending the previous question...'
-                ]);
-            }
-            elseif ($response=="no"){
-                Log::info("The member does not wish to continue with the survey. Updating survey progress to CANCELLED");
-                $progress->update([
-                    'status'=>'CANCELLED'
-                ]);
-                return response()->json([
-                    'status'=>'success',
-                    'message'=>"The member does not wish to continue with the survey. Updating survey progress to CANCELLED"
-                ]);
-            }else{
-                Log::info("invalid response");
-                return response()->json([
-                    'status'=>'error',
-                    'message'=>"Invalid response, it's a yes or no question",
-                ]);
-            }
+
+        //Handle the confirmation later
+
+        // if ($progress->status=="PENDING"){
+        //     Log::info("This is a confirmation message response");
+        //     $response=trim(strtolower($response));
+        //     if ($response=="yes"){
+        //         Log::info("The member wishes to continue with the survey. Updating survey progress to ACTIVE. Resending the previous question...");
+        //         $progress->update([
+        //             'status'=>'ACTIVE',
+        //         ]);
+        //         $message = "{$currentQuestion->question}\n"; 
+        //         if ($currentQuestion->answer_strictness=="Multiple Choice"){
+        //             foreach ($currentQuestion->possible_answers as $answer) {
+        //                 $message .= "{$answer['letter']}. {$answer['answer']}\n";
+        //             }
+        //             Log::info("The message to be sent is {$message}");
+        //         }
+        //         $message .= "Please reply with your answer.";
+        //         $this->sendSMS($msisdn, $message);
+        //         return response()->json([
+        //             'status'=>'success',
+        //             'message'=>'The member wishes to continue with the survey. Updating survey progress to ACTIVE. Resending the previous question...'
+        //         ]);
+        //     }
+        //     elseif ($response=="no"){
+        //         Log::info("The member does not wish to continue with the survey. Updating survey progress to CANCELLED");
+        //         $progress->update([
+        //             'status'=>'CANCELLED'
+        //         ]);
+        //         return response()->json([
+        //             'status'=>'success',
+        //             'message'=>"The member does not wish to continue with the survey. Updating survey progress to CANCELLED"
+        //         ]);
+        //     }else{
+        //         Log::info("invalid response");
+        //         return response()->json([
+        //             'status'=>'error',
+        //             'message'=>"Invalid response, it's a yes or no question",
+        //         ]);
+        //     }
              
-        }
+        // }
 
         Log::info("This is the current question $currentQuestion");
 
@@ -207,23 +241,6 @@ class WebHookController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Invalid response.']);
         }
 
-
-    $userResponse = trim($response);  
-    Log::info($userResponse);
-
-    $actualAnswer = null;
-
-    if ($currentQuestion->answer_strictness === "Multiple Choice") {
-        foreach ($currentQuestion->possible_answers as $answer) {
-            if (strcasecmp($answer['letter'], $userResponse) === 0) {
-                $actualAnswer = $answer['answer']; // e.g. "No"
-                break;
-            }
-        }
-    } else {
-        $actualAnswer = $userResponse; // For non-multiple-choice, just store as is
-    }
-    Log::info($actualAnswer);
 
         // Store the response
         SurveyResponse::create([
@@ -264,6 +281,102 @@ class WebHookController extends Controller
             'message' => 'Response received. Thank you!',
             'nxt' => $nextQuestion
         ]);
+    }
+
+    public function updateUserDetails($msisdn, SurveyProgress $progress, $response){
+        Log::info("updating user details");
+        $member = Member::where('phone', $msisdn)->first();
+
+        if (!$member) {
+            Log::warning("No member found with phone number: {$msisdn}");
+            return response()->json(['status' => 'error', 'message' => 'Phone number not recognized.']);
+        }
+
+        $currentQuestion = $progress->currentQuestion;
+        $userResponse = trim($response);  
+        
+
+        $actualAnswer = null;
+
+        if ($currentQuestion->answer_strictness === "Multiple Choice") {
+            foreach ($currentQuestion->possible_answers as $answer) {
+                if (strcasecmp($answer['letter'], $userResponse) === 0) {
+                    $actualAnswer = $answer['answer']; // e.g. "No"
+                    break;
+                }
+            }
+        } else {
+            $actualAnswer = $userResponse; // For non-multiple-choice, just store as is
+        }
+
+        if ($currentQuestion->purpose=="confirm"){
+            if ($actualAnswer=='Edit'){
+                Log::info("The user wishes to edit some details");
+                $progress->update([
+                    'status'=>'UPDATING_DETAILS',
+                ]);
+                $progress->update(['has_responded' => true]);
+            }else{
+                Log::info("The member has confirmed the edited details. Updating status to ACTIVE...");
+                $progress->update([
+                    'status'=>'ACTIVE',
+                ]);
+                $progress->update(['has_responded' => true]);
+            }
+        }
+
+        if ($currentQuestion->purpose=="edit_id") {
+            Log::info("Updating member ID number...");
+            $member->national_id = $actualAnswer;
+            $progress->update(['has_responded' => true]);
+
+        } elseif ($currentQuestion->purpose=="edit_year_of_birth") {
+            Log::info("Updating member year of birth...");
+
+            $dob = \Carbon\Carbon::parse($member->dob);
+            Log::info($dob);
+            $dob->year = (int)$actualAnswer;
+            $member->dob = $dob;
+
+            $progress->update(['has_responded' => true]);
+
+        } elseif ($currentQuestion->purpose=="edit_gender") {
+            Log::info("Updating member gender...");
+
+            $member->gender = $actualAnswer;
+            $progress->update(['has_responded' => true]);
+
+        } elseif ($currentQuestion->purpose=="edit_group") {
+            Log::info("Updating member group... to $actualAnswer");
+
+            $group = Group::where('name', $actualAnswer)->first();
+
+            $member->group_id = $group->id;
+            $progress->update(['has_responded' => true]);
+
+        }elseif($currentQuestion->purpose=="edit_name"){
+            Log::info("Updating member name...");
+
+            $member->name = $actualAnswer;
+            $progress->update(['has_responded' => true]);
+        }
+
+        $member->save();  
+        $survey = $progress->survey;
+
+        SurveyResponse::create([
+            'survey_id' => $survey->id,
+            'msisdn' => $msisdn,
+            'question_id' => $currentQuestion->id,
+            'survey_response' => $actualAnswer,
+            'session_id' => $progress->id,//this is a foreign key to the survey_progress table
+        ]);
+
+        return response()->json([
+            'status' => "success",
+            "member" => $member
+        ]);
+
     }
 
     public function sendSMS($msisdn, $message)

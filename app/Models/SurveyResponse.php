@@ -22,5 +22,9 @@ class SurveyResponse extends Model
     {
         return $this->belongsTo(ShortcodeSession::class, 'session_id');
     }
+    public function member()
+    {
+        return $this->belongsTo(\App\Models\Member::class, 'msisdn', 'phone');
+    }
 
 }

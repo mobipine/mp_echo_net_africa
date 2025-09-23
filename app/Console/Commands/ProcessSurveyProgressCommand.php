@@ -24,7 +24,7 @@ class ProcessSurveyProgressCommand extends Command
 
         $progressRecords = SurveyProgress::with(['survey', 'currentQuestion', 'member'])
             ->whereNull('completed_at')
-            ->where('status', 'ACTIVE')
+            ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
             ->get();
 
         if($progressRecords->isEmpty()){
@@ -111,7 +111,7 @@ class ProcessSurveyProgressCommand extends Command
             $hasResponded = SurveyProgress::where('member_id', $member->id)
                 ->where('survey_id', $survey->id)
                 ->where('has_responded', true)
-                ->where('status', 'ACTIVE')
+                ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
                 ->exists();
                 
         
@@ -152,6 +152,18 @@ class ProcessSurveyProgressCommand extends Command
                     
                     try {
                         // $smsService->send($member->phone, $message);
+                        $placeholders = [
+                            '{member}' => $member->name,
+                            '{group}' => $member->group->name,
+                            '{id}' => $member->national_id,
+                            '{gender}'=>$member->gender,
+                            '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
+                        ];
+                        $message = str_replace(
+                            array_keys($placeholders),
+                            array_values($placeholders),
+                            $message
+                        );
                         $this->sendSMS($member->phone, $message);
                         $progress->update([
                             'current_question_id' => $nextQuestion->id,

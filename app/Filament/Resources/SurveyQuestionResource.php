@@ -6,6 +6,7 @@ use App\Filament\Resources\SurveyQuestionResource\Pages;
 use App\Filament\Resources\SurveyQuestionResource\RelationManagers;
 use App\Models\SurveyQuestion;
 use Filament\Forms;
+use App\Models\Group;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
@@ -30,6 +31,38 @@ class SurveyQuestionResource extends Resource
                     ->options(['Alphanumeric' => 'Alphanumeric', 'Strictly Number' => 'Strictly Number'])
                     ->required(),
                 Forms\Components\Textarea::make('data_type_violation_response')->maxLength(500),
+                Forms\Components\Select::make('purpose')
+                    ->options([
+                        'regular' => 'Regular Question',
+                        'edit_name'    => 'Edit Name',
+                        'edit_id' =>'Edit ID',
+                        'edit_gender' => 'Edit Gender',
+                        'edit_group' => 'Edit to which Group a member belongs',
+                        'edit_year_of_birth' => 'Edit Year of Birth',
+                        'confirm' => 'Confirm Details',
+                        'info'    => 'Informational',
+                    ])
+                    ->default('regular')
+                    ->required()
+                    ->reactive()
+                    ->afterStateUpdated(function ($state, callable $set) {
+                        if ($state === 'edit_group') {
+                            // force Multiple Choice
+                            $set('answer_strictness', 'Multiple Choice');
+
+                            // fetch groups from DB
+                            $groups = Group::all()->map(function ($group, $index) {
+                                return [
+                                    'letter' => chr(65 + $index), // A, B, C, ...
+                                    'answer' => $group->name,     // Or whichever column you want
+                                ];
+                            })->toArray();
+
+                            // prefill possible answers
+                            $set('possible_answers', $groups);
+                        }
+                    }),
+
 
                 Forms\Components\Select::make('answer_strictness')
                     ->options(['Open-Ended' => 'Open-Ended', 'Multiple Choice' => 'Multiple Choice'])
@@ -55,9 +88,7 @@ class SurveyQuestionResource extends Resource
                                 'months' => 'Months',
                             ])
                             ->default('days'),
-
-                        
-
+                
                 //do a repeater for possible_answers that only shows if answer_strictness is Multiple Choice with  afield for the letter and the answer
                 Forms\Components\Repeater::make('possible_answers')
                     ->schema([
