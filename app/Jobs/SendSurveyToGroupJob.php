@@ -72,7 +72,7 @@ class SendSurveyToGroupJob implements ShouldQueue
                         '{group}' => $member->group->name,
                         '{id}' => $member->national_id,
                         '{gender}'=>$member->gender,
-                        '{dob}'=>$member->dob, //To be just the year
+                        '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
                     ];
                     $message = str_replace(
                         array_keys($placeholders),
