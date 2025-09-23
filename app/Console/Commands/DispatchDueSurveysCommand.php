@@ -58,7 +58,7 @@ class DispatchDueSurveysCommand extends Command
 
                 foreach ($members as $member) {
 
-                    $message = "Hello {$member->name}, {$firstQuestion->question}\n"; 
+                    $message = "{$firstQuestion->question}\n"; 
                     if ($firstQuestion->answer_strictness=="Multiple Choice"){
                         foreach ($firstQuestion->possible_answers as $answer) {
                             $message .= "{$answer['letter']}. {$answer['answer']}\n";
