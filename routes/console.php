@@ -18,8 +18,8 @@ Schedule::call(function () {
     Artisan::call('send:sms');
 })->name('send_sms')->everyFiveSeconds()->withoutOverlapping();
 
-Schedule::command('surveys:dispatch-due')->everyMinute();
-Schedule::command('surveys:process-progress')->everyMinute();
+Schedule::command('surveys:dispatch-due')->everyFiveSeconds()->withoutOverlapping();
+Schedule::command('surveys:process-progress')->everyFiveSeconds()->withoutOverlapping();
 
 // Loan interest accrual - run daily at 9 AM
 Schedule::command('loans:accrue-interest')->dailyAt('09:00');

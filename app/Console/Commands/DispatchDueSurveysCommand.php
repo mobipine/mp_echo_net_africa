@@ -73,6 +73,8 @@ class DispatchDueSurveysCommand extends Command
                         '{id}' => $member->national_id,
                         '{gender}'=>$member->gender,
                         '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
+                        '{LIP}' => $member?->group?->localImplementingPartner?->name,
+                        '{month}' => \Carbon\Carbon::now()->monthName,
                     ];
                     $message = str_replace(
                         array_keys($placeholders),

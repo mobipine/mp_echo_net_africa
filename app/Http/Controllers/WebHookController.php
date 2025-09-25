@@ -8,6 +8,7 @@ use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
 use App\Models\SurveyProgress;
 use App\Models\Member;
+use App\Models\MemberEditRequest;
 use App\Models\SMSInbox;
 use App\Services\UjumbeSMS;
 use Illuminate\Http\Request;
@@ -40,20 +41,16 @@ class WebHookController extends Controller
             ->whereHas('member', function ($query) use ($msisdn) {
                 $query->where('phone', $msisdn);
             })
-            ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS', 'PENDING'])
+            ->whereIn('status', ['ACTIVE', 'PENDING'])
             ->whereNull('completed_at')
             ->latest('last_dispatched_at')
             ->first();
 
         // Process the user's response
         if ($progress) {
-            if ($progress->status=="ACTIVE"){
-                return $this->processSurveyResponse($msisdn, $progress, $validatedData['message']);
-            } elseif($progress->status=='PENDING'){
-                return $this->processSurveyResponse($msisdn, $progress, $validatedData['message']);
-            }elseif($progress->status=='UPDATING_DETAILS'){
-                return $this->updateUserDetails($msisdn, $progress, $validatedData['message']);
-            }       
+           
+            return $this->processSurveyResponse($msisdn, $progress, $validatedData['message']);
+              
         }
 
         
@@ -165,18 +162,69 @@ class WebHookController extends Controller
             $actualAnswer = $userResponse; // For non-multiple-choice, just store as is
         }
 
-        Log::info("The user selected $userResponse the actual answer is $actualAnswer");
+        Log::info("The actual answer is $actualAnswer");
 
-        //Handle editing the user details
-        if ($currentQuestion->purpose=="confirm"){
-            if ($actualAnswer=='Edit'){
-                Log::info("The user wishes to edit some details");
-                $progress->update([
-                    'status'=>'UPDATING_DETAILS',
+         $member = $progress->member;
+         if ($currentQuestion->purpose=="edit_id") {
+           
+            $memberEditRequest=MemberEditRequest::updateOrCreate(
+                [
+                    'phone_number'=>$msisdn,
+                    'name' =>$member->name,
+                    'status' => "pending",
+                ],
+                [
+                    'national_id' =>$actualAnswer,
                 ]);
-            }
+            $progress->update(['has_responded' => true]);
+
+        } elseif ($currentQuestion->purpose=="edit_year_of_birth") {
+            
+            $dob = \Carbon\Carbon::parse($member->dob);
+
+            $dob->year = (int)$actualAnswer;
+            
+            $memberEditRequest=MemberEditRequest::updateOrCreate(
+                [
+                    'phone_number'=>$msisdn,
+                    'name' =>$member->name,
+                    'status' => "pending",
+                ],
+                [
+                    'year_of_birth' =>$actualAnswer,
+                ]);
+
+            $progress->update(['has_responded' => true]);
+
+        } elseif ($currentQuestion->purpose=="edit_gender") {
+            
+            Log::info("Updating member gender...");
+
+            $memberEditRequest=MemberEditRequest::updateOrCreate(
+                [
+                    'phone_number'=>$msisdn,
+                    'name' =>$member->name,
+                    'status' => "pending",
+                ],
+                [
+                    'gender' =>$actualAnswer,
+                ]);
+            $progress->update(['has_responded' => true]);
+
+        } elseif ($currentQuestion->purpose=="edit_group") {
+
+            $memberEditRequest=MemberEditRequest::updateOrCreate(
+                [
+                    'phone_number'=>$msisdn,
+                    'name' =>$member->name,
+                    'status' => "pending",
+                ],
+                [
+                    'group' =>$actualAnswer,
+                ]);
+            $progress->update(['has_responded' => true]);
+
         }
-        
         
         //If the survey progress status is pending it means we had sent the confirmation message
 
@@ -286,109 +334,6 @@ class WebHookController extends Controller
             'message' => 'Response received. Thank you!',
             'nxt' => $nextQuestion
         ]);
-    }
-
-    public function updateUserDetails($msisdn, SurveyProgress $progress, $response){
-        Log::info("updating user details");
-        $member = Member::where('phone', $msisdn)->first();
-
-        if (!$member) {
-            Log::warning("No member found with phone number: {$msisdn}");
-            return response()->json(['status' => 'error', 'message' => 'Phone number not recognized.']);
-        }
-
-        $currentQuestion = $progress->currentQuestion;
-        $userResponse = trim($response);  
-        
-
-        $actualAnswer = null;
-
-        if ($currentQuestion->answer_strictness === "Multiple Choice") {
-            foreach ($currentQuestion->possible_answers as $answer) {
-                if (strcasecmp($answer['letter'], $userResponse) === 0) {
-                    $actualAnswer = $answer['answer']; // e.g. "No"
-                    break;
-                }
-            }
-        } else {
-            $actualAnswer = $userResponse; // For non-multiple-choice, just store as is
-        }
-
-        if ($currentQuestion->purpose=="confirm"){
-            if ($actualAnswer=='Edit'){
-                Log::info("The user wishes to edit some details");
-                $progress->update([
-                    'status'=>'UPDATING_DETAILS',
-                ]);
-                $progress->update(['has_responded' => true]);
-            }else{
-                Log::info("The member has confirmed the edited details. Updating status to ACTIVE...");
-                $progress->update([
-                    'status'=>'ACTIVE',
-                ]);
-                $progress->update(['has_responded' => true]);
-            }
-        }
-
-        if ($currentQuestion->purpose=="edit_id") {
-            Log::info("Updating member ID number...");
-            $member->national_id = $actualAnswer;
-            $progress->update(['has_responded' => true]);
-
-        } elseif ($currentQuestion->purpose=="edit_year_of_birth") {
-            Log::info("Updating member year of birth...");
-
-            $dob = \Carbon\Carbon::parse($member->dob);
-            Log::info($dob);
-            $dob->year = (int)$actualAnswer;
-            $member->dob = $dob;
-
-            $progress->update(['has_responded' => true]);
-
-        } elseif ($currentQuestion->purpose=="edit_gender") {
-            Log::info("Updating member gender...");
-
-            $member->gender = $actualAnswer;
-            $progress->update(['has_responded' => true]);
-
-        } elseif ($currentQuestion->purpose=="edit_group") {
-            Log::info("Updating member group... to $actualAnswer");
-
-            $group = Group::where('name', $actualAnswer)->first();
-
-            $member->group_id = $group->id;
-            $progress->update(['has_responded' => true]);
-
-        }elseif($currentQuestion->purpose=="edit_name"){
-            Log::info("Updating member name...");
-
-            $member->name = $actualAnswer;
-            $progress->update(['has_responded' => true]);
-        }
-
-        $member->save();  
-        $survey = $progress->survey;
-
-        $inbox_id = SMSInbox::where('phone_number', $msisdn)
-                    ->latest()
-                    ->first()
-                    ->id;
-        
-
-        SurveyResponse::create([
-            'survey_id' => $survey->id,
-            'msisdn' => $msisdn,
-            'question_id' => $currentQuestion->id,
-            'survey_response' => $actualAnswer,
-            'inbox_id' => $inbox_id,
-            'session_id' => $progress->id,//this is a foreign key to the survey_progress table
-        ]);
-
-        return response()->json([
-            'status' => "success",
-            "member" => $member
-        ]);
-
     }
 
     public function sendSMS($msisdn, $message)
