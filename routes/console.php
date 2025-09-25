@@ -18,6 +18,6 @@ Schedule::call(function () {
     Artisan::call('send:sms');
 })->name('send_sms')->everyFiveSeconds()->withoutOverlapping();
 
-Schedule::command('surveys:dispatch-due')->everyMinute();
-Schedule::command('surveys:process-progress')->everyMinute();
+Schedule::command('surveys:dispatch-due')->everyFiveSeconds()->withoutOverlapping();
+Schedule::command('surveys:process-progress')->everyFiveSeconds()->withoutOverlapping();
 
