@@ -171,6 +171,7 @@ class WebHookController extends Controller
                 [
                     'phone_number'=>$msisdn,
                     'name' =>$member->name,
+                    'status' => "pending",
                 ],
                 [
                     'national_id' =>$actualAnswer,
@@ -187,6 +188,7 @@ class WebHookController extends Controller
                 [
                     'phone_number'=>$msisdn,
                     'name' =>$member->name,
+                    'status' => "pending",
                 ],
                 [
                     'year_of_birth' =>$actualAnswer,
@@ -202,6 +204,7 @@ class WebHookController extends Controller
                 [
                     'phone_number'=>$msisdn,
                     'name' =>$member->name,
+                    'status' => "pending",
                 ],
                 [
                     'gender' =>$actualAnswer,
@@ -214,6 +217,7 @@ class WebHookController extends Controller
                 [
                     'phone_number'=>$msisdn,
                     'name' =>$member->name,
+                    'status' => "pending",
                 ],
                 [
                     'group' =>$actualAnswer,
