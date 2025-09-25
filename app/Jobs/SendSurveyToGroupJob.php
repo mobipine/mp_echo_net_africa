@@ -73,12 +73,15 @@ class SendSurveyToGroupJob implements ShouldQueue
                         '{id}' => $member->national_id,
                         '{gender}'=>$member->gender,
                         '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
+                        '{LIP}' => $member?->group?->localImplementingPartner?->name,
+                        '{month}' => \Carbon\Carbon::now()->monthName,
                     ];
                     $message = str_replace(
                         array_keys($placeholders),
                         array_values($placeholders),
                         $message
                     );
+                Log::info("The message to be sent is {$message}");
                     
                 if (empty($member->phone)) {
                     continue;
