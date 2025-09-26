@@ -20,13 +20,25 @@ class WebHookController extends Controller
     {
         Log::info('Webhook received:', $request->all());
 
-        $validatedData = $request->validate([
-            'phone_number' => 'required|string',
-            'message' => 'required|string',
-        ]);
+        if (!empty($msg['from_me'])) {
+            Log::info("Ignored own message: " . ($msg['text']['body'] ?? 'N/A'));
+            return response()->json(['status' => 'ignored']);
+        }
 
-        $msisdn = $validatedData['phone_number'];
-        $message = trim(strtolower($validatedData['message']));
+        $data = $request->all();
+
+        if (isset($data['phone_number']) && isset($data['message'])) {
+            $msisdn = $data['phone_number'];
+            $message = trim(strtolower($data['message']));
+        }
+        elseif (isset($data['messages'][0])) {
+            $msg = $data['messages'][0];
+
+            $msisdn = $msg['from'] ?? null;
+            $message = isset($msg['text']['body']) 
+                ? trim(strtolower($msg['text']['body'])) 
+                : null;
+        }
 
         // Check if the message is a trigger word for any survey
         $survey = Survey::where('trigger_word', $message)->first();
@@ -49,7 +61,7 @@ class WebHookController extends Controller
         // Process the user's response
         if ($progress) {
            
-            return $this->processSurveyResponse($msisdn, $progress, $validatedData['message']);
+            return $this->processSurveyResponse($msisdn, $progress, $message);
               
         }
 
