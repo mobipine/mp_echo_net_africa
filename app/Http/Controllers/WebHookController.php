@@ -134,6 +134,20 @@ class WebHookController extends Controller
 
                 //send the first question
                 $message = "New Survey: {$survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
+                $placeholders = [
+                    '{member}' => $member->name,
+                    '{group}' => $member->group->name,
+                    '{id}' => $member->national_id,
+                    '{gender}'=>$member->gender,
+                    '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
+                    '{LIP}' => $member?->group?->localImplementingPartner?->name,
+                    '{month}' => \Carbon\Carbon::now()->monthName,
+                ];
+                $message = str_replace(
+                    array_keys($placeholders),
+                    array_values($placeholders),
+                    $message
+                );
                 $this->sendSMS($msisdn, $message);
                 return response()->json([
                     'status' => 'success',
@@ -154,6 +168,20 @@ class WebHookController extends Controller
 
             //send the first question
             $message = "New Survey: {$survey->title}\n\nQuestion 1: {$firstQuestion->question}\nPlease reply with your answer.";
+            $placeholders = [
+                '{member}' => $member->name,
+                '{group}' => $member->group->name,
+                '{id}' => $member->national_id,
+                '{gender}'=>$member->gender,
+                '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
+                '{LIP}' => $member?->group?->localImplementingPartner?->name,
+                '{month}' => \Carbon\Carbon::now()->monthName,
+            ];
+            $message = str_replace(
+                array_keys($placeholders),
+                array_values($placeholders),
+                $message
+            );
             $this->sendSMS($msisdn, $message);
             return response()->json([
                 'status' => 'success',
