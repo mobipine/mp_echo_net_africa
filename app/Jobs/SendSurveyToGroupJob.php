@@ -58,14 +58,35 @@ class SendSurveyToGroupJob implements ShouldQueue
             $sentCount = 0;
 
             foreach ($members as $member) {
-                $message = "{$firstQuestion->question}\n"; 
-                if ($firstQuestion->answer_strictness=="Multiple Choice"){
+                if ($firstQuestion->answer_strictness == "Multiple Choice") {
+                    $message = "{$firstQuestion->question}\n\n"; 
+
+                    $letters = [];
                     foreach ($firstQuestion->possible_answers as $answer) {
                         $message .= "{$answer['letter']}. {$answer['answer']}\n";
+                        $letters[] = $answer['letter'];
                     }
+                    
+                    // Dynamically build the letter options string
+                    if (count($letters) === 1) {
+                        $letterText = $letters[0];
+                    } elseif (count($letters) === 2) {
+                        $letterText = $letters[0] . " or " . $letters[1];
+                    } else {
+                        $lastLetter = array_pop($letters);
+                        $letterText = implode(', ', $letters) . " or " . $lastLetter;
+                    }
+                    
+                    $message .= "\nPlease reply with the letter {$letterText}.";
                     Log::info("The message to be sent is {$message}");
+                } else {
+                    $message = $firstQuestion->question;
+                    if ($firstQuestion->answer_data_type === 'Strictly Number') {
+                        $message .= "\n💡 *Note: Your answer should be a number.*";
+                    } elseif ($firstQuestion->answer_data_type === 'Alphanumeric') {
+                        $message .= "\n💡 *Note: Your answer should contain only letters and numbers.*";
+                    }
                 }
-                $message .= "Please reply with your answer.";
                 
                 $placeholders = [
                         '{member}' => $member->name,

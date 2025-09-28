@@ -137,17 +137,35 @@ class ProcessSurveyProgressCommand extends Command
                     Log::info("The question is {$nextQuestion->answer_strictness}");
 
                     //Formatting the question if multiple choice
-                    if ($nextQuestion->answer_strictness=="Multiple Choice"){
-
-                        $message = "{$nextQuestion->question}\n"; 
+                    if ($nextQuestion->answer_strictness == "Multiple Choice") {
+                        $message = "{$nextQuestion->question}\n\n"; 
                         
+                        $letters = [];
                         foreach ($nextQuestion->possible_answers as $answer) {
                             $message .= "{$answer['letter']}. {$answer['answer']}\n";
+                            $letters[] = $answer['letter'];
                         }
+                        
+                        // Dynamically build the letter options string
+                        if (count($letters) === 1) {
+                            $letterText = $letters[0];
+                        } elseif (count($letters) === 2) {
+                            $letterText = $letters[0] . " or " . $letters[1];
+                        } else {
+                            $lastLetter = array_pop($letters);
+                            $letterText = implode(', ', $letters) . " or " . $lastLetter;
+                        }
+                        
+                        $message .= "\nPlease reply with the letter {$letterText}.";
                         Log::info("The message to be sent is {$message}");
 
-                    }else{
-                        $message = $nextQuestion->question; 
+                    } else {
+                        $message = $nextQuestion->question;
+                        if ($nextQuestion->answer_data_type === 'Strictly Number') {
+                            $message .= "\n💡 *Note: Your answer should be a number.*";
+                        } elseif ($nextQuestion->answer_data_type === 'Alphanumeric') {
+                            $message .= "\n💡 *Note: Your answer should contain only letters and numbers.*";
+                        }
                     }
                     
                     try {
