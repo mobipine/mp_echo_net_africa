@@ -50,9 +50,6 @@ RUN composer install
 # Copy the project files into the container
 COPY . .
 
-# Copy Supervisor configuration
-COPY supervisor/conf.d/laravel-worker.conf /etc/supervisor/conf.d/laravel-worker.conf
-
 EXPOSE 80
 
 # Laravel specific commands
