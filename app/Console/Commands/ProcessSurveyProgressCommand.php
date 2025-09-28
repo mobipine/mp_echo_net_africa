@@ -223,17 +223,17 @@ class ProcessSurveyProgressCommand extends Command
                 // No response and it's been more than 3 days, resend the last question
                 // $message = $this->formatQuestionMessage($currentQuestion, true); // Add a reminder prefix
                  
-                try {
-                    // $smsService->send($member->phone, $message);
-                    $this->sendSMS($member->phone, $message);
-                    $progress->update([
-                        'last_dispatched_at' => now(),
-                        'status'=>'PENDING',
-                    ]); // Update timestamp and status
-                    Log::info("Confirmation sent to {$member->phone} for survey {$survey->title}.");
-                } catch (\Exception $e) {
-                    Log::error("Failed to send confirmation to {$member->phone}: " . $e->getMessage());
-                }
+                // try {
+                //     // $smsService->send($member->phone, $message);
+                //     $this->sendSMS($member->phone, $message);
+                //     $progress->update([
+                //         'last_dispatched_at' => now(),
+                //         'status'=>'PENDING',
+                //     ]); // Update timestamp and status
+                //     Log::info("Confirmation sent to {$member->phone} for survey {$survey->title}.");
+                // } catch (\Exception $e) {
+                //     Log::error("Failed to send confirmation to {$member->phone}: " . $e->getMessage());
+                // }
             }
         }
     }
