@@ -12,6 +12,7 @@
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
         "maatwebsite/excel": "^3.1",
+        "netflie/whatsapp-cloud-api": "^2.2",
         "pxlrbt/filament-excel": "^2.5"
     },
     "require-dev": {

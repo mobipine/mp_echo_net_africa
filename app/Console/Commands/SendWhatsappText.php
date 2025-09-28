@@ -4,21 +4,14 @@ namespace App\Console\Commands;
 
 use App\Models\Group;
 use App\Models\SMSInbox;
-use App\Services\Whatsapp;
+use App\Services\WhatsAppService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 class SendWhatsappText extends Command
 {
+    protected $whatsappService;
 
-    public $whatsapp_text;
-    //construct the Ujumbe
-    public function __construct(Whatsapp $whatsapp_text)
-    {
-        parent::__construct();
-        // You can initialize any services or dependencies here if needed
-        $this->whatsapp_text = $whatsapp_text;
-    }
     /**
      * The name and signature of the console command.
      *
@@ -31,117 +24,206 @@ class SendWhatsappText extends Command
      *
      * @var string
      */
-    protected $description = 'Command description';
+    protected $description = 'Send WhatsApp messages to pending SMS inbox entries';
+
+    /**
+     * Construct the command.
+     */
+    public function __construct(WhatsAppService $whatsappService)
+    {
+        parent::__construct();
+        $this->whatsappService = $whatsappService;
+    }
 
     /**
      * Execute the console command.
      */
-
     public function handle()
     {
-        //for this cron job, we will send SMS to all groups that have been selected in the SendSMS page
-        $sms_inboxes = SMSInbox::where('status', 'pending')
-            ->where('group_ids', '!=', null) // Ensure group_ids is not null
-            ->where('group_ids', '!=', []) // Ensure group_ids is not an empty array
-            ->take(10) // Limit to 10 SMS inboxes to process at a time
+        $this->info('Starting WhatsApp message processing...');
+        
+        // Process group messages first
+        $this->processGroupMessages();
+        
+        // Process individual messages
+        $this->processIndividualMessages();
+        
+        $this->info('WhatsApp message processing completed.');
+    }
+
+    /**
+     * Process messages with group IDs
+     */
+    protected function processGroupMessages()
+    {
+        $smsInboxes = SMSInbox::where('status', 'pending')
+            ->where(function ($query) {
+                $query->whereNotNull('group_ids')
+                      ->where('group_ids', '!=', '[]');
+            })
+            ->take(10)
             ->get();
-        // dd($sms_inboxes);
 
-        info('Processing pending SMS...');
-
-        if ($sms_inboxes->isEmpty()) {
-
-
-            //check if there are SMSInbox with group_ids that are null or empty but phone_number and member_id is filled
-            $sms_inboxes = SMSInbox::where('status', 'pending')
-                ->whereNotNull('phone_number')
-                // ->whereNotNull('member_id')
-                ->take(10)
-                ->get();
-
-            // dd($sms_inboxes);
-
-            foreach ($sms_inboxes as $sms_inbox) {
-                $phone_number = $sms_inbox->phone_number;
-
-                Log::info("The phone number begins with {$phone_number[0]}");
-
-                if (substr($phone_number, 0, 1) === "0") {
-                    // Replace the starting 0 with 254
-                    $phone_number = "254" . substr($phone_number, 1);
-                }
-
-                Log::info("Formatted Number: " . $phone_number);
-
-
-                $message = $sms_inbox->message;
-
-                // Send SMS to the phone number
-                info("Sending Whatsapp Text to {$phone_number}");
-                $response = $this->sendSMS($phone_number, $message);
-
-                if ($response->getStatusCode()== "200") {
-                    info("Whatsapp Text sent to {$phone_number}");
-                    // After processing, update the SMS inbox status to 'sent'
-                    $sms_inbox->status = 'sent';
-                    $sms_inbox->save();
-                    info("SMS inbox with ID {$sms_inbox->id} marked as sent.");
-                } else {
-                    $this->error("Failed to send SMS to {$phone_number}");
-                }
-            }
-
-            return; // Exit if no groups are found
+        if ($smsInboxes->isEmpty()) {
+            $this->info('No group messages found to process.');
+            return;
         }
 
-        foreach ($sms_inboxes as $sms_inbox) {
-            $group_ids = $sms_inbox->group_ids; // This should be an array of group IDs
-            // dd($group_ids);
-            $message = $sms_inbox->message;
+        $this->info("Processing {$smsInboxes->count()} group messages...");
 
-            // Loop through each group and send the SMS
-            foreach ($group_ids as $group_id) {
-                $group = Group::find($group_id);
-                // dd($group, $group->members);
-                if ($group) {
-                    $members = $group->members;
-                    if ($members->isEmpty()) {
-                        info("No members found in group {$group->name}");
-                        continue; // Skip to the next group if no members
-                    }
-                    foreach ($group->members as $member) {
-
-                        info(">>>>>>>>>>Sending Whatsapp Text to {$member->phone} in group {$group->name}");
-
-                        $response = $this->sendSMS($member->phone, $message);
-                        // dd($response);
-                        if ($response->getStatusCode()== "200") {
-                            info("Whatsapp Text sent to {$member->phone}");
-                        } else {
-                            $this->error("Failed to send SMS to {$member->phone}");
-                        }
-                    }
-                }
+        foreach ($smsInboxes as $smsInbox) {
+            try {
+                $this->processSingleGroupMessage($smsInbox);
+                $smsInbox->update(['status' => 'sent']);
+                $this->info("SMS inbox with ID {$smsInbox->id} marked as sent.");
+            } catch (\Exception $e) {
+                Log::error("Failed to process group message {$smsInbox->id}: " . $e->getMessage());
+                $smsInbox->update(['status' => 'failed']);
+                $this->error("Failed to process SMS inbox {$smsInbox->id}: " . $e->getMessage());
             }
-            // After processing, update the SMS inbox status to 'sent'
-            $sms_inbox->status = 'sent';
-            $sms_inbox->save();
-            info("SMS inbox with ID {$sms_inbox->id} marked as sent.");
         }
     }
 
-    protected function sendSMS(string $phoneNumber, string $message)
+    /**
+     * Process individual messages (no groups)
+     */
+    protected function processIndividualMessages()
     {
-        // Use the UjumbeSMS service to send the SMS
-        try {
-            $res = $this->whatsapp_text->send($phoneNumber, $message);
-            // info("SMS sent to {$phoneNumber}");
+        $smsInboxes = SMSInbox::where('status', 'pending')
+            ->where(function ($query) {
+                $query->whereNull('group_ids')
+                      ->orWhere('group_ids', '=', '[]');
+            })
+            ->whereNotNull('phone_number')
+            ->take(10)
+            ->get();
 
-            // dd($res); // Debugging line to check the response
-            return $res; // Return the response from the SMS service
+        if ($smsInboxes->isEmpty()) {
+            $this->info('No individual messages found to process.');
+            return;
+        }
+
+        $this->info("Processing {$smsInboxes->count()} individual messages...");
+
+        foreach ($smsInboxes as $smsInbox) {
+            try {
+                $this->processSingleIndividualMessage($smsInbox);
+                $smsInbox->update(['status' => 'sent']);
+                $this->info("SMS inbox with ID {$smsInbox->id} marked as sent.");
+            } catch (\Exception $e) {
+                Log::error("Failed to process individual message {$smsInbox->id}: " . $e->getMessage());
+                $smsInbox->update(['status' => 'failed']);
+                $this->error("Failed to process SMS inbox {$smsInbox->id}: " . $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * Process a single group message
+     */
+    protected function processSingleGroupMessage(SMSInbox $smsInbox)
+    {
+        $groupIds = $smsInbox->group_ids;
+        $message = $smsInbox->message;
+        $totalSent = 0;
+        $totalFailed = 0;
+
+        foreach ($groupIds as $groupId) {
+            $group = Group::with('members')->find($groupId);
+            
+            if (!$group) {
+                $this->warn("Group with ID {$groupId} not found.");
+                continue;
+            }
+
+            if ($group->members->isEmpty()) {
+                $this->info("No members found in group {$group->name}");
+                continue;
+            }
+
+            $this->info("Processing group: {$group->name} with {$group->members->count()} members");
+
+            foreach ($group->members as $member) {
+                if ($this->sendWhatsAppMessage($member->phone, $message)) {
+                    $totalSent++;
+                    $this->info("✓ WhatsApp sent to {$member->phone}");
+                } else {
+                    $totalFailed++;
+                    $this->error("✗ Failed to send to {$member->phone}");
+                }
+                
+                // Add delay to avoid rate limiting (WhatsApp allows ~80 messages/second)
+                usleep(100000); // 100ms delay between messages
+            }
+        }
+
+        $this->info("Group message {$smsInbox->id}: {$totalSent} sent, {$totalFailed} failed");
+    }
+
+    /**
+     * Process a single individual message
+     */
+    protected function processSingleIndividualMessage(SMSInbox $smsInbox)
+    {
+        $phoneNumber = $this->formatPhoneNumber($smsInbox->phone_number);
+        $message = $smsInbox->message;
+
+        $this->info("Sending WhatsApp to individual: {$phoneNumber}");
+
+        if ($this->sendWhatsAppMessage($phoneNumber, $message)) {
+            $this->info("✓ WhatsApp sent to {$phoneNumber}");
+        } else {
+            throw new \Exception("Failed to send WhatsApp to {$phoneNumber}");
+        }
+    }
+
+    /**
+     * Format phone number to WhatsApp format
+     */
+    protected function formatPhoneNumber(string $phoneNumber): string
+    {
+        // Remove any non-digit characters
+        $phoneNumber = preg_replace('/\D/', '', $phoneNumber);
+        
+        // Handle Kenyan numbers (starting with 0)
+        if (substr($phoneNumber, 0, 1) === "0") {
+            $phoneNumber = "254" . substr($phoneNumber, 1);
+        }
+        
+        // Ensure it has country code
+        if (substr($phoneNumber, 0, 3) !== "254") {
+            $phoneNumber = "254" . ltrim($phoneNumber, '0');
+        }
+
+        Log::info("Formatted WhatsApp Number: " . $phoneNumber);
+        return $phoneNumber;
+    }
+
+    /**
+     * Send WhatsApp message
+     */
+    protected function sendWhatsAppMessage(string $phoneNumber, string $message): bool
+    {
+        try {
+            $formattedNumber = $this->formatPhoneNumber($phoneNumber);
+            
+            $response = $this->whatsappService->sendTextMessage($formattedNumber, $message);
+            
+            // Log successful send
+            Log::info('WhatsApp message sent successfully', [
+                'to' => $formattedNumber,
+                'message' => $message
+            ]);
+            
+            return true;
+            
         } catch (\Exception $e) {
-            $this->error("Failed to send SMS to {$phoneNumber}: " . $e->getMessage());
-            return false; // Return false on failure
+            Log::error('WhatsApp message sending failed', [
+                'to' => $phoneNumber,
+                'error' => $e->getMessage()
+            ]);
+            
+            return false;
         }
     }
 }

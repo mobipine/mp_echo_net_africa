@@ -14,12 +14,13 @@ Artisan::command('inspire', function () {
 //     $this->call('send:sms');
 // })->purpose('Schedule to send SMS every 5 seconds');
 
-Schedule::call(function () {
-    Artisan::call('send:sms');
-})->name('send_sms')->everyFiveSeconds()->withoutOverlapping();
+// Schedule::call(function () {
+//     Artisan::call('send:sms');
+// })->name('send_sms')->everyFiveSeconds()->withoutOverlapping();
 
 Schedule::command('surveys:dispatch-due')->everyFiveSeconds()->withoutOverlapping();
 Schedule::command('surveys:process-progress')->everyFiveSeconds()->withoutOverlapping();
+Schedule::command('send:whatsapp-text')->everyFiveSeconds()->withoutOverlapping();
 
 // Loan interest accrual - run daily at 9 AM
 Schedule::command('loans:accrue-interest')->dailyAt('09:00');
