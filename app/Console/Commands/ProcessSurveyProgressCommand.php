@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 
 class ProcessSurveyProgressCommand extends Command
 {
-    protected $signature = 'surveys:process-progress';
+    protected $signature = 'survey:process-progress';
     protected $description = 'Sends next survey questions or reminders based on participant progress.';
 
     public function handle()

@@ -19,6 +19,7 @@ Artisan::command('inspire', function () {
 // })->name('send_sms')->everyFiveSeconds()->withoutOverlapping();
 
 Schedule::command('surveys:dispatch-due')->everyFiveSeconds()->withoutOverlapping();
-Schedule::command('surveys:process-progress')->everyFiveSeconds()->withoutOverlapping();
+
 Schedule::command('send:whatsapp-text')->everyFiveSeconds()->withoutOverlapping();
+Schedule::command('survey:process-progress')->everyFiveSeconds()->withoutOverlapping();
 
