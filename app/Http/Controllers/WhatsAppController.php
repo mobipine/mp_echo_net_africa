@@ -47,7 +47,7 @@ class WhatsAppController extends Controller
             // Ignore messages sent by the bot itself
             if ($messageData['is_from_me']) {
                 Log::info("Ignoring message sent by bot");
-                return response()->json(['status' => 'ignored', 'message' => 'Own message ignored']);
+                // return response()->json(['status' => 'ignored', 'message' => 'Own message ignored']);
             }
 
             // Normalize phone number

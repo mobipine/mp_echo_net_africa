@@ -81,6 +81,7 @@ class SurveyQuestionResource extends Resource
                             ->label('Interval Unit')
                             ->native(false)
                             ->options([
+                                'seconds' => 'Seconds',
                                 'minutes' => 'Minutes',
                                 'hours' =>'Hours',
                                 'days'   => 'Days',

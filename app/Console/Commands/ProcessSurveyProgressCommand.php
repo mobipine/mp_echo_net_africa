@@ -60,8 +60,8 @@ class ProcessSurveyProgressCommand extends Command
                 }
                 Log::info("the progress was initiated from a group survey");
     
-                $interval = $currentQuestion->question_interval ?? 3; // Use the pivot value, or default to 3 days
-                $unit = $currentQuestion->question_interval_unit ?? 'days'; // Use the pivot value, or default to 'days'
+                $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
+                $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
 
                 $endDate = GroupSurvey::where('group_id', $member->group_id)
                         ->where('survey_id',$survey->id)
@@ -71,8 +71,8 @@ class ProcessSurveyProgressCommand extends Command
             } else {
                 //for shortcode surveys, use 1 minute interval
                 //TODO: Josphat: Create a global config for on the survey resource
-                $interval = 30;
-                $unit = 'minutes';
+                $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
+                $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
 
                 $endDate = null;
             }
@@ -89,10 +89,11 @@ class ProcessSurveyProgressCommand extends Command
             Log::info("Last Dispatched $lastDispatched");
 
             $nextDue = $lastDispatched->add($interval, $unit);
+            Log::info("The interval should be $interval $unit");
             Log::info("Next Due Date $nextDue");
-            Log::info("the current question is $currentQuestion");
 
             $isDue = $nextDue->lessThanOrEqualTo(now()); 
+            Log::info("is Due is: ".$isDue);
 
             if (!$isDue) {
                 Log::info("Survey progress ID: {$progress->id} is not yet due for processing.");
