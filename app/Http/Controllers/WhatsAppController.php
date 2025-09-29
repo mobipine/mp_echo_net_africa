@@ -394,6 +394,11 @@ class WhatsAppController extends Controller
         //THIS FUNCTION SHOULD VALIDATE THE RESPONSE BASED ON THE QUESTION'S DATA TYPE AND STORE IT IF VALID
         $currentQuestion = $progress->currentQuestion;
         $survey = $progress->survey;
+        
+
+        if (!$currentQuestion) {
+            return response()->json(['status' => 'error', 'message' => 'Invalid question or session state.']);
+        }
 
 
         Log::info("The survey progress status is $progress->status");
@@ -409,6 +414,11 @@ class WhatsAppController extends Controller
                     $actualAnswer = $answer['answer']; // e.g. "No"
                     break;
                 }
+            }
+            if ($actualAnswer === null) {
+                // User picked something not in the list
+                $this->sendSMS($msisdn, $currentQuestion->data_type_violation_response);
+                return; // stop further processing
             }
         } else {
             $actualAnswer = $userResponse; // For non-multiple-choice, just store as is
@@ -523,11 +533,7 @@ class WhatsAppController extends Controller
              
         // }
 
-        Log::info("This is the current question $currentQuestion");
-
-        if (!$currentQuestion) {
-            return response()->json(['status' => 'error', 'message' => 'Invalid question or session state.']);
-        }
+       
 
         // Validate the response based on the question's answer data type
         if ($currentQuestion->answer_data_type === 'Strictly Number' && !is_numeric($response)) {
@@ -540,6 +546,7 @@ class WhatsAppController extends Controller
             Log::info("the response violates the questions strictness");
             return response()->json(['status' => 'error', 'message' => 'Invalid response.']);
         }
+
         $inbox_id = SMSInbox::where('phone_number', $msisdn)
                     ->latest()
                     ->first()
