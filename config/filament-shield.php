@@ -27,23 +27,19 @@ return [
         // 'intercept_gate' => 'before', // after
     ],
 
-    'admin' => [
-        'enabled' => true,
-        'name' => 'admin',
-        
-    ],
-
     'permission_prefixes' => [
         'resource' => [
             'view',
             'view_any',
             'create',
             'update',
+            'reorder',
+            'delete',
+
+            
             'restore',
             'restore_any',
             'replicate',
-            'reorder',
-            'delete',
             'delete_any',
             'force_delete',
             'force_delete_any',
@@ -57,7 +53,7 @@ return [
         'pages' => true,
         'widgets' => true,
         'resources' => true,
-        'custom_permissions' => false,
+        'custom_permissions' => true,
     ],
 
     'generator' => [
