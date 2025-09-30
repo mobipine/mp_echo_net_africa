@@ -58,58 +58,17 @@ class SendSurveyToGroupJob implements ShouldQueue
             $sentCount = 0;
 
             foreach ($members as $member) {
-                if ($firstQuestion->answer_strictness == "Multiple Choice") {
-                    $message = "{$firstQuestion->question}\n\n"; 
 
-                    $letters = [];
-                    foreach ($firstQuestion->possible_answers as $answer) {
-                        $message .= "{$answer['letter']}. {$answer['answer']}\n";
-                        $letters[] = $answer['letter'];
-                    }
-                    
-                    // Dynamically build the letter options string
-                    if (count($letters) === 1) {
-                        $letterText = $letters[0];
-                    } elseif (count($letters) === 2) {
-                        $letterText = $letters[0] . " or " . $letters[1];
-                    } else {
-                        $lastLetter = array_pop($letters);
-                        $letterText = implode(', ', $letters) . " or " . $lastLetter;
-                    }
-                    
-                    $message .= "\nPlease reply with the letter {$letterText}.";
-                    Log::info("The message to be sent is {$message}");
-                } else {
-                    $message = $firstQuestion->question;
-                    if ($firstQuestion->answer_data_type === 'Strictly Number') {
-                        $message .= "\n💡 *Note: Your answer should be a number.*";
-                    } elseif ($firstQuestion->answer_data_type === 'Alphanumeric') {
-                        $message .= "\n💡 *Note: Your answer should contain only letters and numbers.*";
-                    }
-                }
+                $message=formartQuestion($firstQuestion,$member);
                 
-                $placeholders = [
-                        '{member}' => $member->name,
-                        '{group}' => $member->group->name,
-                        '{id}' => $member->national_id,
-                        '{gender}'=>$member->gender,
-                        '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
-                        '{LIP}' => $member?->group?->localImplementingPartner?->name,
-                        '{month}' => \Carbon\Carbon::now()->monthName,
-                    ];
-                    $message = str_replace(
-                        array_keys($placeholders),
-                        array_values($placeholders),
-                        $message
-                    );
                 Log::info("The message to be sent is {$message}");
+
                     
                 if (empty($member->phone)) {
                     continue;
                 }
 
-                $progress = SurveyProgress::where('survey_id', $this->survey->id)
-                    ->where('member_id', $member->id)
+                $progress = SurveyProgress::where('member_id', $member->id)
                     ->whereNull('completed_at')
                     ->first();
 
@@ -122,8 +81,7 @@ class SendSurveyToGroupJob implements ShouldQueue
                     Log::info("{$member->name} has a record in the survey progress table but participant uniqueness for {$this->survey->title} is off. Cancelling previous records...");
 
                     // If not unique, cancel all previous incomplete progress records
-                    SurveyProgress::where('survey_id', $this->survey->id)
-                        ->where('member_id', $member->id)
+                    SurveyProgress::where('member_id', $member->id)
                         ->whereNull('completed_at')
                         ->update(['status' => 'CANCELLED']);
                 }
