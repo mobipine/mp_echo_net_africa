@@ -235,6 +235,7 @@ function startSurvey($msisdn, Survey $survey)
     }
     //find a record with the survey id and member id that is not completed
     $progress = SurveyProgress::where('member_id', $member->id)
+        ->where('survey_id',$survey->id)
         ->whereNull('completed_at')
         ->first();
     if ($progress) {
@@ -301,7 +302,18 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
     $userResponse = trim($response);  
     Log::info("The user responded with ".$userResponse);
     $actualAnswer = getActualAnswer($currentQuestion,$userResponse,$msisdn);
-    validateResponse($currentQuestion,$msisdn,$response);
+
+    if ($actualAnswer==null){
+        sendSMS($msisdn, $currentQuestion->data_type_violation_response);
+        return;
+    }
+
+    $valid=validateResponse($currentQuestion,$msisdn,$response);
+
+    if(!$valid){
+        sendSMS($msisdn, $currentQuestion->data_type_violation_response);
+        return;
+    }
     Log::info("The actual answer is $actualAnswer");
      $member = $progress->member;
      if ($currentQuestion->purpose=="edit_id") {
@@ -464,9 +476,9 @@ function getActualAnswer($currentQuestion, $userResponse, $msisdn)
 
         if ($actualAnswer === null) {
             // User gave something invalid (neither letter nor valid answer)
-            sendSMS($msisdn, $currentQuestion->data_type_violation_response);
             
-            return null; // stop further processing
+            
+            return $actualAnswer; // stop further processing
         }
     } else {
         // For non-multiple-choice, store response but normalize casing if needed
@@ -479,14 +491,15 @@ function getActualAnswer($currentQuestion, $userResponse, $msisdn)
 function validateResponse($currentQuestion,$msisdn,$response){
 
     if ($currentQuestion->answer_data_type === 'Strictly Number' && !is_numeric($response)) {
-        sendSMS($msisdn, $currentQuestion->data_type_violation_response);
-        return response()->json(['status' => 'error', 'message' => 'Invalid response.']);
+       
+        return false;
     }
     if ($currentQuestion->answer_data_type === 'Alphanumeric' && !ctype_alnum(str_replace(' ', '', $response))) {
-        sendSMS($msisdn, $currentQuestion->data_type_violation_response);
+        
         Log::info("the response violates the questions strictness");
-        return response()->json(['status' => 'error', 'message' => 'Invalid response.']);
+        return false;
     }
+    return true;
 }
 
 
