@@ -2,12 +2,15 @@
 
 namespace App\Filament\Resources;
 
+use App\Enums\QuestionPurpose;
 use App\Filament\Resources\SurveyQuestionResource\Pages;
 use App\Filament\Resources\SurveyQuestionResource\RelationManagers;
 use App\Models\SurveyQuestion;
 use Filament\Forms;
 use App\Models\Group;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
+use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -32,37 +35,28 @@ class SurveyQuestionResource extends Resource
                     ->required(),
                 Forms\Components\Textarea::make('data_type_violation_response')->maxLength(500),
                 Forms\Components\Select::make('purpose')
-                    ->options([
-                        'regular' => 'Regular Question',
-                        'edit_name'    => 'Edit Name',
-                        'edit_id' =>'Edit ID',
-                        'edit_gender' => 'Edit Gender',
-                        'edit_group' => 'Edit to which Group a member belongs',
-                        'edit_year_of_birth' => 'Edit Year of Birth',
-                        'confirm' => 'Confirm Details',
-                        'info'    => 'Informational',
-                    ])
-                    ->default('regular')
+                    ->label('Question Purpose')
+                    ->options(QuestionPurpose::options())
+                    ->default(QuestionPurpose::REGULAR->value)
                     ->required()
-                    ->reactive(),
-                    // ->afterStateUpdated(function ($state, callable $set) {
-                    //     if ($state === 'edit_group') {
-                    //         // force Multiple Choice
-                    //         $set('answer_strictness', 'Multiple Choice');
+                    ->reactive()
+                    ->afterStateUpdated(function (Set $set, $state) {
+                        $purposeEnum = QuestionPurpose::tryFrom($state);
+                        $set('purpose_slug_display', $purposeEnum?->slug());
+                    })
+                    // FIX: Set the initial slug display value when the form loads (hydration)
+                    ->afterStateHydrated(function (Set $set, $state) {
+                        $purposeEnum = QuestionPurpose::tryFrom($state);
+                        $set('purpose_slug_display', $purposeEnum?->slug());
+                    }), // Makes this field trigger updates on other fields
 
-                    //         // fetch groups from DB
-                    //         $groups = Group::all()->map(function ($group, $index) {
-                    //             return [
-                    //                 'letter' => chr(65 + $index), // A, B, C, ...
-                    //                 'answer' => $group->name,     // Or whichever column you want
-                    //             ];
-                    //         })->toArray();
-
-                    //         // prefill possible answers
-                    //         $set('possible_answers', $groups);
-                    //     }
-                    // }),
-
+                // 2. The read-only TEXT INPUT field (Displays the slug for confirmation)
+                Forms\Components\TextInput::make('purpose_slug_display')
+                    ->label('System Slug Confirmation')
+                    ->readOnly()
+                    ->dehydrated(false) // CRITICAL: This prevents the field from saving to the database.
+                    ->extraAttributes(['class' => 'bg-gray-100 dark:bg-gray-800']) // Add styling to show it's read-only
+                    ->visible(fn (Get $get): bool => $get('purpose') !== null),
 
                 Forms\Components\Select::make('answer_strictness')
                     ->options(['Open-Ended' => 'Open-Ended', 'Multiple Choice' => 'Multiple Choice'])
