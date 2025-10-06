@@ -335,7 +335,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
         return;
     }
 
-    if ($currentQuestion->purpose=="loan_date"){
+    if ($currentQuestion->purpose=="loan_received_date"){
 
          // CRITICAL: Handle the Loan Date (Anchor for Future Scheduling)
         Log::info("Processing loan_date purpose. Answer: " . $actualAnswer);
