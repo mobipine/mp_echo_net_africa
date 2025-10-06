@@ -1,7 +1,7 @@
 <?php
 
 //WE CREATED A FLOW BUILDER TABLE TO HANDLE THE NEXT QUESTION FLOW BASED ON THE ANSWERS
-
+use Carbon\Carbon;
 use App\Models\Member;
 use App\Models\MemberEditRequest;
 use App\Models\SMSInbox;
@@ -201,6 +201,39 @@ function formartQuestion($firstQuestion,$member){
             $message .= "\n *Note: Your answer should contain only letters and numbers.*";
         }
     }
+    $loanReceivedMonthId=$loanAmountQuestionId = \App\Models\SurveyQuestion::where('purpose', 'loan_received_date')
+    ->value('id');
+    $loanMonth = null;
+
+    if ($loanReceivedMonthId) {
+        // Retrieve the latest valid response for this question from the member
+        $latestDateResponse = \App\Models\SurveyResponse::where('msisdn', $member->phone)
+            ->where('question_id', $loanReceivedMonthId)
+            ->latest('id') 
+            ->first();
+
+        if ($latestDateResponse) {
+            $loanDate = $latestDateResponse->survey_response;
+            $loanMonth=\Carbon\Carbon::parse($loanDate)->format('F');
+        }
+    }
+
+    $loanAmountQuestionId = \App\Models\SurveyQuestion::where('purpose', 'loan_amount_received')
+    ->value('id');
+    $loanAmount = null;
+
+    if ($loanAmountQuestionId) {
+        // Retrieve the latest valid response for this question from the member
+        $latestAmountResponse = \App\Models\SurveyResponse::where('msisdn', $member->phone)
+            ->where('question_id', $loanAmountQuestionId)
+            ->latest('id') 
+            ->first();
+
+        if ($latestAmountResponse) {
+            $loanAmount = $latestAmountResponse->survey_response;
+        }
+    }
+
     $placeholders = [
         '{member}' => $member->name,
         '{group}' => $member->group->name,
@@ -209,6 +242,9 @@ function formartQuestion($firstQuestion,$member){
         '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
         '{LIP}' => $member?->group?->localImplementingPartner?->name,
         '{month}' => \Carbon\Carbon::now()->monthName,
+        '{loan_received_month}' => $loanMonth ?? "N/A",
+        '{loan_amount_received}' => $loanAmount ?? 'N/A', // Use 'N/A' or 0 if no response found
+
     ];
     $message = str_replace(
         array_keys($placeholders),
@@ -218,75 +254,66 @@ function formartQuestion($firstQuestion,$member){
     return $message;
 }
 
-
 function startSurvey($msisdn, Survey $survey)
 {
-    //TODO: CREATE A FUNCTION TO GET THE FIRST QUESTION FROM THE FLOW BUILDER
+    // Check for the first question
     // $firstQuestion = $survey->questions()->orderBy('pivot_position')->first();
     $firstQuestion = getNextQuestion($survey->id);
     if (!$firstQuestion) {
         return response()->json(['status' => 'error', 'message' => 'Survey has no questions.']);
     }
+
     // Get the member ID based on the phone number
     $member = Member::where('phone', $msisdn)->first();
     if (!$member) {
         Log::warning("No member found with phone number: {$msisdn}");
         return response()->json(['status' => 'error', 'message' => 'Phone number not recognized.']);
     }
-    //find a record with the survey id and member id that is not completed
-    $progress = SurveyProgress::where('member_id', $member->id)
+
+    // Find an uncompleted record for THIS specific survey and member
+    $existingProgress = SurveyProgress::where('member_id', $member->id)
         ->where('survey_id',$survey->id)
         ->whereNull('completed_at')
         ->first();
-    if ($progress) {
-        //check if survey has member uniquesness
-        $p_unique = $survey->participant_uniqueness;
-        if ($p_unique) {
-            return response()->json(['status' => 'info', 'message' => 'Survey already started.']);
-        } else {
-            //update all previous progress records with thesame survey_id and member_id status to CANCELLED
-            SurveyProgress::where('member_id', $member->id)
-                ->whereNull('completed_at')
-                ->update(['status' => 'CANCELLED']);
-            //create a new progress record
-            $newProgress = SurveyProgress::create([
-                'survey_id' => $survey->id,
-                'member_id' => $member->id,
-                'current_question_id' => $firstQuestion->id,
-                'last_dispatched_at' => now(),
-                'has_responded' => false,
-                'source' => 'shortcode'
-            ]);
-            //formart the quiz
-            $message=formartQuestion($firstQuestion,$member);
-            Log::info("This is the message ".$message);
-            sendSMS($msisdn, $message);
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Survey started.',
-                'question_sent' => $firstQuestion->question
-            ]);
-        }
-    } else {
-        //create a new progress record
-        $newProgress = SurveyProgress::create([
-            'survey_id' => $survey->id,
-            'member_id' => $member->id,
-            'current_question_id' => $firstQuestion->id,
-            'last_dispatched_at' => now(),
-            'has_responded' => false,
-            'source' => 'shortcode'
-        ]);
-        //send the first question
-       $message=formartQuestion($firstQuestion,$member);
-       Log::info("This is the message ".$message);
-        sendSMS($msisdn, $message);
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Survey started.',
-            'question_sent' => $firstQuestion->question
-        ]);
+
+    // Check for participant uniqueness
+    if ($existingProgress && $survey->participant_uniqueness) {
+        // If the survey is unique and progress already exists, prevent a restart.
+        return response()->json(['status' => 'info', 'message' => 'Survey already started.']);
     }
+
+    // --- CANCELLATION STEP ---
+    // If we reach here, we are proceeding to start a new session. 
+    // First, we cancel ALL active (uncompleted) survey progress for this member, 
+    // regardless of which survey it belongs to.
+    Log::info("Cancelling all active uncompleted progress for member ID: {$member->id}");
+    
+    SurveyProgress::where('member_id', $member->id)
+        ->whereNull('completed_at')
+        // Ensure the status is set to CANCELLED for all found records
+        ->update(['status' => 'CANCELLED']);
+
+    // --- START NEW PROGRESS ---
+    // Create a new progress record for the current survey
+    $newProgress = SurveyProgress::create([
+        'survey_id' => $survey->id,
+        'member_id' => $member->id,
+        'current_question_id' => $firstQuestion->id,
+        'last_dispatched_at' => now(),
+        'has_responded' => false,
+        'source' => 'shortcode'
+    ]);
+
+    // Send the first question
+    $message=formartQuestion($firstQuestion,$member);
+    Log::info("This is the message ".$message);
+    sendSMS($msisdn, $message);
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Survey started.',
+        'question_sent' => $firstQuestion->question
+    ]);
 }
 
 
@@ -308,111 +335,46 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
         return;
     }
 
-    $valid=validateResponse($currentQuestion,$msisdn,$response);
+    if ($currentQuestion->purpose=="loan_date"){
 
-    if(!$valid){
-        sendSMS($msisdn, $currentQuestion->data_type_violation_response);
-        return;
+         // CRITICAL: Handle the Loan Date (Anchor for Future Scheduling)
+        Log::info("Processing loan_date purpose. Answer: " . $actualAnswer);
+
+        // 1. Parse and Validate the Date
+        // Assume you have a helper function to safely convert the string answer into a Carbon instance.
+        $actualAnswer = parse_member_date_response($actualAnswer);
+        if ($actualAnswer instanceof Carbon) {
+
+            Log::info("Successfully parsed and saved loan_date: " . $actualAnswer->toDateString());
+            
+        } else {
+            // Log failure or send a correction SMS back to the user (depending on your service flow)
+            Log::warning("Failed to parse loan date answer: " . $actualAnswer);
+            // Optionally, resend the question or provide an error message here.
+            return response()->json([
+                "status" => "failed",
+                "message" => "Failed to parse loan date answer"
+            ]);
+        }
     }
-    Log::info("The actual answer is $actualAnswer");
-     $member = $progress->member;
-     if ($currentQuestion->purpose=="edit_id") {
-       
-        $memberEditRequest=MemberEditRequest::updateOrCreate(
-            [
-                'phone_number'=>$msisdn,
-                'name' =>$member->name,
-                'status' => "pending",
-            ],
-            [
-                'national_id' =>$actualAnswer,
-            ]);
-        $progress->update(['has_responded' => true]);
-    } elseif ($currentQuestion->purpose=="edit_year_of_birth") {
-        
-        $dob = \Carbon\Carbon::parse($member->dob);
-        $dob->year = (int)$actualAnswer;
-        
-        $memberEditRequest=MemberEditRequest::updateOrCreate(
-            [
-                'phone_number'=>$msisdn,
-                'name' =>$member->name,
-                'status' => "pending",
-            ],
-            [
-                'year_of_birth' =>$actualAnswer,
-            ]);
-        $progress->update(['has_responded' => true]);
-    } elseif ($currentQuestion->purpose=="edit_gender") {
-        
-        Log::info("Updating member gender...");
-        $memberEditRequest=MemberEditRequest::updateOrCreate(
-            [
-                'phone_number'=>$msisdn,
-                'name' =>$member->name,
-                'status' => "pending",
-            ],
-            [
-                'gender' =>$actualAnswer,
-            ]);
-        $progress->update(['has_responded' => true]);
-    } elseif ($currentQuestion->purpose=="edit_group") {
-        $memberEditRequest=MemberEditRequest::updateOrCreate(
-            [
-                'phone_number'=>$msisdn,
-                'name' =>$member->name,
-                'status' => "pending",
-            ],
-            [
-                'group' =>$actualAnswer,
-            ]);
-        $progress->update(['has_responded' => true]);
+    else{
+
+        $valid=validateResponse($currentQuestion,$msisdn,$response);
+
+        if(!$valid){
+            sendSMS($msisdn, $currentQuestion->data_type_violation_response);
+            return;
+        }
     }
-    
-    //If the survey progress status is pending it means we had sent the confirmation message
-    //Handle the confirmation later
-    // if ($progress->status=="PENDING"){
-    //     Log::info("This is a confirmation message response");
-    //     $response=trim(strtolower($response));
-    //     if ($response=="yes"){
-    //         Log::info("The member wishes to continue with the survey. Updating survey progress to ACTIVE. Resending the previous question...");
-    //         $progress->update([
-    //             'status'=>'ACTIVE',
-    //         ]);
-    //         $message = "{$currentQuestion->question}\n"; 
-    //         if ($currentQuestion->answer_strictness=="Multiple Choice"){
-    //             foreach ($currentQuestion->possible_answers as $answer) {
-    //                 $message .= "{$answer['letter']}. {$answer['answer']}\n";
-    //             }
-    //             Log::info("The message to be sent is {$message}");
-    //         }
-    //         $message .= "Please reply with your answer.";
-    //         $this->sendSMS($msisdn, $message);
-    //         return response()->json([
-    //             'status'=>'success',
-    //             'message'=>'The member wishes to continue with the survey. Updating survey progress to ACTIVE. Resending the previous question...'
-    //         ]);
-    //     }
-    //     elseif ($response=="no"){
-    //         Log::info("The member does not wish to continue with the survey. Updating survey progress to CANCELLED");
-    //         $progress->update([
-    //             'status'=>'CANCELLED'
-    //         ]);
-    //         return response()->json([
-    //             'status'=>'success',
-    //             'message'=>"The member does not wish to continue with the survey. Updating survey progress to CANCELLED"
-    //         ]);
-    //     }else{
-    //         Log::info("invalid response");
-    //         return response()->json([
-    //             'status'=>'error',
-    //             'message'=>"Invalid response, it's a yes or no question",
-    //         ]);
-    //     }
+ 
+    Log::info("The actual answer to be stored is  $actualAnswer");
+    $member = $progress->member;
+
+    if($currentQuestion->purpose !=="regular"){
+        Log::info("This is not  regular question ");
+        processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer);
+    }
          
-    // }
-    Log::info("This is the current question $currentQuestion");
-    // Validate the response based on the question's answer data type
     $inbox_id = SMSInbox::where('phone_number', $msisdn)
                 ->latest()
                 ->first()
@@ -428,6 +390,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
     ]);
     // Mark the question as responded to in the progress table
     $progress->update(['has_responded' => true]);
+    
     Log::info("Response recorded for question ID: {$currentQuestion->id}. Waiting for next scheduled dispatch.");
     // Check if this was the last question in the survey.
     $nextQuestion = getNextQuestion($survey->id,  $actualAnswer, $currentQuestion->id);
@@ -455,6 +418,107 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
     ]);
 }
 
+function parse_member_date_response(string $answer): ?Carbon
+{
+        // VALID FOMARTS FOR DATE RESPONSES
+
+    // 25/09/2025
+    // 09-25-2025
+    // 2025-09-25
+    // 25.9.25
+    // 25 09 2025 (Space as a delimiter)
+    // 25 September 2025
+    // Sept 25th 2025
+    // 25 Sep (Assumes the current year or the most recent past year, if the date is in the past)
+    // September 25, 2025
+    // 25th September
+    // Today (Parses to October 6, 2025)
+    // Yesterday (Parses to October 5, 2025)
+    // A week ago (Parses to September 29, 2025)
+    // Last Monday (Parses to September 29, 2025)
+    // 3 days ago (Parses to October 3, 2025)
+
+    // 1. Clean and Normalize Input
+    $cleanedAnswer = trim(strtolower($answer));
+    
+    try {
+        // 2. Check for Relative Keywords (e.g., Today, Yesterday)
+        if ($cleanedAnswer === 'today') {
+            return Carbon::today();
+        }
+        if ($cleanedAnswer === 'yesterday') {
+            return Carbon::yesterday();
+        }
+        
+        // The parse() method is smart and often handles many common formats.
+        $date = Carbon::parse($answer);
+        
+        if ($date->isFuture()) {
+            Log::warning("Date Parsing failed for answer '{$answer}': Date is in the future.");
+            // Throw a specific exception or return null to signal failure/error
+            return null; 
+        }
+
+        // 5. Success
+        return $date->startOfDay(); // Return the date at the start of the day for scheduling
+
+    } catch (\Exception $e) {
+        // Log the error for debugging, but return null to signal failure
+        Log::warning("Date Parsing failed for answer '{$answer}': " . $e->getMessage());
+        return null;
+    }
+}
+
+function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer){
+    if ($currentQuestion->purpose=="edit_id") {
+       
+        $memberEditRequest=MemberEditRequest::updateOrCreate(
+            [
+                'phone_number'=>$msisdn,
+                'name' =>$member->name,
+                'status' => "pending",
+            ],
+            [
+                'national_id' =>$actualAnswer,
+            ]);
+    } elseif ($currentQuestion->purpose=="edit_year_of_birth") {
+        
+        $dob = \Carbon\Carbon::parse($member->dob);
+        $dob->year = (int)$actualAnswer;
+        
+        $memberEditRequest=MemberEditRequest::updateOrCreate(
+            [
+                'phone_number'=>$msisdn,
+                'name' =>$member->name,
+                'status' => "pending",
+            ],
+            [
+                'year_of_birth' =>$actualAnswer,
+            ]);
+    } elseif ($currentQuestion->purpose=="edit_gender") {
+        
+        Log::info("Updating member gender...");
+        $memberEditRequest=MemberEditRequest::updateOrCreate(
+            [
+                'phone_number'=>$msisdn,
+                'name' =>$member->name,
+                'status' => "pending",
+            ],
+            [
+                'gender' =>$actualAnswer,
+            ]);
+    } elseif ($currentQuestion->purpose=="edit_group") {
+        $memberEditRequest=MemberEditRequest::updateOrCreate(
+            [
+                'phone_number'=>$msisdn,
+                'name' =>$member->name,
+                'status' => "pending",
+            ],
+            [
+                'group' =>$actualAnswer,
+            ]);
+    } 
+}
 function getActualAnswer($currentQuestion, $userResponse, $msisdn)
 {
     $actualAnswer = null;
@@ -501,9 +565,6 @@ function validateResponse($currentQuestion,$msisdn,$response){
     }
     return true;
 }
-
-
-
 
 function formatPhoneForWhatsApp(string $phoneNumber): string
 {
