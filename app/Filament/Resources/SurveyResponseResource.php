@@ -82,7 +82,7 @@ class SurveyResponseResource extends Resource
                 Tables\Columns\TextColumn::make('survey.title')->label('Survey Name')->sortable()->searchable()->toggleable(isToggledHiddenByDefault:true),
                 Tables\Columns\TextColumn::make('member.name')->label('Member Name')->sortable()->searchable()->placeholder('Unknown')->toggleable(isToggledHiddenByDefault:false),
                 Tables\Columns\TextColumn::make('msisdn')->label('Phone Number')->sortable()->searchable()->toggleable(isToggledHiddenByDefault:true),
-                Tables\Columns\TextColumn::make('inbox.message')->label('Message Sent')->sortable()->searchable()->toggleable(isToggledHiddenByDefault:false),
+                // Tables\Columns\TextColumn::make('inbox.message')->label('Message Sent')->sortable()->searchable()->toggleable(isToggledHiddenByDefault:false),
                 Tables\Columns\TextColumn::make('question.question')->label('Question')->sortable()->searchable()->toggleable(isToggledHiddenByDefault:true),
                 Tables\Columns\TextColumn::make('survey_response')->label('Response')->limit(50)->sortable(),
                 Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault:true),
