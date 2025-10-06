@@ -1,7 +1,7 @@
 <?php
 
 //WE CREATED A FLOW BUILDER TABLE TO HANDLE THE NEXT QUESTION FLOW BASED ON THE ANSWERS
-
+use Carbon\Carbon;
 use App\Models\Member;
 use App\Models\MemberEditRequest;
 use App\Models\SMSInbox;
@@ -218,75 +218,66 @@ function formartQuestion($firstQuestion,$member){
     return $message;
 }
 
-
 function startSurvey($msisdn, Survey $survey)
 {
-    //TODO: CREATE A FUNCTION TO GET THE FIRST QUESTION FROM THE FLOW BUILDER
+    // Check for the first question
     // $firstQuestion = $survey->questions()->orderBy('pivot_position')->first();
     $firstQuestion = getNextQuestion($survey->id);
     if (!$firstQuestion) {
         return response()->json(['status' => 'error', 'message' => 'Survey has no questions.']);
     }
+
     // Get the member ID based on the phone number
     $member = Member::where('phone', $msisdn)->first();
     if (!$member) {
         Log::warning("No member found with phone number: {$msisdn}");
         return response()->json(['status' => 'error', 'message' => 'Phone number not recognized.']);
     }
-    //find a record with the survey id and member id that is not completed
-    $progress = SurveyProgress::where('member_id', $member->id)
+
+    // Find an uncompleted record for THIS specific survey and member
+    $existingProgress = SurveyProgress::where('member_id', $member->id)
         ->where('survey_id',$survey->id)
         ->whereNull('completed_at')
         ->first();
-    if ($progress) {
-        //check if survey has member uniquesness
-        $p_unique = $survey->participant_uniqueness;
-        if ($p_unique) {
-            return response()->json(['status' => 'info', 'message' => 'Survey already started.']);
-        } else {
-            //update all previous progress records with thesame survey_id and member_id status to CANCELLED
-            SurveyProgress::where('member_id', $member->id)
-                ->whereNull('completed_at')
-                ->update(['status' => 'CANCELLED']);
-            //create a new progress record
-            $newProgress = SurveyProgress::create([
-                'survey_id' => $survey->id,
-                'member_id' => $member->id,
-                'current_question_id' => $firstQuestion->id,
-                'last_dispatched_at' => now(),
-                'has_responded' => false,
-                'source' => 'shortcode'
-            ]);
-            //formart the quiz
-            $message=formartQuestion($firstQuestion,$member);
-            Log::info("This is the message ".$message);
-            sendSMS($msisdn, $message);
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Survey started.',
-                'question_sent' => $firstQuestion->question
-            ]);
-        }
-    } else {
-        //create a new progress record
-        $newProgress = SurveyProgress::create([
-            'survey_id' => $survey->id,
-            'member_id' => $member->id,
-            'current_question_id' => $firstQuestion->id,
-            'last_dispatched_at' => now(),
-            'has_responded' => false,
-            'source' => 'shortcode'
-        ]);
-        //send the first question
-       $message=formartQuestion($firstQuestion,$member);
-       Log::info("This is the message ".$message);
-        sendSMS($msisdn, $message);
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Survey started.',
-            'question_sent' => $firstQuestion->question
-        ]);
+
+    // Check for participant uniqueness
+    if ($existingProgress && $survey->participant_uniqueness) {
+        // If the survey is unique and progress already exists, prevent a restart.
+        return response()->json(['status' => 'info', 'message' => 'Survey already started.']);
     }
+
+    // --- CANCELLATION STEP ---
+    // If we reach here, we are proceeding to start a new session. 
+    // First, we cancel ALL active (uncompleted) survey progress for this member, 
+    // regardless of which survey it belongs to.
+    Log::info("Cancelling all active uncompleted progress for member ID: {$member->id}");
+    
+    SurveyProgress::where('member_id', $member->id)
+        ->whereNull('completed_at')
+        // Ensure the status is set to CANCELLED for all found records
+        ->update(['status' => 'CANCELLED']);
+
+    // --- START NEW PROGRESS ---
+    // Create a new progress record for the current survey
+    $newProgress = SurveyProgress::create([
+        'survey_id' => $survey->id,
+        'member_id' => $member->id,
+        'current_question_id' => $firstQuestion->id,
+        'last_dispatched_at' => now(),
+        'has_responded' => false,
+        'source' => 'shortcode'
+    ]);
+
+    // Send the first question
+    $message=formartQuestion($firstQuestion,$member);
+    Log::info("This is the message ".$message);
+    sendSMS($msisdn, $message);
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Survey started.',
+        'question_sent' => $firstQuestion->question
+    ]);
 }
 
 
@@ -315,104 +306,13 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
         return;
     }
     Log::info("The actual answer is $actualAnswer");
-     $member = $progress->member;
-     if ($currentQuestion->purpose=="edit_id") {
-       
-        $memberEditRequest=MemberEditRequest::updateOrCreate(
-            [
-                'phone_number'=>$msisdn,
-                'name' =>$member->name,
-                'status' => "pending",
-            ],
-            [
-                'national_id' =>$actualAnswer,
-            ]);
-        $progress->update(['has_responded' => true]);
-    } elseif ($currentQuestion->purpose=="edit_year_of_birth") {
-        
-        $dob = \Carbon\Carbon::parse($member->dob);
-        $dob->year = (int)$actualAnswer;
-        
-        $memberEditRequest=MemberEditRequest::updateOrCreate(
-            [
-                'phone_number'=>$msisdn,
-                'name' =>$member->name,
-                'status' => "pending",
-            ],
-            [
-                'year_of_birth' =>$actualAnswer,
-            ]);
-        $progress->update(['has_responded' => true]);
-    } elseif ($currentQuestion->purpose=="edit_gender") {
-        
-        Log::info("Updating member gender...");
-        $memberEditRequest=MemberEditRequest::updateOrCreate(
-            [
-                'phone_number'=>$msisdn,
-                'name' =>$member->name,
-                'status' => "pending",
-            ],
-            [
-                'gender' =>$actualAnswer,
-            ]);
-        $progress->update(['has_responded' => true]);
-    } elseif ($currentQuestion->purpose=="edit_group") {
-        $memberEditRequest=MemberEditRequest::updateOrCreate(
-            [
-                'phone_number'=>$msisdn,
-                'name' =>$member->name,
-                'status' => "pending",
-            ],
-            [
-                'group' =>$actualAnswer,
-            ]);
-        $progress->update(['has_responded' => true]);
+    $member = $progress->member;
+
+    if($currentQuestion->purpose !=="regular"){
+        Log::info("This is not  regular question ");
+       // processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer);
     }
-    
-    //If the survey progress status is pending it means we had sent the confirmation message
-    //Handle the confirmation later
-    // if ($progress->status=="PENDING"){
-    //     Log::info("This is a confirmation message response");
-    //     $response=trim(strtolower($response));
-    //     if ($response=="yes"){
-    //         Log::info("The member wishes to continue with the survey. Updating survey progress to ACTIVE. Resending the previous question...");
-    //         $progress->update([
-    //             'status'=>'ACTIVE',
-    //         ]);
-    //         $message = "{$currentQuestion->question}\n"; 
-    //         if ($currentQuestion->answer_strictness=="Multiple Choice"){
-    //             foreach ($currentQuestion->possible_answers as $answer) {
-    //                 $message .= "{$answer['letter']}. {$answer['answer']}\n";
-    //             }
-    //             Log::info("The message to be sent is {$message}");
-    //         }
-    //         $message .= "Please reply with your answer.";
-    //         $this->sendSMS($msisdn, $message);
-    //         return response()->json([
-    //             'status'=>'success',
-    //             'message'=>'The member wishes to continue with the survey. Updating survey progress to ACTIVE. Resending the previous question...'
-    //         ]);
-    //     }
-    //     elseif ($response=="no"){
-    //         Log::info("The member does not wish to continue with the survey. Updating survey progress to CANCELLED");
-    //         $progress->update([
-    //             'status'=>'CANCELLED'
-    //         ]);
-    //         return response()->json([
-    //             'status'=>'success',
-    //             'message'=>"The member does not wish to continue with the survey. Updating survey progress to CANCELLED"
-    //         ]);
-    //     }else{
-    //         Log::info("invalid response");
-    //         return response()->json([
-    //             'status'=>'error',
-    //             'message'=>"Invalid response, it's a yes or no question",
-    //         ]);
-    //     }
          
-    // }
-    Log::info("This is the current question $currentQuestion");
-    // Validate the response based on the question's answer data type
     $inbox_id = SMSInbox::where('phone_number', $msisdn)
                 ->latest()
                 ->first()
@@ -428,6 +328,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
     ]);
     // Mark the question as responded to in the progress table
     $progress->update(['has_responded' => true]);
+    
     Log::info("Response recorded for question ID: {$currentQuestion->id}. Waiting for next scheduled dispatch.");
     // Check if this was the last question in the survey.
     $nextQuestion = getNextQuestion($survey->id,  $actualAnswer, $currentQuestion->id);
@@ -454,6 +355,8 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
         'nxt' => $nextQuestion
     ]);
 }
+
+
 
 function getActualAnswer($currentQuestion, $userResponse, $msisdn)
 {
@@ -501,9 +404,6 @@ function validateResponse($currentQuestion,$msisdn,$response){
     }
     return true;
 }
-
-
-
 
 function formatPhoneForWhatsApp(string $phoneNumber): string
 {
