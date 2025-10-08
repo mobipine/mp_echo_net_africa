@@ -234,6 +234,7 @@ function formartQuestion($firstQuestion,$member){
         }
     }
     $latestEdit=MemberEditRequest::where('phone_number',$member->phone)->latest()->first();
+    Log::info($latestEdit);
 
     if($latestEdit){
         $placeholders = [
@@ -245,10 +246,10 @@ function formartQuestion($firstQuestion,$member){
         '{LIP}' => $member?->group?->localImplementingPartner?->name,
         '{month}' => \Carbon\Carbon::now()->monthName,
         '{loan_received_month}' => $loanMonth ?? "N/A",
-        '{edit_id}' => $editMember->national_id ?? $member->national_id,
-        '{edit_year}' => $editMember->year_of_birth ?? \Carbon\Carbon::parse($member->dob)->format('Y'),
-        '{edit_gender}' => $editMember->gender ?? $member->gender,
-        '{edit_group}' => $editMember->group ?? $member->group->name,
+        '{edit_id}' => $latestEdit->national_id ?? $member->national_id,
+        '{edit_year}' => $latestEdit->year_of_birth ?? \Carbon\Carbon::parse($member->dob)->format('Y'),
+        '{edit_gender}' => $latestEdit->gender ?? $member->gender,
+        '{edit_group}' => $latestEdit->group ?? $member->group->name,
         '{loan_amount_received}' => $loanAmount ?? 'N/A', // Use 'N/A' or 0 if no response found
 
     ];
@@ -273,6 +274,7 @@ function formartQuestion($firstQuestion,$member){
         array_values($placeholders),
         $message
     );
+    Log::info($message);
     return $message;
 }
 
