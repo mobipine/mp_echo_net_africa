@@ -233,8 +233,28 @@ function formartQuestion($firstQuestion,$member){
             $loanAmount = $latestAmountResponse->survey_response;
         }
     }
+    $latestEdit=MemberEditRequest::where('phone_number',$member->phone)->latest()->first();
 
-    $placeholders = [
+    if($latestEdit){
+        $placeholders = [
+        '{member}' => $member->name,
+        '{group}' => $member->group->name,
+        '{id}' => $member->national_id,
+        '{gender}'=>$member->gender,
+        '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
+        '{LIP}' => $member?->group?->localImplementingPartner?->name,
+        '{month}' => \Carbon\Carbon::now()->monthName,
+        '{loan_received_month}' => $loanMonth ?? "N/A",
+        '{edit_id}' => $editMember->national_id ?? $member->national_id,
+        '{edit_year}' => $editMember->year_of_birth ?? \Carbon\Carbon::parse($member->dob)->format('Y'),
+        '{edit_gender}' => $editMember->gender ?? $member->gender,
+        '{edit_group}' => $editMember->group ?? $member->group->name,
+        '{loan_amount_received}' => $loanAmount ?? 'N/A', // Use 'N/A' or 0 if no response found
+
+    ];
+    }else{
+
+        $placeholders = [
         '{member}' => $member->name,
         '{group}' => $member->group->name,
         '{id}' => $member->national_id,
@@ -246,6 +266,8 @@ function formartQuestion($firstQuestion,$member){
         '{loan_amount_received}' => $loanAmount ?? 'N/A', // Use 'N/A' or 0 if no response found
 
     ];
+    }
+    
     $message = str_replace(
         array_keys($placeholders),
         array_values($placeholders),
