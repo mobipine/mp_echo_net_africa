@@ -21,8 +21,10 @@ use Illuminate\Support\Facades\Log;
 class MemberEditRequestResource extends Resource
 {
     protected static ?string $model = MemberEditRequest::class;
+    protected static ?string $navigationIcon = 'heroicon-o-pencil';
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationGroup = 'Survey Management';
+
 
     public static function form(Form $form): Form
     {
