@@ -4,6 +4,7 @@
 use Carbon\Carbon;
 use App\Models\Member;
 use App\Models\MemberEditRequest;
+use App\Models\RedoSurvey;
 use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
@@ -280,45 +281,77 @@ function formartQuestion($firstQuestion,$member){
 
 function startSurvey($msisdn, Survey $survey)
 {
-    // Check for the first question
-    // $firstQuestion = $survey->questions()->orderBy('pivot_position')->first();
+    // Get first question
     $firstQuestion = getNextQuestion($survey->id);
     if (!$firstQuestion) {
         return response()->json(['status' => 'error', 'message' => 'Survey has no questions.']);
     }
 
-    // Get the member ID based on the phone number
+    // Find member
     $member = Member::where('phone', $msisdn)->first();
     if (!$member) {
         Log::warning("No member found with phone number: {$msisdn}");
         return response()->json(['status' => 'error', 'message' => 'Phone number not recognized.']);
     }
 
-    // Find an uncompleted record for THIS specific survey and member
-    $existingProgress = SurveyProgress::where('member_id', $member->id)
-        ->where('survey_id',$survey->id)
-        ->whereNull('completed_at')
-        ->first();
-
-    // Check for participant uniqueness
-    if ($existingProgress && $survey->participant_uniqueness) {
-        // If the survey is unique and progress already exists, prevent a restart.
-        return response()->json(['status' => 'info', 'message' => 'Survey already started.']);
-    }
-
-    // --- CANCELLATION STEP ---
-    // If we reach here, we are proceeding to start a new session. 
-    // First, we cancel ALL active (uncompleted) survey progress for this member, 
-    // regardless of which survey it belongs to.
+    // --- Cancel all active uncompleted surveys ---
     Log::info("Cancelling all active uncompleted progress for member ID: {$member->id}");
-    
     SurveyProgress::where('member_id', $member->id)
         ->whereNull('completed_at')
-        // Ensure the status is set to CANCELLED for all found records
         ->update(['status' => 'CANCELLED']);
 
-    // --- START NEW PROGRESS ---
-    // Create a new progress record for the current survey
+    // Check existing progress for this survey
+    $existingProgress = SurveyProgress::where('member_id', $member->id)
+        ->where('survey_id', $survey->id)
+        ->first();
+
+    // --- If participant uniqueness is ON and a survey already exists ---
+    if ($existingProgress && $survey->participant_uniqueness) {
+        // Log redo request
+        Log::info("Redo request detected for member {$member->id} on survey {$survey->id}");
+
+        // Find the “Redo Survey” by name
+        $redoSurvey = Survey::where('title', 'Redo Survey')->first();
+
+        if (!$redoSurvey) {
+            Log::error("Redo Survey not found in database.");
+            return response()->json(['status' => 'error', 'message' => 'Redo Survey not found.']);
+        }
+
+        // Create redo request entry
+        $redoRecord = RedoSurvey::create([
+            'member_id' => $member->id,
+            'phone_number' => $msisdn,
+            'survey_to_redo_id' => $survey->id,
+            'reason' => 'User triggered redo for a unique survey.',
+            'action' => 'pending',
+        ]);
+
+        // Get first question of the “Redo Survey”
+        $redoFirstQuestion = getNextQuestion($redoSurvey->id);
+        if ($redoFirstQuestion) {
+            $message = formartQuestion($redoFirstQuestion, $member);
+            sendSMS($msisdn, $message);
+
+            // Log for clarity
+            Log::info("Sent redo survey question to {$msisdn}");
+        }
+        $newProgress = SurveyProgress::create([
+        'survey_id' => $redoSurvey->id,
+        'member_id' => $member->id,
+        'current_question_id' => $redoFirstQuestion->id,
+        'last_dispatched_at' => now(),
+        'has_responded' => false,
+        'source' => 'shortcode'
+    ]);
+
+        return response()->json([
+            'status' => 'info',
+            'message' => 'Redo request logged. Await admin approval.',
+        ]);
+    }
+
+    // --- Start new progress ---
     $newProgress = SurveyProgress::create([
         'survey_id' => $survey->id,
         'member_id' => $member->id,
@@ -328,15 +361,14 @@ function startSurvey($msisdn, Survey $survey)
         'source' => 'shortcode'
     ]);
 
-    // Send the first question
-    $message=formartQuestion($firstQuestion,$member);
-    Log::info("This is the message ".$message);
+    // Send first question
+    $message = formartQuestion($firstQuestion, $member);
     sendSMS($msisdn, $message);
 
     return response()->json([
         'status' => 'success',
         'message' => 'Survey started.',
-        'question_sent' => $firstQuestion->question
+        'question_sent' => $firstQuestion->question,
     ]);
 }
 
@@ -541,7 +573,28 @@ function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer){
             [
                 'group' =>$actualAnswer,
             ]);
-    } 
+    } elseif ($currentQuestion->purpose == "redo_reason") {
+        // Find existing pending redo request for this member
+        $redo = \App\Models\RedoSurvey::where('member_id', $member->id)
+            ->where('phone_number', $msisdn)
+            ->where('action', 'pending')
+            ->latest()
+            ->first();
+
+        if ($redo) {
+            // Update the reason for this redo request
+            $redo->update([
+                'reason' => $actualAnswer,
+            ]);
+
+            Log::info("RedoSurvey reason updated for member {$member->id}");
+            // sendSMS($msisdn, "Your redo request has been submitted for review. You will be notified once approved.");
+        } else {
+            Log::warning("No pending redo request found for member {$member->id} when updating reason.");
+           
+        }
+    }
+
 }
 function getActualAnswer($currentQuestion, $userResponse, $msisdn)
 {

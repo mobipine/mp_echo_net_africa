@@ -21,8 +21,10 @@ use Illuminate\Support\Facades\Log;
 class MemberEditRequestResource extends Resource
 {
     protected static ?string $model = MemberEditRequest::class;
+    protected static ?string $navigationIcon = 'heroicon-o-pencil';
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationGroup = 'Survey Management';
+
 
     public static function form(Form $form): Form
     {
@@ -65,7 +67,17 @@ class MemberEditRequestResource extends Resource
                         // Find the member and apply the update from the request
                         $member = Member::where('phone', $record->phone_number)->first();
                         $group=Group::where('name',$record->group)->first();
+                        if (! $group) {
+                            Notification::make()
+                                ->title('Group Not Found')
+                                ->body("The group '{$record->group}' does not exist. Please create it first before approving.")
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
                         $group_id=$group->id;
+                        
                         
                         if ($member) {
                             $dob = \Carbon\Carbon::parse($member->dob);
