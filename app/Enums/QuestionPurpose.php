@@ -14,6 +14,7 @@ enum QuestionPurpose: string
     case INFO = 'info';
     case LOAN_DATE = 'loan_received_date';
     case LOAN_RECEIVED = 'loan_amount_received';
+    case REDO_REASON='redo_reason';
 
     public function label(): string
     {
@@ -27,7 +28,8 @@ enum QuestionPurpose: string
             self::CONFIRM => 'Confirm Details',
             self::INFO => 'Informational',
             self::LOAN_DATE => 'Gets when the loan was received',
-            self::LOAN_RECEIVED => 'Gets what amount was received'
+            self::LOAN_RECEIVED => 'Gets what amount was received',
+            self::REDO_REASON=>'This will get the reason to redo a survey'
         };
     }
 
