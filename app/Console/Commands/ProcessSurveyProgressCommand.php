@@ -131,70 +131,19 @@ class ProcessSurveyProgressCommand extends Command
 
                 if ($nextQuestion) {
                     Log::info("The member responded to previous question. Sending the next question");
-                    // $message = $this->formatQuestionMessage($nextQuestion);
 
-                    Log::info($nextQuestion);
+                    //Formatting the question 
+                    $message=formartQuestion($nextQuestion,$member);
+                    Log::info("This is the message ".$message);
 
-                    Log::info("The question is {$nextQuestion->answer_strictness}");
-
-                    //Formatting the question if multiple choice
-                    if ($nextQuestion->answer_strictness == "Multiple Choice") {
-                        $message = "{$nextQuestion->question}\n\n"; 
-                        
-                        $letters = [];
-                        foreach ($nextQuestion->possible_answers as $answer) {
-                            $message .= "{$answer['letter']}. {$answer['answer']}\n";
-                            $letters[] = $answer['letter'];
-                        }
-                        
-                        // Dynamically build the letter options string
-                        if (count($letters) === 1) {
-                            $letterText = $letters[0];
-                        } elseif (count($letters) === 2) {
-                            $letterText = $letters[0] . " or " . $letters[1];
-                        } else {
-                            $lastLetter = array_pop($letters);
-                            $letterText = implode(', ', $letters) . " or " . $lastLetter;
-                        }
-                        
-                        $message .= "\nPlease reply with the letter {$letterText}.";
-                        Log::info("The message to be sent is {$message}");
-
-                    } else {
-                        $message = $nextQuestion->question;
-                        if ($nextQuestion->answer_data_type === 'Strictly Number') {
-                            $message .= "\n💡 *Note: Your answer should be a number.*";
-                        } elseif ($nextQuestion->answer_data_type === 'Alphanumeric') {
-                            $message .= "\n💡 *Note: Your answer should contain only letters and numbers.*";
-                        }
-                    }
-                    
-                    try {
-                        // $smsService->send($member->phone, $message);
-                        $placeholders = [
-                            '{member}' => $member->name,
-                            '{group}' => $member->group->name,
-                            '{id}' => $member->national_id,
-                            '{gender}'=>$member->gender,
-                            '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
-                            '{LIP}' => $member?->group?->localImplementingPartner?->name,
-                            '{month}' => \Carbon\Carbon::now()->monthName,
-                        ];
-                        $message = str_replace(
-                            array_keys($placeholders),
-                            array_values($placeholders),
-                            $message
-                        );
-                        $this->sendSMS($member->phone, $message);
-                        $progress->update([
-                            'current_question_id' => $nextQuestion->id,
-                            'last_dispatched_at' => now(),
-                            'has_responded' => false,
-                        ]);
-                        Log::info("Next question sent to {$member->phone} for survey {$survey->title}.");
-                    } catch (\Exception $e) {
-                        Log::error("Failed to send next question to {$member->phone}: " . $e->getMessage());
-                    }
+                    $this->sendSMS($member->phone, $message);
+                    $progress->update([
+                        'current_question_id' => $nextQuestion->id,
+                        'last_dispatched_at' => now(),
+                        'has_responded' => false,
+                    ]);
+                    Log::info("Next question sent to {$member->phone} for survey {$survey->title}.");
+                   
                 } else {
                     // All questions answered, mark as complete
                     $progress->update([

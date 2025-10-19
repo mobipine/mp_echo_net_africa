@@ -82,10 +82,15 @@ class Member extends Model
         parent::boot();
 
         static::creating(function ($member) {
-            $lastMember = self::latest()->first();
-            $lastAccountNumber = $lastMember ? (int) str_replace('ACC-', '', $lastMember->account_number) : 0;
-            $newAccountNumber = 'ACC-' . str_pad($lastAccountNumber + 1, 4, '0', STR_PAD_LEFT);
-            $member->account_number = $newAccountNumber;
+            // Temporarily assign a placeholder (required if non-nullable)
+            $member->account_number = 'PENDING';
+        });
+
+        static::created(function ($member) {
+            // Use the actual DB ID to guarantee uniqueness
+            $member->account_number = 'ACC-' . str_pad($member->id, 4, '0', STR_PAD_LEFT);
+            $member->saveQuietly();
         });
     }
+
 }
