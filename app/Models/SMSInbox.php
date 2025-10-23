@@ -17,6 +17,7 @@ class SMSInbox extends Model
         'status',
         'phone_number',
         'member_id',
+        'channel',
     ];
 
     protected $casts = [
