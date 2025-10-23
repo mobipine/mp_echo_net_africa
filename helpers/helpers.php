@@ -279,8 +279,9 @@ function formartQuestion($firstQuestion,$member){
     return $message;
 }
 
-function startSurvey($msisdn, Survey $survey)
+function startSurvey($msisdn, Survey $survey,$channel)
 {
+    Log::info("{$survey->title} has started for {$msisdn} on {$channel}");
     // Get first question
     $firstQuestion = getNextQuestion($survey->id);
     if (!$firstQuestion) {
@@ -331,7 +332,7 @@ function startSurvey($msisdn, Survey $survey)
         $redoFirstQuestion = getNextQuestion($redoSurvey->id);
         if ($redoFirstQuestion) {
             $message = formartQuestion($redoFirstQuestion, $member);
-            sendSMS($msisdn, $message);
+            sendSMS($msisdn, $message,$channel);
 
             // Log for clarity
             Log::info("Sent redo survey question to {$msisdn}");
@@ -363,7 +364,7 @@ function startSurvey($msisdn, Survey $survey)
 
     // Send first question
     $message = formartQuestion($firstQuestion, $member);
-    sendSMS($msisdn, $message);
+    sendSMS($msisdn, $message,$channel);
 
     return response()->json([
         'status' => 'success',
@@ -373,11 +374,13 @@ function startSurvey($msisdn, Survey $survey)
 }
 
 
-function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
+function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $channel)
 {
+    
     //THIS FUNCTION SHOULD VALIDATE THE RESPONSE BASED ON THE QUESTION'S DATA TYPE AND STORE IT IF VALID
     $currentQuestion = $progress->currentQuestion;
     $survey = $progress->survey;
+    Log::info("{$survey->title} has continuing for {$msisdn} on {$channel}");
     if (!$currentQuestion) {
         return response()->json(['status' => 'error', 'message' => 'Invalid question or session state.']);
     }
@@ -387,7 +390,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
     $actualAnswer = getActualAnswer($currentQuestion,$userResponse,$msisdn);
 
     if ($actualAnswer==null){
-        sendSMS($msisdn, $currentQuestion->data_type_violation_response);
+        sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel);
         return;
     }
 
@@ -418,7 +421,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
         $valid=validateResponse($currentQuestion,$msisdn,$response);
 
         if(!$valid){
-            sendSMS($msisdn, $currentQuestion->data_type_violation_response);
+            sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel);
             return;
         }
     }
@@ -459,7 +462,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response)
                 'status' => 'COMPLETED'
             ]
         );
-        sendSMS($msisdn, $survey->final_response);
+        sendSMS($msisdn, $survey->final_response,$channel);
         return response()->json([
             'status' => 'success',
             'message' => 'Survey completed.',
@@ -672,12 +675,13 @@ function normalizePhoneNumber(string $phoneNumber): string
 }
 
 
-function sendSMS($msisdn, $message)
+function sendSMS($msisdn, $message,$channel)
 {
     try {
         SMSInbox::create([
             'phone_number' => $msisdn, // Store the phone number in group_ids for tracking
             'message' => $message,
+            'channel' => $channel,
         ]);
     } catch (\Exception $e) {
         Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());
