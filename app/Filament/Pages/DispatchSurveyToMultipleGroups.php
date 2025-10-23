@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Enums\ChannelType;
 use App\Jobs\SendSurveyToGroupJob;
 use App\Models\Group;
 use App\Models\SMSInbox;
@@ -31,6 +32,8 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
     public $automated = false;
     public $starts_at = null;
     public $ends_at = null;
+    public $channel = null;
+
 
     public ?array $data = [];
 
@@ -72,6 +75,12 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
                         ->default(false)
                         ->helperText('Enable if you want to schedule the survey.')
                         ->reactive(),
+                    Select::make('channel')
+                        ->label('Channel')
+                        ->options(ChannelType::options())
+                        ->required()
+                        ->default(ChannelType::SMS->value)
+                        ->native(false),
 
                 ]),
                 Forms\Components\Group::make()->schema([
@@ -116,6 +125,7 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
                     'automated' => true,
                     'starts_at' => $validated['starts_at'],
                     'ends_at' => $validated['ends_at'],
+                    'channel' => $validated['channel'],
                 ]);
             }
             Log::info("{$survey->title} to be sent to multiple groups has been scheduled in the Group Survey Table");
@@ -135,12 +145,13 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
                     'survey_id' => $validated['survey_id'],
                     'automated' => false,
                     'was_dispatched' => true,
+                    'channel' => $validated['channel'],
                     
                 ]);
             }
             Log::info("The assigned survey to groups have been saved to the Group Survey Table");
             // Dispatch the refactored job with the array of group IDs
-            SendSurveyToGroupJob::dispatch($validated['group_ids'], $survey);
+            SendSurveyToGroupJob::dispatch($validated['group_ids'], $survey, $validated['channel']);
             Log::info("{$survey->title} is being sent in the background to active members of the selected groups");
 
             Notification::make()
