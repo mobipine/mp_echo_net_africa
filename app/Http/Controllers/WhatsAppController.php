@@ -153,14 +153,14 @@ class WhatsAppController extends Controller
         $survey = $this->findSurveyByTriggerWord($message);
 
         if ($survey) {
-            return startSurvey($phoneNumber, $survey);
+            return startSurvey($phoneNumber, $survey,"whatsapp");
         }
 
         // Check for active survey progress
         $progress = $this->findActiveSurveyProgress($phoneNumber);
 
         if ($progress) {
-            return processSurveyResponse($phoneNumber, $progress, $message);
+            return processSurveyResponse($phoneNumber, $progress, $message,"whatsapp");
         }
 
     }

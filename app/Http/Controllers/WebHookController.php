@@ -60,7 +60,7 @@ class WebHookController extends Controller
 
         //TODO: CHECK IF THE member has an active survey
         if ($survey) {
-            return startSurvey($msisdn, $survey);
+            return startSurvey($msisdn, $survey,"sms");
         }
 
         // Check if the user is in an active survey progress state
@@ -76,7 +76,7 @@ class WebHookController extends Controller
         // Process the user's response
         if ($progress) {
            
-            return processSurveyResponse($msisdn, $progress, $message);
+            return processSurveyResponse($msisdn, $progress, $message,"sms");
               
         }
 
