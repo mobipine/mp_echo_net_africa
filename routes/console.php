@@ -18,7 +18,7 @@ Schedule::command('send:sms')->everyFiveSeconds()->withoutOverlapping();
 
 Schedule::command('surveys:dispatch-due')->everyFiveSeconds()->withoutOverlapping();
 
-// Schedule::command('send:whatsapp-text')->everyFiveSeconds()->withoutOverlapping();
+Schedule::command('send:whatsapp-text')->everyFiveSeconds()->withoutOverlapping();
 Schedule::command('survey:process-progress')->everyFiveSeconds()->withoutOverlapping();
 
 // Loan interest accrual - run daily at 9 AM
