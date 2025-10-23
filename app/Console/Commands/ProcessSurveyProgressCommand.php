@@ -117,6 +117,15 @@ class ProcessSurveyProgressCommand extends Command
                 
         
             if ($hasResponded) {
+                $progress = SurveyProgress::where('member_id', $member->id)
+                    ->where('survey_id', $survey->id)
+                    ->where('has_responded', true)
+                    ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
+                    ->latest()
+                    ->first();
+
+                $channel = $progress?->channel ?? 'sms'; // default to sms if null
+                
                 //get the response
                 $latestResponse = SurveyResponse::where('session_id', $progress->id)
                     ->where('survey_id', $survey->id)
@@ -136,7 +145,7 @@ class ProcessSurveyProgressCommand extends Command
                     $message=formartQuestion($nextQuestion,$member);
                     Log::info("This is the message ".$message);
 
-                    $this->sendSMS($member->phone, $message);
+                    $this->sendSMS($member->phone, $message,$channel);
                     $progress->update([
                         'current_question_id' => $nextQuestion->id,
                         'last_dispatched_at' => now(),
@@ -188,12 +197,13 @@ class ProcessSurveyProgressCommand extends Command
         }
     }
 
-    public function sendSMS($msisdn, $message) {
+    public function sendSMS($msisdn, $message,$channel) {
 
         try{
             SMSInbox::create([
                 'phone_number' => $msisdn, // Store the phone number in group_ids for tracking
                 'message' => $message,
+                'channel' => $channel,
             ]);
         } catch (\Exception $e) {
             Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());

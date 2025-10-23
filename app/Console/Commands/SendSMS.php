@@ -40,6 +40,7 @@ class SendSMS extends Command
     {
         //for this cron job, we will send SMS to all groups that have been selected in the SendSMS page
         $sms_inboxes = SMSInbox::where('status', 'pending')
+            ->where('channel','sms')
             ->where('group_ids', '!=', null) // Ensure group_ids is not null
             ->where('group_ids', '!=', []) // Ensure group_ids is not an empty array
             ->take(10) // Limit to 10 SMS inboxes to process at a time
@@ -53,6 +54,7 @@ class SendSMS extends Command
 
             //check if there are SMSInbox with group_ids that are null or empty but phone_number and member_id is filled
             $sms_inboxes = SMSInbox::where('status', 'pending')
+                ->where('channel','sms')
                 ->whereNotNull('phone_number')
                 // ->whereNotNull('member_id')
                 ->take(10)
