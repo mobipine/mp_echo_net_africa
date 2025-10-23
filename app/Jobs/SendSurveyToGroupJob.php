@@ -19,7 +19,7 @@ class SendSurveyToGroupJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(public array $groupIds, public Survey $survey) {}
+    public function __construct(public array $groupIds, public Survey $survey, public $channel) {}
 
     public function handle(): void
     {
@@ -107,11 +107,12 @@ class SendSurveyToGroupJob implements ShouldQueue
                         'phone_number' => $member->phone,
                         'member_id'    => $member->id,
                         'survey_progress_id' => $newProgress->id,
+                        'channel' => $this->channel,
                     ]);
 
                     // Here you would call your actual SMS service, e.g., UjumbeSMS::send($member->phone, $message);
                     
-                    Log::info("SMS Inbox record created for {$member->phone}.\n\n");
+                    Log::info("SMS Inbox record created for {$member->phone}. To be sent via $this->channel.\n\n");
                     $sentCount++;
                 } catch (\Exception $e) {
                     Log::error("Failed to create SMS Inbox record for {$member->name}: " . $e->getMessage());

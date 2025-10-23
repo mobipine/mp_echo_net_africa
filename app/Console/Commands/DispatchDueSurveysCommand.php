@@ -26,6 +26,8 @@ class DispatchDueSurveysCommand extends Command
             ->where('starts_at', '<=', now()) // Start time has passed
             ->get();
 
+        Log::info("The due assignments are {$dueAssignments}");
+
         if ($dueAssignments->isEmpty()) {
             $this->info('No automated survey assignments due for dispatch.');
             Log::info("No Due Assignments, exiting the handle function of dispatch due survey command");
@@ -90,7 +92,8 @@ class DispatchDueSurveysCommand extends Command
                                     'current_question_id' => $firstQuestion->id,
                                     'last_dispatched_at' => now(),
                                     'has_responded' => false,
-                                    'source' => 'manual'
+                                    'source' => 'manual',
+                                    'channel' => $assignment->channel,
                                 ]);
 
                                 try {
@@ -98,6 +101,7 @@ class DispatchDueSurveysCommand extends Command
                                         'message'      => $message,
                                         'phone_number' => $member->phone,
                                         'member_id'    => $member->id,
+                                        'channel' => $assignment->channel,
                                     ]);
 
                                     Log::info('Record created in SMS Inbox');
@@ -118,7 +122,8 @@ class DispatchDueSurveysCommand extends Command
                                 'current_question_id' => $firstQuestion->id,
                                 'last_dispatched_at' => now(),
                                 'has_responded' => false,
-                                'source' => 'manual'
+                                'source' => 'manual',
+                                'channel' => $assignment->channel,
                             ]);
 
                             try {
@@ -126,6 +131,7 @@ class DispatchDueSurveysCommand extends Command
                                     'message'      => $message,
                                     'phone_number' => $member->phone,
                                     'member_id'    => $member->id,
+                                    'channel' => $assignment->channel,
                                 ]);
 
                                 Log::info('Record created in SMS Inbox');
