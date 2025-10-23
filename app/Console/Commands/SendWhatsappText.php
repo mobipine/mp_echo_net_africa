@@ -57,6 +57,7 @@ class SendWhatsappText extends Command
     protected function processGroupMessages()
     {
         $smsInboxes = SMSInbox::where('status', 'pending')
+            ->where('channel','whatsapp')
             ->where(function ($query) {
                 $query->whereNotNull('group_ids')
                       ->where('group_ids', '!=', '[]');
@@ -90,6 +91,7 @@ class SendWhatsappText extends Command
     protected function processIndividualMessages()
     {
         $smsInboxes = SMSInbox::where('status', 'pending')
+            ->where('channel','whatsapp')
             ->where(function ($query) {
                 $query->whereNull('group_ids')
                       ->orWhere('group_ids', '=', '[]');
