@@ -45,8 +45,17 @@ class LoanApplication extends Page implements HasForms
     {
         abort_unless(Auth::check() && Auth::user()->can('page_LoanApplication'), 403);
         
-        // Check if we're resuming an incomplete application
-        if (request()->has('session_data')) {
+        // Check if we're resuming an incomplete application via loan ID
+        if (request()->has('loan_id')) {
+            $loanId = request('loan_id');
+            $loan = Loan::find($loanId);
+            
+            if ($loan && $loan->session_data) {
+                $this->data = $loan->session_data;
+            }
+        }
+        // Legacy support: Check if session_data is passed directly
+        elseif (request()->has('session_data')) {
             $sessionData = request('session_data');
             if (!is_array($sessionData)) {
                 $sessionData = json_decode($sessionData, true);
@@ -450,7 +459,6 @@ class LoanApplication extends Page implements HasForms
             // Check if we're updating an existing incomplete loan
             $existingLoan = Loan::where('member_id', $data['member_id'])
                 ->where('loan_product_id', $data['loan_product_id'])
-                ->whereNotNull('session_data')
                 ->where('status', 'Incomplete Application')
                 ->first();
 
@@ -474,19 +482,19 @@ class LoanApplication extends Page implements HasForms
                 'collateral_description' => $data['collateral_description'] ?? '',
                 'additional_notes' => $data['additional_notes'] ?? '',
                 'status' => 'Pending Approval',
-                // 'session_data' => null, // Clear session data as application is complete
+                'session_data' => null, // Clear session data as application is complete
                 'is_completed' => 1,
             ];
 
             if ($existingLoan) {
                 // Update existing loan with complete data
                 $existingLoan->update($loanData);
+                $loan = $existingLoan;
             } else {
                 // Create new loan
-                Loan::create(array_merge($loanData, [
+                $loan = Loan::create(array_merge($loanData, [
                     'member_id' => $data['member_id'],
                     'loan_product_id' => $data['loan_product_id'],
-                    'status' => 'Incomplete Application',
                 ]));
             }
 
@@ -494,9 +502,12 @@ class LoanApplication extends Page implements HasForms
             
             Notification::make()
                 ->title('Success')
-                ->body('Loan application submitted successfully!')
+                ->body('Loan application submitted successfully! Redirecting to loans list...')
                 ->success()
                 ->send();
+                
+            // Redirect to the loans list page
+            $this->redirect(route('filament.admin.resources.loans.index'));
 
             
                 
@@ -648,9 +659,9 @@ class LoanApplication extends Page implements HasForms
         
         if (isset($formData['member_id']) && isset($formData['loan_product_id'])) {
             try {
+                // Find any existing incomplete application for this member and product
                 $existingLoan = Loan::where('member_id', $formData['member_id'])
                     ->where('loan_product_id', $formData['loan_product_id'])
-                    ->whereNotNull('session_data')
                     ->where('status', 'Incomplete Application')
                     ->first();
 
@@ -667,6 +678,7 @@ class LoanApplication extends Page implements HasForms
                         'interest_rate' => 0.0,
                         'interest_amount' => 0.0,
                         'repayment_amount' => 0.0,
+                        'is_completed' => 0,
                     ]);
                 }
                 

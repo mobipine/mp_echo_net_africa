@@ -63,9 +63,9 @@ class AdminPanelProvider extends PanelProvider
                 // 'Montserrat' //set custom panel font here
             )
 
-            // ->brandName('Echo Network Africa Foundation')
-            ->brandLogo(asset('images/echonet-logo.png'))
-            ->brandLogoHeight('3.5rem')
+            ->brandName('FORUM KENYA')
+            // ->brandLogo(asset('images/echonet-logo.png'))
+            // ->brandLogoHeight('3.5rem')
             // ->brandLogo(asset('images/logo.svg'))
 
             // ->favicon(asset('images/logo.svg'))

@@ -247,20 +247,18 @@ class RepaymentAllocationService
      */
     private function createChargesPaymentTransactions(Loan $loan, float $amount, string $accountName = ""): array
     {
-        // Get account info from loan product, fallback to config
-        $bankAccountName = $this->getAccountNameFromLoanProduct($loan, 'bank') ?? config('repayment_priority.accounts.bank');
-        $bankAccountNumber = $this->getAccountNumberFromLoanProduct($loan, 'bank');
-        
-        $chargesReceivableName = $this->getAccountNameFromLoanProduct($loan, 'loan_charges_receivable') ?? config('repayment_priority.accounts.loan_charges_receivable');
-        $chargesReceivableNumber = $this->getAccountNumberFromLoanProduct($loan, 'loan_charges_receivable');
+        // Get member's group for group-level accounting
+        $group = $loan->member->group;
+        $groupId = $group->id;
         
         return [
-            // Debit: Bank/Cash Account (money coming in)
+            // Debit: Bank/Cash Account (money coming in) - GROUP ACCOUNT
             [
-                'account_name' => $bankAccountName,
-                'account_number' => $bankAccountNumber,
+                'account_name' => "{$group->group_name} - Bank Account",
+                'account_number' => "G{$groupId}-1001",
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
+                'group_id' => $groupId,
                 'transaction_type' => 'charges_payment',
                 'dr_cr' => 'dr',
                 'amount' => $amount,
@@ -268,12 +266,13 @@ class RepaymentAllocationService
                 'description' => "Loan charges payment from member {$loan->member->name}",
             ],
             
-            // Credit: Loan Charges Receivable (reducing receivable)
+            // Credit: Loan Charges Receivable (reducing receivable) - GROUP ACCOUNT
             [
-                'account_name' => $chargesReceivableName,
-                'account_number' => $chargesReceivableNumber,
+                'account_name' => "{$group->group_name} - Loan Charges Receivable",
+                'account_number' => "G{$groupId}-1102",
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
+                'group_id' => $groupId,
                 'transaction_type' => 'charges_payment',
                 'dr_cr' => 'cr',
                 'amount' => $amount,
@@ -288,20 +287,18 @@ class RepaymentAllocationService
      */
     private function createInterestPaymentTransactions(Loan $loan, float $amount, string $accountName = ""): array
     {
-        // Get account info from loan product, fallback to config
-        $bankAccountName = $this->getAccountNameFromLoanProduct($loan, 'bank') ?? config('repayment_priority.accounts.bank');
-        $bankAccountNumber = $this->getAccountNumberFromLoanProduct($loan, 'bank');
-        
-        $interestReceivableName = $this->getAccountNameFromLoanProduct($loan, 'interest_receivable') ?? config('repayment_priority.accounts.interest_receivable');
-        $interestReceivableNumber = $this->getAccountNumberFromLoanProduct($loan, 'interest_receivable');
+        // Get member's group for group-level accounting
+        $group = $loan->member->group;
+        $groupId = $group->id;
         
         return [
-            // Debit: Bank/Cash Account (money coming in)
+            // Debit: Bank/Cash Account (money coming in) - GROUP ACCOUNT
             [
-                'account_name' => $bankAccountName,
-                'account_number' => $bankAccountNumber,
+                'account_name' => "{$group->group_name} - Bank Account",
+                'account_number' => "G{$groupId}-1001",
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
+                'group_id' => $groupId,
                 'transaction_type' => 'interest_payment',
                 'dr_cr' => 'dr',
                 'amount' => $amount,
@@ -309,12 +306,13 @@ class RepaymentAllocationService
                 'description' => "Interest payment from member {$loan->member->name}",
             ],
             
-            // Credit: Interest Receivable (reducing receivable)
+            // Credit: Interest Receivable (reducing receivable) - GROUP ACCOUNT
             [
-                'account_name' => $interestReceivableName,
-                'account_number' => $interestReceivableNumber,
+                'account_name' => "{$group->group_name} - Interest Receivable",
+                'account_number' => "G{$groupId}-1103",
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
+                'group_id' => $groupId,
                 'transaction_type' => 'interest_payment',
                 'dr_cr' => 'cr',
                 'amount' => $amount,
@@ -329,20 +327,18 @@ class RepaymentAllocationService
      */
     private function createPrincipalPaymentTransactions(Loan $loan, float $amount, string $accountName = ""): array
     {
-        // Get account info from loan product, fallback to config
-        $bankAccountName = $this->getAccountNameFromLoanProduct($loan, 'bank') ?? config('repayment_priority.accounts.bank');
-        $bankAccountNumber = $this->getAccountNumberFromLoanProduct($loan, 'bank');
-        
-        $loansReceivableName = $this->getAccountNameFromLoanProduct($loan, 'loans_receivable') ?? config('repayment_priority.accounts.loans_receivable');
-        $loansReceivableNumber = $this->getAccountNumberFromLoanProduct($loan, 'loans_receivable');
+        // Get member's group for group-level accounting
+        $group = $loan->member->group;
+        $groupId = $group->id;
         
         return [
-            // Debit: Bank/Cash Account (money coming in)
+            // Debit: Bank/Cash Account (money coming in) - GROUP ACCOUNT
             [
-                'account_name' => $bankAccountName,
-                'account_number' => $bankAccountNumber,
+                'account_name' => "{$group->group_name} - Bank Account",
+                'account_number' => "G{$groupId}-1001",
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
+                'group_id' => $groupId,
                 'transaction_type' => 'principal_payment',
                 'dr_cr' => 'dr',
                 'amount' => $amount,
@@ -350,12 +346,13 @@ class RepaymentAllocationService
                 'description' => "Principal payment from member {$loan->member->name}",
             ],
             
-            // Credit: Loans Receivable (reducing receivable)
+            // Credit: Loans Receivable (reducing receivable) - GROUP ACCOUNT
             [
-                'account_name' => $loansReceivableName,
-                'account_number' => $loansReceivableNumber,
+                'account_name' => "{$group->group_name} - Loans Receivable",
+                'account_number' => "G{$groupId}-1101",
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
+                'group_id' => $groupId,
                 'transaction_type' => 'principal_payment',
                 'dr_cr' => 'cr',
                 'amount' => $amount,

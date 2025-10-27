@@ -9,23 +9,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
-
-        // Schema::dropIfExists('groups');
-
-        Schema::create('groups', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->string('email')->nullable();
-            $table->string('phone_number')->nullable();
-            $table->string('county')->nullable();
-            $table->string('sub_county')->nullable();
-            $table->text('address')->nullable();
-            $table->string('township')->nullable();
-            $table->timestamps();
-        });
-        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
-
+        // This migration is no longer needed as groups table is already created
+        // by 2022_06_02_073958_create_groups_table migration
+        // Keeping this file for migration history but doing nothing
     }
 
     public function down(): void
