@@ -4,19 +4,20 @@ namespace App\Console\Commands;
 
 use App\Models\Group;
 use App\Models\SMSInbox;
+use App\Services\BongaSMS;
 use App\Services\UjumbeSMS;
 use Illuminate\Console\Command;
 
 class SendSMS extends Command
 {
 
-    public $ujumbe_sms;
+    public $bonga_sms;
     //construct the Ujumbe
-    public function __construct(UjumbeSMS $ujumbe_sms)
+    public function __construct(BongaSMS $bonga_sms)
     {
         parent::__construct();
         // You can initialize any services or dependencies here if needed
-        $this->ujumbe_sms = $ujumbe_sms;
+        $this->bonga_sms = $bonga_sms;
     }
     /**
      * The name and signature of the console command.
@@ -70,7 +71,7 @@ class SendSMS extends Command
                 info("Sending SMS to {$phone_number}");
                 $response = $this->sendSMS($phone_number, $message);
 
-                if ($response['status']['code'] == "1008" && $response['status']['type'] == "success") {
+                if (($response['status'] ?? null) == 222) {
                     info("SMS sent to {$phone_number}");
                     // After processing, update the SMS inbox status to 'sent'
                     $sms_inbox->status = 'sent';
@@ -105,7 +106,7 @@ class SendSMS extends Command
 
                         $response = $this->sendSMS($member->phone, $message);
                         // dd($response);
-                        if ($response['status']['code'] == "1008" && $response['status']['type'] == "success") {
+                        if (($response['status'] ?? null) == 222) {
                             info("SMS sent to {$member->phone}");
                         } else {
                             $this->error("Failed to send SMS to {$member->phone}");
@@ -124,7 +125,7 @@ class SendSMS extends Command
     {
         // Use the UjumbeSMS service to send the SMS
         try {
-            $res = $this->ujumbe_sms->send($phoneNumber, $message);
+            $res = $this->bonga_sms->send($phoneNumber, $message);
             // info("SMS sent to {$phoneNumber}");
 
             // dd($res); // Debugging line to check the response
