@@ -15,6 +15,8 @@ use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Form;
@@ -56,17 +58,20 @@ class LoanRepaymentPage extends Page implements HasForms
     protected function getFormSchema(): array
     {
         return [
-            Grid::make(2)->schema([
+            Grid::make(3)->schema([
                 Select::make('member_id')
                     ->label('Select Member')
                     ->options(Member::all()->pluck('name', 'id')->toArray())
+                    ->live()
                     ->reactive()
                     ->native(false)
                     ->searchable()
                     ->required()
+                    ->columnSpan(1)
                     ->afterStateUpdated(function ($state, callable $set) {
                         $this->member_id = $state;
                         $set('loan_id', null); // Reset loan selection when member changes
+                        $this->dispatch('member-selected');
                     }),
 
                 Select::make('loan_id')
@@ -115,7 +120,9 @@ class LoanRepaymentPage extends Page implements HasForms
                     ->required()
                     ->mask(RawJs::make('$money($input)'))
                     ->stripCharacters(',')
-                    ->reactive(),
+                    ->live()
+                    ->reactive()
+                    ->columnSpan(1),
 
                 DatePicker::make('repayment_date')
                     ->label('Repayment Date')
@@ -145,8 +152,95 @@ class LoanRepaymentPage extends Page implements HasForms
                 Textarea::make('notes')
                     ->label('Notes')
                     ->placeholder('Additional notes (optional)')
-                    ->rows(3),
+                    ->rows(3)
+                    ->columnSpan(2),
             ]),
+
+            // Member Details Section
+            Section::make('Member Information')
+                ->schema([
+                    Grid::make(4)->schema([
+                        Placeholder::make('member_avatar')
+                            ->label('')
+                            ->content(function (Forms\Get $get) {
+                                if (!$get('member_id')) {
+                                    return '';
+                                }
+                                $member = Member::find($get('member_id'));
+                                if (!$member || !$member->profile_picture) {
+                                    return '<div style="width: 120px; height: 120px; border-radius: 50%; background: #e5e7eb; display: flex; align-items: center; justify-content: center; font-size: 48px;">' . strtoupper(substr($member->name ?? '', 0, 1)) . '</div>';
+                                }
+                                return '<img src="' . asset('storage/' . $member->profile_picture) . '" alt="' . $member->name . '" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover;" />';
+                            })
+                            ->columnSpan(1),
+                        
+                        Grid::make(2)->schema([
+                            Placeholder::make('member_name')
+                                ->label('Member Name')
+                                ->content(function (Forms\Get $get) {
+                                    if (!$get('member_id')) return 'Not selected';
+                                    $member = Member::find($get('member_id'));
+                                    return $member?->name ?? 'N/A';
+                                }),
+                            
+                            Placeholder::make('member_email')
+                                ->label('Email')
+                                ->content(function (Forms\Get $get) {
+                                    if (!$get('member_id')) return 'Not selected';
+                                    $member = Member::find($get('member_id'));
+                                    return $member?->email ?? 'N/A';
+                                }),
+                            
+                            Placeholder::make('member_phone')
+                                ->label('Phone')
+                                ->content(function (Forms\Get $get) {
+                                    if (!$get('member_id')) return 'Not selected';
+                                    $member = Member::find($get('member_id'));
+                                    return $member?->phone ?? 'N/A';
+                                }),
+                            
+                            Placeholder::make('member_savings')
+                                ->label('Total Savings')
+                                ->content(function (Forms\Get $get) {
+                                    if (!$get('member_id')) return 'Not selected';
+                                    $member = Member::find($get('member_id'));
+                                    return 'KES ' . number_format($member?->total_savings ?? 0, 2);
+                                }),
+                        ])->columnSpan(3),
+                        
+                        Placeholder::make('loan_details')
+                            ->label('Selected Loan Details')
+                            ->content(function (Forms\Get $get) {
+                                if (!$get('loan_id')) return 'Please select a loan above.';
+                                
+                                $loan = Loan::with('loanProduct')->find($get('loan_id'));
+                                if (!$loan) return 'Loan not found.';
+                                
+                                $totalRepaid = $loan->total_repaid;
+                                $remaining = $loan->remaining_balance;
+                                $principal = $loan->principal_amount;
+                                
+                                return sprintf(
+                                    '<div style="padding: 1rem; background: #f9fafb; border-radius: 0.5rem;">
+                                        <p><strong>Loan Product:</strong> %s</p>
+                                        <p><strong>Principal Amount:</strong> KES %s</p>
+                                        <p><strong>Total Repaid:</strong> KES %s</p>
+                                        <p><strong>Remaining Balance:</strong> KES %s</p>
+                                        <p><strong>Repayment Progress:</strong> %s%%</p>
+                                    </div>',
+                                    $loan->loanProduct->name ?? 'N/A',
+                                    number_format($principal, 2),
+                                    number_format($totalRepaid, 2),
+                                    number_format($remaining, 2),
+                                    number_format(($totalRepaid / $principal) * 100, 2)
+                                );
+                            })
+                            ->columnSpanFull(),
+                    ]),
+                ])
+                ->visible(fn (Forms\Get $get) => !empty($get('member_id')))
+                ->collapsible()
+                ->collapsed(false),
         ];
     }
 
@@ -204,7 +298,7 @@ class LoanRepaymentPage extends Page implements HasForms
         $amount = $repayment->amount;
         
         // Get account name based on payment method
-        $accountName = $this->getAccountNameForPaymentMethod($repayment->payment_method);
+        $accountName = $this->getAccountNameForPaymentMethod($repayment->payment_method);//TODO: This is not used anywhere
         
         // Use the repayment allocation service
         $allocationService = new RepaymentAllocationService();

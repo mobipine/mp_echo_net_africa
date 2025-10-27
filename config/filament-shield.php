@@ -20,12 +20,12 @@ return [
         'fqcn' => 'App\\Models\\User',
     ],
 
-    'super_admin' => [
-        'enabled' => true,
-        'name' => 'super_admin',
-        // 'define_via_gate' => true, // Enforce permissions via gates
-        // 'intercept_gate' => 'before', // after
-    ],
+    // 'super_admin' => [
+    //     'enabled' => true,
+    //     'name' => 'super_admin',
+    //     // 'define_via_gate' => true, // Enforce permissions via gates
+    //     // 'intercept_gate' => 'before', // after
+    // ],
 
     'permission_prefixes' => [
         'resource' => [
@@ -47,6 +47,7 @@ return [
 
         'page' => 'page',
         'widget' => 'widget',
+        'cluster' => 'cluster',
     ],
 
     'entities' => [
@@ -54,6 +55,7 @@ return [
         'widgets' => true,
         'resources' => true,
         'custom_permissions' => true,
+        'clusters' => true,
     ],
 
     'generator' => [
@@ -67,10 +69,15 @@ return [
 
         'pages' => [
             'Dashboard',
+            'Settings',
         ],
 
         'widgets' => [
             'AccountWidget', 'FilamentInfoWidget',
+        ],
+
+        'clusters' => [
+
         ],
 
         'resources' => [
@@ -83,8 +90,9 @@ return [
         //discover all relation managers
         'discover_all_relation_managers' => true,
         'discover_all_relation_resources' => true,
-        'discover_all_widgets' => false,
-        'discover_all_pages' => false,
+        'discover_all_widgets' => true,
+        'discover_all_pages' => true,
+        'discover_all_clusters' => true,
     ],
 
     'register_role_policy' => [

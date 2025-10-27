@@ -17,7 +17,8 @@ class FeePayment extends Page implements HasForms
     
     protected static ?string $navigationIcon = 'heroicon-o-currency-dollar';
     
-    protected static ?string $navigationGroup = 'SACCO Management';
+    // protected static ?string $navigationGroup = 'SACCO Management';
+    protected static ?string $cluster = \App\Filament\Clusters\SaccoManagement::class;
     
     protected static ?int $navigationSort = 8;
     

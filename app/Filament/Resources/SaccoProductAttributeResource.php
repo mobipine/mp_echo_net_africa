@@ -16,8 +16,9 @@ class SaccoProductAttributeResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-tag';
     
-    protected static ?string $navigationGroup = 'SACCO Management';
-    
+    // protected static ?string $navigationGroup = 'SACCO Management';
+    protected static ?string $cluster = \App\Filament\Clusters\SaccoManagement::class;
+
     protected static ?int $navigationSort = 2;
     
     protected static ?string $navigationLabel = 'Product Attributes';

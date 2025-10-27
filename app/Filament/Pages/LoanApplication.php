@@ -142,6 +142,7 @@ class LoanApplication extends Page implements HasForms
                     ->native(false)
                     ->searchable()
                     ->afterStateUpdated(function ($state, Forms\Set $set) {
+                        // dd($state);
                         $this->fillMemberDetails($set, $state);
                         $this->updateLoanNumber($set, $state);
                         // Save immediately when member is selected
@@ -653,8 +654,11 @@ class LoanApplication extends Page implements HasForms
 
     public function saveSessionData(): void
     {
+    //    dd($this->form);
         // Get current form state
-        $formData = $this->form->getState();
+        $formData = $this->form->getState() ?? [];
+        // dd($formData);
+        // Log::info('Form data: ' . $formData->toArray());
         // dd($formData);
         
         if (isset($formData['member_id']) && isset($formData['loan_product_id'])) {

@@ -58,6 +58,8 @@ class RepaymentAllocationService
             $allocation['remaining_amount'] = $remainingAllocation['remaining_amount'];
         }
 
+        // dd($allocation);
+
         return $allocation;
     }
 
@@ -238,6 +240,8 @@ class RepaymentAllocationService
         if ($allocation['principal_payment'] > 0) {
             $transactions = array_merge($transactions, $this->createPrincipalPaymentTransactions($loan, $allocation['principal_payment'], $accountName));
         }
+
+        // TODO: Create a transaction in case there is a remaining amount (Shoul go to member savings account for that member)
         
         return $transactions;
     }
@@ -254,7 +258,7 @@ class RepaymentAllocationService
         return [
             // Debit: Bank/Cash Account (money coming in) - GROUP ACCOUNT
             [
-                'account_name' => "{$group->group_name} - Bank Account",
+                'account_name' => "{$group->name} - Bank Account",
                 'account_number' => "G{$groupId}-1001",
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
@@ -268,7 +272,7 @@ class RepaymentAllocationService
             
             // Credit: Loan Charges Receivable (reducing receivable) - GROUP ACCOUNT
             [
-                'account_name' => "{$group->group_name} - Loan Charges Receivable",
+                'account_name' => "{$group->name} - Loan Charges Receivable",
                 'account_number' => "G{$groupId}-1102",
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
@@ -294,7 +298,7 @@ class RepaymentAllocationService
         return [
             // Debit: Bank/Cash Account (money coming in) - GROUP ACCOUNT
             [
-                'account_name' => "{$group->group_name} - Bank Account",
+                'account_name' => "{$group->name} - Bank Account",
                 'account_number' => "G{$groupId}-1001",
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
@@ -308,7 +312,7 @@ class RepaymentAllocationService
             
             // Credit: Interest Receivable (reducing receivable) - GROUP ACCOUNT
             [
-                'account_name' => "{$group->group_name} - Interest Receivable",
+                'account_name' => "{$group->name} - Interest Receivable",
                 'account_number' => "G{$groupId}-1103",
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
@@ -334,7 +338,7 @@ class RepaymentAllocationService
         return [
             // Debit: Bank/Cash Account (money coming in) - GROUP ACCOUNT
             [
-                'account_name' => "{$group->group_name} - Bank Account",
+                'account_name' => "{$group->name} - Bank Account",
                 'account_number' => "G{$groupId}-1001",
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
@@ -348,7 +352,7 @@ class RepaymentAllocationService
             
             // Credit: Loans Receivable (reducing receivable) - GROUP ACCOUNT
             [
-                'account_name' => "{$group->group_name} - Loans Receivable",
+                'account_name' => "{$group->name} - Loans Receivable",
                 'account_number' => "G{$groupId}-1101",
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,

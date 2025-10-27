@@ -11,6 +11,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Support\RawJs;
 use Filament\Notifications\Notification;
 
 class CapitalTransferResource extends Resource
@@ -34,7 +35,8 @@ class CapitalTransferResource extends Resource
                     ->relationship('group', 'name')
                     ->required()
                     ->searchable()
-                    ->preload(),
+                    ->preload()
+                    ->native(false),
                 
                 Forms\Components\Select::make('transfer_type')
                     ->label('Transfer Type')
@@ -43,6 +45,7 @@ class CapitalTransferResource extends Resource
                         'return' => 'Capital Return (Group → Org)',
                     ])
                     ->required()
+                    ->native(false)
                     ->reactive()
                     ->afterStateUpdated(function ($state, callable $set, $get) {
                         if ($state === 'advance') {
@@ -54,6 +57,11 @@ class CapitalTransferResource extends Resource
                     ->label('Amount (KES)')
                     ->required()
                     ->numeric()
+                    ->required()
+                    ->live(onBlur: true)
+                   
+                    ->mask(RawJs::make('$money($input)'))
+                    ->stripCharacters(',')
                     ->minValue(1)
                     ->prefix('KES'),
                 

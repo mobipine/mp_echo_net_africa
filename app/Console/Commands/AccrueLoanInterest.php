@@ -275,7 +275,7 @@ class AccrueLoanInterest extends Command
 
         // Debit: Interest Receivable (Asset - money owed to us) - GROUP ACCOUNT
         Transaction::create([
-            'account_name' => "{$group->group_name} - Interest Receivable",
+            'account_name' => "{$group->name} - Interest Receivable",
             'account_number' => "G{$groupId}-1103",
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
@@ -289,7 +289,7 @@ class AccrueLoanInterest extends Command
 
         // Credit: Interest Income (Revenue - income earned) - GROUP ACCOUNT
         Transaction::create([
-            'account_name' => "{$group->group_name} - Interest Income",
+            'account_name' => "{$group->name} - Interest Income",
             'account_number' => "G{$groupId}-4002",
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,

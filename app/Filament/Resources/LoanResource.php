@@ -258,18 +258,18 @@ class LoanResource extends Resource implements HasShieldPermissions
                             $loanCharges = (float) ($attributes['loan_charges']['value'] ?? 0);
                             $applyChargesOnIssuance = config('repayment_priority.charges.apply_on_issuance', true);
                             $deductFromPrincipal = config('repayment_priority.charges.deduct_from_principal', false);
-                            
+                            // dd($applyChargesOnIssuance, $loanCharges, $deductFromPrincipal);
                             $netDisbursement = $record->principal_amount;
                             if ($applyChargesOnIssuance && $loanCharges > 0 && $deductFromPrincipal) {
                                 $netDisbursement = $record->principal_amount - $loanCharges;
                             }
-                            
+                            // dd($netDisbursement);
                             // Check if group has sufficient funds
                             if ($currentBalance < $netDisbursement) {
                                 \Filament\Notifications\Notification::make()
                                     ->danger()
                                     ->title('Insufficient Group Funds')
-                                    ->body("Cannot approve loan. Group '{$group->group_name}' has insufficient funds. Current balance: KES " . number_format($currentBalance, 2) . ", Required: KES " . number_format($netDisbursement, 2) . ". Please transfer capital to the group first.")
+                                    ->body("Cannot approve loan. Group '{$group->name}' has insufficient funds. Current balance: KES " . number_format($currentBalance, 2) . ", Required: KES " . number_format($netDisbursement, 2) . ". Please transfer capital to the group first.")
                                     ->persistent()
                                     ->send();
                                 return;
@@ -449,12 +449,12 @@ class LoanResource extends Resource implements HasShieldPermissions
 
         // Create loan receivable transaction (GROUP ACCOUNT)
         Transaction::create([
-            'account_name' => "{$group->group_name} - Loans Receivable",
-            'account_number' => "G{$groupId}-1101",
+            'account_name' => "{$group->name} - Loans Receivable",
+            'account_number' => "G{$groupId}-1101",//loans receivable account number
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
             'group_id' => $groupId,
-            'transaction_type' => 'loan_issue',
+            'transaction_type' => 'loan_issue',//very important!
             'dr_cr' => 'dr',
             'amount' => $loan->principal_amount,
             'transaction_date' => $loan->release_date,
@@ -463,8 +463,8 @@ class LoanResource extends Resource implements HasShieldPermissions
 
         // Create bank disbursement transaction (GROUP ACCOUNT)
         Transaction::create([
-            'account_name' => "{$group->group_name} - Bank Account",
-            'account_number' => "G{$groupId}-1001",
+            'account_name' => "{$group->name} - Bank Account",
+            'account_number' => "G{$groupId}-1001",//bank account number
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
             'group_id' => $groupId,
@@ -479,8 +479,8 @@ class LoanResource extends Resource implements HasShieldPermissions
         if ($applyChargesOnIssuance && $loanCharges > 0) {
             // Credit loan charges income (GROUP ACCOUNT)
             Transaction::create([
-                'account_name' => "{$group->group_name} - Loan Charges Income",
-                'account_number' => "G{$groupId}-4001",
+                'account_name' => "{$group->name} - Loan Charges Income",
+                'account_number' => "G{$groupId}-4001",//loan charges income account number
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
                 'group_id' => $groupId,
@@ -494,8 +494,8 @@ class LoanResource extends Resource implements HasShieldPermissions
             // If charges are not deducted from principal, create receivable entry (GROUP ACCOUNT)
             if (!$deductFromPrincipal) {
                 Transaction::create([
-                    'account_name' => "{$group->group_name} - Loan Charges Receivable",
-                    'account_number' => "G{$groupId}-1102",
+                    'account_name' => "{$group->name} - Loan Charges Receivable",
+                    'account_number' => "G{$groupId}-1102",//loan charges receivable account number
                     'loan_id' => $loan->id,
                     'member_id' => $loan->member_id,
                     'group_id' => $groupId,

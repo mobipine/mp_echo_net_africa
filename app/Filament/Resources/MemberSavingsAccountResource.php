@@ -17,7 +17,7 @@ class MemberSavingsAccountResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
     
-    protected static ?string $navigationGroup = 'SACCO Management';
+    protected static ?string $cluster = \App\Filament\Clusters\SaccoManagement::class;
     
     protected static ?int $navigationSort = 3;
     

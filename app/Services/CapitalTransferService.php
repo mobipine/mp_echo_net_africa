@@ -118,6 +118,7 @@ class CapitalTransferService
                 'transfer_type' => 'return',
                 'amount' => $amount,
                 'transfer_date' => now(),
+                'purpose' => 'Capital return to organization',
                 'reference_number' => 'RET-' . time(),
                 'created_by' => $initiatedBy ?? auth()->id(),
                 'approved_by' => auth()->id(),

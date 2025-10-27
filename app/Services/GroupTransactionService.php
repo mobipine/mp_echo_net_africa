@@ -23,7 +23,7 @@ class GroupTransactionService
             ->first();
         
         if (!$account) {
-            throw new \Exception("Group account not found: {$searchType} for group {$group->group_name}");
+            throw new \Exception("Group account not found: {$searchType} for group {$group->name}");
         }
         
         return $account;

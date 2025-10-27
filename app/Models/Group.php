@@ -8,10 +8,11 @@ use App\Models\Transaction;
 
 class Group extends Model
 {
-    protected $fillable = ['name', 'email', 'phone_number', 'county', 'sub_county', 'address', 'township','group_certificate','ward','local_implementing_partner_id','county_ENA_staff_id','formation_date','registration_number'];
+    protected $fillable = ['name', 'email', 'phone_number', 'max_loan_amount', 'county', 'sub_county', 'address', 'township','group_certificate','ward','local_implementing_partner_id','county_ENA_staff_id','formation_date','registration_number'];
 
     protected $casts = [
         'formation_date' => 'date',
+        'max_loan_amount' => 'decimal:2',
     ];
 
     public function members()

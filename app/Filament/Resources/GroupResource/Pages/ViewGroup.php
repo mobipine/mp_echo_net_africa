@@ -96,17 +96,17 @@ class ViewGroup extends ViewRecord
                             ->numeric()
                             ->extraAttributes(['class' => 'text-red-600 font-bold']),
                         
-                        Forms\Components\TextInput::make('equity_balance')
-                            ->label('Equity')
-                            ->prefix('KES')
-                            ->numeric()
-                            ->extraAttributes(['class' => 'text-blue-600 font-bold']),
+                        // Forms\Components\TextInput::make('equity_balance')
+                        //     ->label('Equity')
+                        //     ->prefix('KES')
+                        //     ->numeric()
+                        //     ->extraAttributes(['class' => 'text-blue-600 font-bold']),
                         
-                        Forms\Components\TextInput::make('net_income')
-                            ->label('Net Income')
-                            ->prefix('KES')
-                            ->numeric()
-                            ->extraAttributes(['class' => 'text-purple-600 font-bold']),
+                        // Forms\Components\TextInput::make('net_income')
+                        //     ->label('Net Income')
+                        //     ->prefix('KES')
+                        //     ->numeric()
+                        //     ->extraAttributes(['class' => 'text-purple-600 font-bold']),
                     ]),
                 ])
                 ->collapsible(),

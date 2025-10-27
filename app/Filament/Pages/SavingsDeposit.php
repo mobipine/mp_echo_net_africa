@@ -17,7 +17,7 @@ class SavingsDeposit extends Page implements HasForms
     
     protected static ?string $navigationIcon = 'heroicon-o-plus-circle';
     
-    protected static ?string $navigationGroup = 'SACCO Management';
+    protected static ?string $cluster = \App\Filament\Clusters\SaccoManagement::class;
     
     protected static ?int $navigationSort = 4;
     
