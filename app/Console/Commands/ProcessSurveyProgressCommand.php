@@ -7,7 +7,7 @@ use App\Models\SMSInbox;
 use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
-use App\Services\UjumbeSMS;
+// use App\Services\UjumbeSMS;
 use Illuminate\Console\Command;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 
 class ProcessSurveyProgressCommand extends Command
 {
-    protected $signature = 'survey:process-progress';
+    protected $signature = 'process:survey-progress';
     protected $description = 'Sends next survey questions or reminders based on participant progress.';
 
     public function handle()
