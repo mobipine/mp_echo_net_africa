@@ -10,7 +10,7 @@ Route::get('/', function () {
     return redirect('/admin');
 });
 
-Route::post('/webhook', [WebHookController::class, 'handleWebhook']);//route to receive responses from short code SMS Service
+Route::any('/webhook', [WebHookController::class, 'handleWebhook']);//route to receive responses from short code SMS Service
 
 
 Route::get('/get-next-qtn', function () {
