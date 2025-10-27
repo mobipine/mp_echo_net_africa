@@ -392,91 +392,102 @@ class LoanApplication extends Page implements HasForms
                 ->visible(fn(Forms\Get $get) => !$this->checkGuarantorsRequired($get)),
 
             // All Members Guarantee Section
-            Section::make('All Group Members as Guarantors')
-                ->description('All group members must guarantee this loan. The total guaranteed amount must equal the loan amount.')
-                ->visible(
-                    fn(Forms\Get $get) =>
-                    $this->checkGuarantorsRequired($get) &&
-                        $this->checkAllMembersGuarantee($get)
-                )
-                ->schema([
-                    Placeholder::make('guarantee_summary')
-                        ->label('')
-                        ->content(function (Forms\Get $get) {
-                            $principalAmount = (float) str_replace(',', '', $get('principal_amount') ?? 0);
-                            $guarantors = $get('all_member_guarantors') ?? [];
-                            $totalGuaranteed = collect($guarantors)->sum(fn($g) => (float) str_replace(',', '', $g['amount'] ?? 0));
-                            $remaining = $principalAmount - $totalGuaranteed;
+            // Section::make('All Group Members as Guarantors')
+            //     ->description('All group members must guarantee this loan. The total guaranteed amount must equal the loan amount.')
+            //     ->visible(
+            //         fn(Forms\Get $get) =>
+            //         $this->checkGuarantorsRequired($get) &&
+            //             $this->checkAllMembersGuarantee($get)
+            //     )
+            //     ->schema([
+            //         Placeholder::make('guarantee_summary')
+            //             ->label('')
+            //             ->content(function (Forms\Get $get) {
+            //                 $principalAmount = (float) str_replace(',', '', $get('principal_amount') ?? 0);
+            //                 $guarantors = $get('all_member_guarantors') ?? [];
+            //                 $totalGuaranteed = collect($guarantors)->sum(fn($g) => (float) str_replace(',', '', $g['amount'] ?? 0));
+            //                 $remaining = $principalAmount - $totalGuaranteed;
+            //                 $count = count($guarantors);
 
-                            $status = $remaining == 0 ? '✓' : '⚠';
-                            $color = $remaining == 0 ? 'text-success-600' : 'text-warning-600';
+            //                 $isValid = abs($remaining) < 0.01;
+            //                 $status = $isValid ? '✓ Complete' : '⚠ Incomplete';
+            //                 $bgColor = $isValid ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800';
+            //                 $textColor = $isValid ? 'text-success-600 dark:text-success-400' : 'text-warning-600 dark:text-warning-400';
 
-                            return new \Illuminate\Support\HtmlString(
-                                "<div class='p-4 rounded-lg bg-gray-50 dark:bg-gray-800'>
-                                            <div class='flex justify-between items-center'>
-                                                <span class='font-semibold'>Loan Amount:</span>
-                                                <span class='text-lg font-bold'>" . number_format($principalAmount, 2) . "</span>
-                                            </div>
-                                            <div class='flex justify-between items-center mt-2'>
-                                                <span class='font-semibold'>Total Guaranteed:</span>
-                                                <span class='text-lg font-bold'>" . number_format($totalGuaranteed, 2) . "</span>
-                                            </div>
-                                            <div class='flex justify-between items-center mt-2 pt-2 border-t border-gray-200 dark:border-gray-700'>
-                                                <span class='font-semibold'>Remaining:</span>
-                                                <span class='text-lg font-bold {$color}'>{$status} " . number_format($remaining, 2) . "</span>
-                                            </div>
-                                        </div>"
-                            );
-                        }),
+            //                 return new \Illuminate\Support\HtmlString(
+            //                     "<div class='p-4 rounded-lg border {$bgColor}'>
+            //                                 <div class='flex justify-between items-center mb-3'>
+            //                                     <span class='font-semibold text-sm'>Loan Amount:</span>
+            //                                     <span class='text-lg font-bold'>KSh " . number_format($principalAmount, 2) . "</span>
+            //                                 </div>
+            //                                 <div class='flex justify-between items-center mb-3'>
+            //                                     <span class='font-semibold text-sm'>Number of Guarantors:</span>
+            //                                     <span class='text-lg font-bold'>" . $count . " members</span>
+            //                                 </div>
+            //                                 <div class='flex justify-between items-center mb-3'>
+            //                                     <span class='font-semibold text-sm'>Total Guaranteed:</span>
+            //                                     <span class='text-lg font-bold'>KSh " . number_format($totalGuaranteed, 2) . "</span>
+            //                                 </div>
+            //                                 <div class='flex justify-between items-center pt-3 border-t border-gray-300 dark:border-gray-600'>
+            //                                     <span class='font-semibold text-sm'>Status:</span>
+            //                                     <span class='font-bold {$textColor}'>{$status}</span>
+            //                                 </div>
+            //                                 <div class='flex justify-between items-center mt-2'>
+            //                                     <span class='font-semibold text-sm'>" . ($remaining > 0 ? 'Remaining to assign:' : 'Amount over-allocated:') . "</span>
+            //                                     <span class='text-lg font-bold {$textColor}'>KSh " . number_format(abs($remaining), 2) . "</span>
+            //                                 </div>
+            //                             </div>"
+            //                 );
+            //             }),
 
-                    Repeater::make('all_member_guarantors')
-                        ->label('')
-                        ->schema([
-                            Grid::make(3)->schema([
-                                Select::make('member_id')
-                                    ->label('Member')
-                                    ->options(function (Forms\Get $get) {
-                                        $groupId = $get('../../group_id');
-                                        $currentMemberId = $get('../../member_id');
-                                        if (!$groupId) {
-                                            return [];
-                                        }
-                                        return Member::where('group_id', $groupId)
-                                            ->where('id', '!=', $currentMemberId)
-                                            ->get()
-                                            ->pluck('name', 'id')
-                                            ->toArray();
-                                    })
-                                    ->required()
-                                    ->disabled()
-                                    ->dehydrated(),
+            //         Repeater::make('all_member_guarantors')
+            //             ->label('')
+            //             ->schema([
+            //                 Grid::make(3)->schema([
+            //                     Select::make('member_id')
+            //                         ->label('Member')
+            //                         ->options(function (Forms\Get $get) {
+            //                             $groupId = $get('../../group_id');
+            //                             $currentMemberId = $get('../../member_id');
+            //                             if (!$groupId) {
+            //                                 return [];
+            //                             }
+            //                             return Member::where('group_id', $groupId)
+            //                                 ->where('id', '!=', $currentMemberId)
+            //                                 ->get()
+            //                                 ->pluck('name', 'id')
+            //                                 ->toArray();
+            //                         })
+            //                         ->required()
+            //                         ->disabled()
+            //                         ->dehydrated(),
 
-                                TextInput::make('name')
-                                    ->label('Member Name')
-                                    ->readOnly()
-                                    ->dehydrated(),
+            //                     TextInput::make('name')
+            //                         ->label('Member Name')
+            //                         ->readOnly()
+            //                         ->dehydrated(),
 
-                                TextInput::make('amount')
-                                    ->label('Guaranteed Amount')
-                                    ->numeric()
-                                    ->required()
-                                    ->live(onBlur: true)
-                                    ->afterStateUpdated(function () {
-                                        $this->dispatch('form-updated');
-                                    })
-                                    ->mask(RawJs::make('$money($input)'))
-                                    ->stripCharacters(',')
-                                    ->helperText('Enter the amount this member will guarantee'),
-                            ]),
-                        ])
-                        ->default(function (Forms\Get $get) {
-                            return $this->getDefaultAllMemberGuarantors($get);
-                        })
-                        ->addable(false)
-                        ->deletable(false)
-                        ->reorderable(false)
-                        ->columnSpanFull(),
-                ]),
+            //                     TextInput::make('amount')
+            //                         ->label('Guaranteed Amount')
+            //                         ->numeric()
+            //                         ->required()
+            //                         ->live(onBlur: true)
+            //                         ->afterStateUpdated(function () {
+            //                             $this->dispatch('form-updated');
+            //                         })
+            //                         ->mask(RawJs::make('$money($input)'))
+            //                         ->stripCharacters(',')
+            //                         ->helperText('Enter the amount this member will guarantee'),
+            //                 ]),
+            //             ])
+            //             ->default(function (Forms\Get $get) {
+            //                 return $this->getDefaultAllMemberGuarantors($get);
+            //             })
+            //             ->addable(false)
+            //             ->deletable(false)
+            //             ->reorderable(false)
+            //             ->columnSpanFull(),
+            //     ]),
 
             // Selected Members Guarantee Section
             Section::make('Select Guarantors')
@@ -496,26 +507,32 @@ class LoanApplication extends Page implements HasForms
                             $remaining = $principalAmount - $totalGuaranteed;
                             $count = count($guarantors);
 
-                            $status = $remaining == 0 && $count > 0 ? '✓' : '⚠';
-                            $color = $remaining == 0 && $count > 0 ? 'text-success-600' : 'text-warning-600';
+                            $isValid = abs($remaining) < 0.01 && $count > 0;
+                            $status = $isValid ? '✓ Complete' : '⚠ Incomplete';
+                            $bgColor = $isValid ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800';
+                            $textColor = $isValid ? 'text-success-600 dark:text-success-400' : 'text-warning-600 dark:text-warning-400';
 
                             return new \Illuminate\Support\HtmlString(
-                                "<div class='p-4 rounded-lg bg-gray-50 dark:bg-gray-800'>
-                                            <div class='flex justify-between items-center'>
-                                                <span class='font-semibold'>Loan Amount:</span>
-                                                <span class='text-lg font-bold'>" . number_format($principalAmount, 2) . "</span>
+                                "<div class='p-4 rounded-lg border {$bgColor}'>
+                                            <div class='flex justify-between items-center mb-3'>
+                                                <span class='font-semibold text-sm'>Loan Amount:</span>
+                                                <span class='text-lg font-bold'>KSh " . number_format($principalAmount, 2) . "</span>
                                             </div>
-                                            <div class='flex justify-between items-center mt-2'>
-                                                <span class='font-semibold'>Guarantors Selected:</span>
+                                            <div class='flex justify-between items-center mb-3'>
+                                                <span class='font-semibold text-sm'>Guarantors Selected:</span>
                                                 <span class='text-lg font-bold'>" . $count . "</span>
                                             </div>
-                                            <div class='flex justify-between items-center mt-2'>
-                                                <span class='font-semibold'>Total Guaranteed:</span>
-                                                <span class='text-lg font-bold'>" . number_format($totalGuaranteed, 2) . "</span>
+                                            <div class='flex justify-between items-center mb-3'>
+                                                <span class='font-semibold text-sm'>Total Guaranteed:</span>
+                                                <span class='text-lg font-bold'>KSh " . number_format($totalGuaranteed, 2) . "</span>
                                             </div>
-                                            <div class='flex justify-between items-center mt-2 pt-2 border-t border-gray-200 dark:border-gray-700'>
-                                                <span class='font-semibold'>Remaining:</span>
-                                                <span class='text-lg font-bold {$color}'>{$status} " . number_format($remaining, 2) . "</span>
+                                            <div class='flex justify-between items-center pt-3 border-t border-gray-300 dark:border-gray-600'>
+                                                <span class='font-semibold text-sm'>Status:</span>
+                                                <span class='font-bold {$textColor}'>{$status}</span>
+                                            </div>
+                                            <div class='flex justify-between items-center mt-2'>
+                                                <span class='font-semibold text-sm'>" . ($remaining > 0 ? 'Remaining to assign:' : 'Amount over-allocated:') . "</span>
+                                                <span class='text-lg font-bold {$textColor}'>KSh " . number_format(abs($remaining), 2) . "</span>
                                             </div>
                                         </div>"
                             );
@@ -594,52 +611,35 @@ class LoanApplication extends Page implements HasForms
 
     protected function getStepFourSchema(): array
     {
-        return [
-
-            Grid::make(2)->schema([
-                TextInput::make('collateral_type')
-                    ->label('Collateral Type')
-                    ->placeholder('e.g., Property, Vehicle, Equipment')
-                    ->live(onBlur: true)
-                    ->afterStateUpdated(function () {
-                        $this->dispatch('form-updated');
-                    }),
-
-                TextInput::make('collateral_value')
-                    ->label('Collateral Value')
-                    ->numeric()
-                    ->placeholder('Enter estimated collateral value')
-                    ->mask(RawJs::make('$money($input)'))
-                    ->stripCharacters(',')
-                    ->live(onBlur: true)
-                    ->afterStateUpdated(function () {
-                        $this->dispatch('form-updated');
-                    }),
-
-                Grid::make(1)->schema([
-                    Textarea::make('collateral_description')
-                        ->label('Collateral Description')
-                        ->placeholder('Provide detailed description of the collateral')
-                        ->rows(3)
-                        ->live(onBlur: true)
-                        ->afterStateUpdated(function () {
-                            $this->dispatch('form-updated');
-                        })
-                        ->columnSpanFull(),
-
-                    Textarea::make('additional_notes')
-                        ->label('Additional Notes')
-                        ->placeholder('Any additional information about the loan application')
-                        ->rows(3)
-                        ->live(onBlur: true)
-                        ->afterStateUpdated(function () {
-                            $this->dispatch('form-updated');
-                        })
-                        ->columnSpanFull(),
+      
+            return [
+                Section::make('Select Guarantors')
+                ->description('Choose one or more group members to guarantee this loan. The total guaranteed amount must equal the loan amount.')
+                    ->visible(
+                        fn(Forms\Get $get) =>
+                        $this->checkCollateralsRequired($get)
+                    )
+                ->schema([
+                    Placeholder::make('selected_guarantee_summary')
+                        ->label('')
+                        ->content(function (Forms\Get $get) {
+                            "WIP on Collaterals";
+                        }),
                 ]),
-            ]),
 
-        ];
+                Placeholder::make('no_collaterals')
+                ->label('')
+                ->content('✓ No collaterals are required for this loan product.')
+                ->visible(fn(Forms\Get $get) => !$this->checkCollateralsRequired($get)),
+            ];
+        // } else {
+        //     return [
+        //         Placeholder::make('no_collaterals')
+        //         ->label('')
+        //         ->content('✓ No collaterals are required for this loan product.')
+        //         ->visible(fn(Forms\Get $get) => !$this->isCollateralsRequired($get)),
+        //     ];
+        // }
     }
 
     protected function getListeners(): array
@@ -680,21 +680,8 @@ class LoanApplication extends Page implements HasForms
 
     protected function checkAllMembersGuarantee(Forms\Get $get): bool
     {
-        $loanProductId = $get('loan_product_id');
-        if (!$loanProductId) {
-            return false;
-        }
-
-        $loanProduct = LoanProduct::with('LoanProductAttributes')->find($loanProductId);
-        if (!$loanProduct) {
-            return false;
-        }
-
-        $allMembersAttr = $loanProduct->LoanProductAttributes
-            ->where('loan_attribute.slug', 'all_members_guarantee')
-            ->first();
-
-        return $allMembersAttr ? (bool) $allMembersAttr->value : false;
+        // Check the config file for selection mode
+        return config('guarantors.selection_mode', 'selectable') === 'all_members';
     }
 
     protected function getDefaultAllMemberGuarantors(Forms\Get $get): array
@@ -743,15 +730,13 @@ class LoanApplication extends Page implements HasForms
 
             // Validate guarantors if required
             $guarantorsRequired = $this->isGuarantorsRequired($data);
+            // dd($guarantorsRequired);
             if ($guarantorsRequired) {
                 $isValid = $this->validateGuarantors($data);
                 if (!$isValid) {
                     return;
                 }
             }
-
-            // Prepare guarantor data
-            $guarantorData = $this->prepareGuarantorData($data);
 
             $existingLoan = Loan::where('member_id', $data['member_id'])
                 ->where('loan_product_id', $data['loan_product_id'])
@@ -768,13 +753,12 @@ class LoanApplication extends Page implements HasForms
                 'due_at' => $data['due_at'] ?? null,
                 'loan_duration' => (int) ($data['loan_duration'] ?? 0),
                 'loan_purpose' => $data['loan_purpose'] ?? '',
-                'guarantor_data' => $guarantorData,
                 'collateral_type' => $data['collateral_type'] ?? '',
                 'collateral_value' => (float) str_replace(',', '', $data['collateral_value'] ?? 0),
                 'collateral_description' => $data['collateral_description'] ?? '',
                 'additional_notes' => $data['additional_notes'] ?? '',
                 'status' => 'Pending Approval',
-                'session_data' => null,
+                'session_data' => $data, // Keep session data for reference
                 'is_completed' => 1,
             ];
 
@@ -787,6 +771,9 @@ class LoanApplication extends Page implements HasForms
                     'loan_product_id' => $data['loan_product_id'],
                 ]));
             }
+            
+            // Save guarantors to loan_guarantors table
+            $this->saveGuarantorsToDatabase($loan, $data);
 
             $this->resetForm();
 
@@ -812,6 +799,8 @@ class LoanApplication extends Page implements HasForms
     {
         $principalAmount = (float) str_replace(',', '', $data['principal_amount'] ?? 0);
         $allMembersGuarantee = $this->isAllMembersGuarantee($data);
+
+        // dd($allMembersGuarantee, $data, $principalAmount);
 
         if ($allMembersGuarantee) {
             $guarantors = $data['all_member_guarantors'] ?? [];
@@ -854,6 +843,7 @@ class LoanApplication extends Page implements HasForms
 
     protected function isGuarantorsRequired(array $data): bool
     {
+        // dd($data);
         $loanProductId = $data['loan_product_id'] ?? null;
         if (!$loanProductId) {
             return false;
@@ -866,7 +856,7 @@ class LoanApplication extends Page implements HasForms
 
         foreach ($loanProduct->LoanProductAttributes as $attr) {
             $loanAttr = \App\Models\LoanAttribute::find($attr->loan_attribute_id);
-            if ($loanAttr && $loanAttr->slug === 'guarantors_required') {
+            if ($loanAttr && $loanAttr->slug === 'is_guarantors_required') {
                 return (bool) $attr->value;
             }
         }
@@ -874,9 +864,9 @@ class LoanApplication extends Page implements HasForms
         return false;
     }
 
-    protected function isAllMembersGuarantee(array $data): bool
+    protected function checkCollateralsRequired(Forms\Get $get): bool
     {
-        $loanProductId = $data['loan_product_id'] ?? null;
+        $loanProductId = $get('loan_product_id');
         if (!$loanProductId) {
             return false;
         }
@@ -886,14 +876,35 @@ class LoanApplication extends Page implements HasForms
             return false;
         }
 
-        foreach ($loanProduct->LoanProductAttributes as $attr) {
-            $loanAttr = \App\Models\LoanAttribute::find($attr->loan_attribute_id);
-            if ($loanAttr && $loanAttr->slug === 'all_members_guarantee') {
-                return (bool) $attr->value;
-            }
+        //get the loan attribute is_guarantors_required
+        $collateralsAttr = LoanAttribute::where('slug', 'is_collaterals_required')->first();
+        if (!$collateralsAttr) {
+            return false;
         }
 
+        $collateralsAttr = $loanProduct->LoanProductAttributes
+            ->where('loan_attribute_id', $collateralsAttr->id)
+            ->first()
+            ->value;
+
+        // dd($collateralsAttr, (bool) $collateralsAttr,  $collateralsAttr, $loanProductId, $loanProduct->LoanProductAttributes);
+
+        if ($collateralsAttr == "false" || $collateralsAttr == 0 || $collateralsAttr == "0") {
+            return false;
+        } elseif ($collateralsAttr == "true" || $collateralsAttr == 1 || $collateralsAttr == "1") {
+            return true;
+        }
+
+        // Default return
         return false;
+    }
+
+
+
+    protected function isAllMembersGuarantee(array $data): bool
+    {
+        // Check the config file for selection mode
+        return config('guarantors.selection_mode', 'selectable') === 'all_members';
     }
 
     protected function prepareGuarantorData(array $data): ?array
@@ -914,6 +925,51 @@ class LoanApplication extends Page implements HasForms
                 'type' => 'selected_members',
                 'guarantors' => $data['selected_guarantors'] ?? [],
             ];
+        }
+    }
+
+    /**
+     * Save guarantors to the loan_guarantors table
+     */
+    protected function saveGuarantorsToDatabase($loan, array $data): void
+    {
+        if (!$loan) {
+            return;
+        }
+
+        // Check if guarantors are required
+        if (!$this->isGuarantorsRequired($data)) {
+            return;
+        }
+
+        // Delete existing guarantors for this loan
+        \App\Models\LoanGuarantor::where('loan_id', $loan->id)->delete();
+
+        // Get guarantors data based on selection mode
+        $allMembersGuarantee = $this->isAllMembersGuarantee($data);
+        $guarantors = $allMembersGuarantee 
+            ? ($data['all_member_guarantors'] ?? [])
+            : ($data['selected_guarantors'] ?? []);
+
+        // Save each guarantor
+        foreach ($guarantors as $guarantorData) {
+            if (!isset($guarantorData['member_id']) || !isset($guarantorData['amount'])) {
+                continue;
+            }
+
+            $guarantorMember = Member::find($guarantorData['member_id']);
+            
+            if ($guarantorMember) {
+                $guaranteedAmount = (float) str_replace(',', '', $guarantorData['amount']);
+
+                \App\Models\LoanGuarantor::create([
+                    'loan_id' => $loan->id,
+                    'guarantor_member_id' => $guarantorData['member_id'],
+                    'guaranteed_amount' => $guaranteedAmount,
+                    'guarantor_savings_at_guarantee' => $guarantorMember->total_savings ?? 0,
+                    'status' => 'pending',
+                ]);
+            }
         }
     }
 
