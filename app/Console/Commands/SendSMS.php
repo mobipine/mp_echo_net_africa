@@ -24,7 +24,7 @@ class SendSMS extends Command
      *
      * @var string
      */
-    protected $signature = 'send:sms';
+    protected $signature = 'dispatch:sms';
 
     /**
      * The console command description.
