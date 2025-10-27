@@ -50,7 +50,7 @@ class WebHookController extends Controller
             // 3. Handle bonga plus format
         elseif (isset($data['MSISDN']) && isset($data['message'])) {
             $msisdn = $data['MSISDN'];
-            $message = trim(strtolower($data['message']));
+            $message = urldecode(trim(strtolower($data['message'])));
         }
 
        if ($msisdn) {
