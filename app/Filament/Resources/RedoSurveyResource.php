@@ -59,9 +59,7 @@ class RedoSurveyResource extends Resource
                     ->visible(fn (RedoSurvey $record) => $record->action === 'pending')
                     ->action(function (RedoSurvey $record) {
                         try {
-                            // Update the redo request
-                            $record->update(['action' => 'approved']);
-
+                            
                             $survey = $record->surveyToRedo;
                             $member = $record->member;
                             $msisdn = $record->phone_number;
@@ -111,6 +109,9 @@ class RedoSurveyResource extends Resource
                                 ->body('Member has been approved and the first question has been sent.')
                                 ->success()
                                 ->send();
+                                
+                            // Update the redo request
+                            $record->update(['action' => 'approved']);
 
                             Log::info("Redo approved for member {$member->id}, survey {$survey->id}, on channel {$channel}");
                         } catch (\Exception $e) {
