@@ -15,6 +15,7 @@ class RedoSurvey extends Model
         'survey_to_redo_id',
         'reason',
         'action',
+        'channel',
     ];
 
     public function member()
