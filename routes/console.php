@@ -15,9 +15,9 @@ Artisan::command('inspire', function () {
 // })->purpose('Schedule to send SMS every 5 seconds');
 
 Schedule::command('send:sms')->everyFiveSeconds()->withoutOverlapping();
-Schedule::command('survey:process-progress')->everyFiveSeconds()->withoutOverlapping();
+Schedule::command('process:survey-progress')->everyFiveSeconds()->withoutOverlapping();
 Schedule::command('surveys:dispatch-due')->everyFiveSeconds()->withoutOverlapping();
-Schedule::command('send:whatsapp-text')->everyFiveSeconds()->withoutOverlapping();
+Schedule::command('dispatch:whatsapp-text')->everyFiveSeconds()->withoutOverlapping();
 
 
 // Loan interest accrual - run daily at 9 AM

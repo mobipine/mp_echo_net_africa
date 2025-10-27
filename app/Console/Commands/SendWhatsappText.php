@@ -17,7 +17,7 @@ class SendWhatsappText extends Command
      *
      * @var string
      */
-    protected $signature = 'send:whatsapp-text';
+    protected $signature = 'dispatch:whatsapp-text';
 
     /**
      * The console command description.
