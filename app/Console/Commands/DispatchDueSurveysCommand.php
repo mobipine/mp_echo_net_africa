@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 
 class DispatchDueSurveysCommand extends Command
 {
-    protected $signature = 'surveys:dispatch-due';
+    protected $signature = 'surveys:due-dispatch';
     protected $description = 'Check for automated surveys that are due and dispatch them to groups.';
 
     public function handle(): void

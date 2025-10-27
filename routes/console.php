@@ -14,10 +14,10 @@ Artisan::command('inspire', function () {
 //     $this->call('send:sms');
 // })->purpose('Schedule to send SMS every 5 seconds');
 
-Schedule::command('send:sms')->everyFiveSeconds()->withoutOverlapping();
-Schedule::command('process:survey-progress')->everyFiveSeconds()->withoutOverlapping();
-Schedule::command('surveys:dispatch-due')->everyFiveSeconds()->withoutOverlapping();
-Schedule::command('dispatch:whatsapp-text')->everyFiveSeconds()->withoutOverlapping();
+Schedule::command('dispatch:sms')->everyFiveSeconds()->withoutOverlapping();
+Schedule::command('process:surveys-progress')->everyFiveSeconds()->withoutOverlapping();
+Schedule::command('surveys:due-dispatch')->everyFiveSeconds()->withoutOverlapping();
+Schedule::command('send:whatsapp-text')->everyFiveSeconds()->withoutOverlapping();
 
 
 // Loan interest accrual - run daily at 9 AM
