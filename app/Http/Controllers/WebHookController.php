@@ -47,7 +47,12 @@ class WebHookController extends Controller
                 : null;
         }
 
-        // Normalize MSISDN (ensure all start with 254...)
+            // 3. Handle bonga plus format
+        elseif (isset($data['MSISDN']) && isset($data['message'])) {
+            $msisdn = $data['MSISDN'];
+            $message = trim(strtolower($data['message']));
+        }
+
        if ($msisdn) {
         // If number starts with 254, change to 0...
         if (substr($msisdn, 0, 3) === "254") {
