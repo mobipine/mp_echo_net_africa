@@ -65,6 +65,7 @@ class RedoSurveyResource extends Resource
                             $survey = $record->surveyToRedo;
                             $member = $record->member;
                             $msisdn = $record->phone_number;
+                            $channel = $record->channel;
 
                             if (!$survey) {
                                 Notification::make()
@@ -103,7 +104,7 @@ class RedoSurveyResource extends Resource
 
                             // Format and send question
                             $message = formartQuestion($firstQuestion, $member);
-                            sendSMS($msisdn, $message);
+                            sendSMS($msisdn, $message, $channel);
 
                             Notification::make()
                                 ->title('Redo Approved')
@@ -111,7 +112,7 @@ class RedoSurveyResource extends Resource
                                 ->success()
                                 ->send();
 
-                            Log::info("Redo approved for member {$member->id}, survey {$survey->id}");
+                            Log::info("Redo approved for member {$member->id}, survey {$survey->id}, on channel {$channel}");
                         } catch (\Exception $e) {
                             Log::error("Redo approval failed: " . $e->getMessage());
                             Notification::make()
