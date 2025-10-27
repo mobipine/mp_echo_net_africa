@@ -326,6 +326,7 @@ function startSurvey($msisdn, Survey $survey,$channel)
             'survey_to_redo_id' => $survey->id,
             'reason' => 'User triggered redo for a unique survey.',
             'action' => 'pending',
+            'channel' => $channel,
         ]);
 
         // Get first question of the “Redo Survey”
