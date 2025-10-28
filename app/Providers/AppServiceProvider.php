@@ -23,5 +23,9 @@ class AppServiceProvider extends ServiceProvider
         if (config('app.env') == 'local') {
             URL::forceScheme('https'); // Force HTTPS
         }
+        
+        // Register observers
+        \App\Models\Member::observe(\App\Observers\MemberObserver::class);
+        \App\Models\Group::observe(\App\Observers\GroupObserver::class);
     }
 }

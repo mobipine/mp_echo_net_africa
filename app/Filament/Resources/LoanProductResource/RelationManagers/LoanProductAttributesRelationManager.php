@@ -49,6 +49,12 @@ class LoanProductAttributesRelationManager extends RelationManager
                         $attribute = LoanAttribute::find($get('loan_attribute_id'));
                         if ($attribute && in_array($attribute->type, ['select', 'multiselect'])) {
                             return collect(explode(',', $attribute->options))->mapWithKeys(fn($v) => [trim($v) => trim($v)]);
+                        } else if ($attribute && $attribute->type === 'number') {
+                            return [1 => '1', 2 => '2', 3 => '3', 4 => '4', 5 => '5', 6 => '6', 7 => '7', 8 => '8', 9 => '9', 10 => '10'];
+                        } 
+                        //do one for boolean
+                        else if ($attribute && $attribute->type === 'boolean') {
+                            return [true => 'True', false => 'False'];
                         }
                         return [];
                     })

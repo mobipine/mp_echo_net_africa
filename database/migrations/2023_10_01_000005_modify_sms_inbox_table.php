@@ -8,9 +8,14 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('sms_inboxes', function (Blueprint $table) {
-            $table->json('group_ids')->nullable()->after('message'); // Store multiple group IDs as JSON
-        });
+        // Only modify if table exists (it's created by a later migration)
+        if (Schema::hasTable('sms_inboxes')) {
+            Schema::table('sms_inboxes', function (Blueprint $table) {
+                if (!Schema::hasColumn('sms_inboxes', 'group_ids')) {
+                    $table->json('group_ids')->nullable()->after('message');
+                }
+            });
+        }
     }
 
     public function down(): void
