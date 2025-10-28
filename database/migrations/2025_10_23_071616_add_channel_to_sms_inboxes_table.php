@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('sms_inboxes', function (Blueprint $table) {
-            $table->string('channel')->nullable()->after('group_ids'); 
+            $table->string('channel')->nullable(); 
             // You can change 'group_ids' to whichever column you want it to appear after
         });
     }
