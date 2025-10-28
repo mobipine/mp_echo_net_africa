@@ -14,8 +14,8 @@ class SaccoManagement extends Cluster
     protected static ?int $navigationSort = 1;
 
     // Control visibility in the navigation
-    // public static function shouldRegisterNavigation(): bool
-    // {
-    //     return Auth::check() && Auth::user()->can('cluster_SaccoManagement');
-    // }
+    public static function shouldRegisterNavigation(): bool
+    {
+        return Auth::check() && Auth::user()->can('cluster_SaccoManagement');
+    }
 }
