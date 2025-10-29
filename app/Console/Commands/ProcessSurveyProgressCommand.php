@@ -142,7 +142,7 @@ class ProcessSurveyProgressCommand extends Command
                     Log::info("The member responded to previous question. Sending the next question");
 
                     //Formatting the question 
-                    $message=formartQuestion($nextQuestion,$member);
+                    $message=formartQuestion($nextQuestion,$member,$survey);
                     Log::info("This is the message ".$message);
 
                     $this->sendSMS($member->phone, $message,$channel);

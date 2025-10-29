@@ -59,7 +59,7 @@ class SendSurveyToGroupJob implements ShouldQueue
 
             foreach ($members as $member) {
 
-                $message=formartQuestion($firstQuestion,$member);
+                $message=formartQuestion($firstQuestion,$member,$this->survey);
                 
                 Log::info("The message to be sent is {$message}");
 

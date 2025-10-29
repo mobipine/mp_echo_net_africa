@@ -171,7 +171,7 @@ function getNextQuestion($survey_id, $response = null, $current_question_id = nu
 
 }
 
-function formartQuestion($firstQuestion,$member){
+function formartQuestion($firstQuestion,$member,$survey){
 
     if ($firstQuestion->answer_strictness == "Multiple Choice") {
         $message = "{$firstQuestion->question}\n\n"; 
@@ -252,6 +252,7 @@ function formartQuestion($firstQuestion,$member){
         '{edit_gender}' => $latestEdit->gender ?? $member->gender,
         '{edit_group}' => $latestEdit->group ?? $member->group->name,
         '{loan_amount_received}' => $loanAmount ?? 'N/A', // Use 'N/A' or 0 if no response found
+        '{survey}' => $survey->title,
 
     ];
     }else{
@@ -266,6 +267,7 @@ function formartQuestion($firstQuestion,$member){
         '{month}' => \Carbon\Carbon::now()->monthName,
         '{loan_received_month}' => $loanMonth ?? "N/A",
         '{loan_amount_received}' => $loanAmount ?? 'N/A', // Use 'N/A' or 0 if no response found
+        '{survey}' => $survey->title,
 
     ];
     }
@@ -319,20 +321,10 @@ function startSurvey($msisdn, Survey $survey,$channel)
             return response()->json(['status' => 'error', 'message' => 'Redo Survey not found.']);
         }
 
-        // Create redo request entry
-        $redoRecord = RedoSurvey::create([
-            'member_id' => $member->id,
-            'phone_number' => $msisdn,
-            'survey_to_redo_id' => $survey->id,
-            'reason' => 'User triggered redo for a unique survey.',
-            'action' => 'pending',
-            'channel' => $channel,
-        ]);
-
         // Get first question of the “Redo Survey”
         $redoFirstQuestion = getNextQuestion($redoSurvey->id);
         if ($redoFirstQuestion) {
-            $message = formartQuestion($redoFirstQuestion, $member);
+            $message = formartQuestion($redoFirstQuestion, $member,$survey);
             sendSMS($msisdn, $message,$channel);
 
             // Log for clarity
@@ -364,7 +356,7 @@ function startSurvey($msisdn, Survey $survey,$channel)
     ]);
 
     // Send first question
-    $message = formartQuestion($firstQuestion, $member);
+    $message = formartQuestion($firstQuestion, $member, $survey);
     sendSMS($msisdn, $message,$channel);
 
     return response()->json([
@@ -432,7 +424,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
 
     if($currentQuestion->purpose !=="regular"){
         Log::info("This is not  regular question ");
-        processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer);
+        processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$survey,$channel);
     }
          
     $inbox_id = SMSInbox::where('phone_number', $msisdn)
@@ -529,7 +521,7 @@ function parse_member_date_response(string $answer): ?Carbon
     }
 }
 
-function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer){
+function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$survey,$channel){
     if ($currentQuestion->purpose=="edit_id") {
        
         $memberEditRequest=MemberEditRequest::updateOrCreate(
@@ -597,6 +589,26 @@ function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer){
             Log::warning("No pending redo request found for member {$member->id} when updating reason.");
            
         }
+    }
+    elseif ($currentQuestion->purpose=="redo_request"){
+         $redoSurvey = Survey::where('title', 'Redo Survey')->first();
+
+        if (!$redoSurvey) {
+            Log::error("Redo Survey not found in database.");
+            return response()->json(['status' => 'error', 'message' => 'Redo Survey not found.']);
+        }
+
+        // Create redo request entry
+        if($actualAnswer=="Yes"){
+                $redoRecord = RedoSurvey::create([
+                'member_id' => $member->id,
+                'phone_number' => $msisdn,
+                'survey_to_redo_id' => $survey->id,
+                'reason' => 'User triggered redo for a unique survey.',
+                'action' => 'pending',
+                'channel' => $channel,
+            ]);
+        }  
     }
 
 }

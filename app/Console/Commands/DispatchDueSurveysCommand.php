@@ -61,7 +61,7 @@ class DispatchDueSurveysCommand extends Command
 
                     //formart the quiz
 
-                    $message=formartQuestion($firstQuestion,$member);
+                    $message=formartQuestion($firstQuestion,$member,$survey);
                     Log::info("This is the message ".$message);
 
                     if (!empty($member->phone)) {
