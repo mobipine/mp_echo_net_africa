@@ -671,7 +671,7 @@ class LoanApplication extends Page implements HasForms
         $guarantorsAttr = $loanProduct->LoanProductAttributes
             ->where('loan_attribute_id', $guarantorsAttr->id)
             ->first()
-            ->value;
+            ?->value;
 
         // dd($guarantorsAttr, $loanProductId, $loanProduct->LoanProductAttributes);
 
@@ -885,7 +885,7 @@ class LoanApplication extends Page implements HasForms
         $collateralsAttr = $loanProduct->LoanProductAttributes
             ->where('loan_attribute_id', $collateralsAttr->id)
             ->first()
-            ->value;
+            ?->value;
 
         // dd($collateralsAttr, (bool) $collateralsAttr,  $collateralsAttr, $loanProductId, $loanProduct->LoanProductAttributes);
 
