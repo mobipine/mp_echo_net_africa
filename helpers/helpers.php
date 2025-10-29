@@ -642,9 +642,13 @@ function getActualAnswer($currentQuestion, $userResponse, $msisdn)
 
 function validateResponse($currentQuestion,$msisdn,$response){
 
-    if ($currentQuestion->answer_data_type === 'Strictly Number' && !is_numeric($response)) {
-       
-        return false;
+    if ($currentQuestion->answer_data_type === 'Strictly Number') {
+        // Remove commas and extra spaces
+        $normalizedResponse = str_replace(',', '', trim($response));
+
+        if (!is_numeric($normalizedResponse)) {
+            return false;
+        }
     }
     if ($currentQuestion->answer_data_type === 'Alphanumeric' && !ctype_alnum(str_replace(' ', '', $response))) {
         
