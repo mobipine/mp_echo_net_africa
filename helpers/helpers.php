@@ -176,25 +176,29 @@ function formartQuestion($firstQuestion,$member){
     if ($firstQuestion->answer_strictness == "Multiple Choice") {
         $message = "{$firstQuestion->question}\n\n"; 
         
-        $letters = [];
+        $numbers = [];
+        $index = 1;
+
         foreach ($firstQuestion->possible_answers as $answer) {
-            $message .= "{$answer['letter']}. {$answer['answer']}\n";
-            $letters[] = $answer['letter'];
+            $message .= "{$index}. {$answer['answer']}\n";
+            $numbers[] = $index;
+            $index++;
         }
-        
-        // Dynamically build the letter options string
-        if (count($letters) === 1) {
-            $letterText = $letters[0];
-        } elseif (count($letters) === 2) {
-            $letterText = $letters[0] . " or " . $letters[1];
+
+        // Dynamically build the number options string
+        if (count($numbers) === 1) {
+            $numberText = $numbers[0];
+        } elseif (count($numbers) === 2) {
+            $numberText = $numbers[0] . " or " . $numbers[1];
         } else {
-            $lastLetter = array_pop($letters);
-            $letterText = implode(', ', $letters) . " or " . $lastLetter;
+            $lastNumber = array_pop($numbers);
+            $numberText = implode(', ', $numbers) . " or " . $lastNumber;
         }
-        
-        $message .= "\nPlease reply with the letter {$letterText}.";
+
+        $message .= "\nPlease reply with the number {$numberText}.";
         Log::info("The message to be sent is {$message}");
-    } else {
+    }
+    else {
         $message = $firstQuestion->question;
         if ($firstQuestion->answer_data_type === 'Strictly Number') {
             $message .= "\n *Note: Your answer should be a number.*";
@@ -605,33 +609,36 @@ function getActualAnswer($currentQuestion, $userResponse, $msisdn)
     $actualAnswer = null;
 
     if ($currentQuestion->answer_strictness === "Multiple Choice") {
+        $index = 1;
+
         foreach ($currentQuestion->possible_answers as $answer) {
-            // Check if user typed the letter (case-insensitive)
-            if (strcasecmp($answer['letter'], $userResponse) === 0) {
-                $actualAnswer = $answer['answer']; // preserve original answer case
+            // Check if user typed the number
+            if ((string)$index === trim($userResponse)) {
+                $actualAnswer = $answer['answer']; // select answer based on number
                 break;
             }
 
-            // Check if user typed the actual answer (case-insensitive)
+            // Also allow typing the full answer text
             if (strcasecmp($answer['answer'], $userResponse) === 0) {
-                $actualAnswer = $answer['answer']; // preserve original answer case
+                $actualAnswer = $answer['answer'];
                 break;
             }
+
+            $index++;
         }
 
         if ($actualAnswer === null) {
-            // User gave something invalid (neither letter nor valid answer)
-            
-            
+            // User gave something invalid (neither number nor valid answer)
             return $actualAnswer; // stop further processing
         }
     } else {
-        // For non-multiple-choice, store response but normalize casing if needed
+        // For non-multiple-choice, store response directly
         $actualAnswer = trim($userResponse);
     }
 
     return $actualAnswer;
 }
+
 
 function validateResponse($currentQuestion,$msisdn,$response){
 
