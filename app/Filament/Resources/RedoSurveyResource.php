@@ -101,7 +101,7 @@ class RedoSurveyResource extends Resource
                             ]);
 
                             // Format and send question
-                            $message = formartQuestion($firstQuestion, $member);
+                            $message = formartQuestion($firstQuestion, $member,$survey);
                             sendSMS($msisdn, $message, $channel);
 
                             Notification::make()

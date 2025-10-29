@@ -10,6 +10,7 @@ use App\Models\LoanProduct;
 use App\Models\Transaction;
 use App\Models\LoanAmortizationSchedule;
 use App\Models\ChartofAccounts;
+use BezhanSalleh\FilamentShield\Contracts\HasShieldPermissions;
 use Filament\Forms;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -27,8 +28,29 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Carbon\Carbon;
 
-class LoanResource extends Resource
+class LoanResource extends Resource implements HasShieldPermissions
 {
+    public static function getPermissionPrefixes(): array
+    {
+        return [
+            'view',
+            'view_any',
+            'create',
+            'update',
+            'delete',
+            'delete_any',
+            'force_delete',
+            'force_delete_any',
+            'restore',
+            'restore_any',
+            'replicate',
+            'reorder',
+            'approve',
+            'reject',
+            'reverse_reject',
+        ];
+    }
+
     protected static ?string $model = Loan::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
@@ -225,6 +247,34 @@ class LoanResource extends Resource
                         ->modalHeading('Approve Loan')
                         ->modalDescription('Are you sure you want to approve this loan? This will create the necessary transactions.')
                         ->action(function (Loan $record) {
+                            // Check if group has sufficient funds
+                            $group = $record->member->group;
+                            $groupTransactionService = app(\App\Services\GroupTransactionService::class);
+                            $bankAccount = $groupTransactionService->getGroupAccount($group, 'bank');
+                            $currentBalance = $groupTransactionService->getGroupAccountBalance($bankAccount);
+                            
+                            // Calculate loan charges to determine actual disbursement amount
+                            $attributes = $record->all_attributes;
+                            $loanCharges = (float) ($attributes['loan_charges']['value'] ?? 0);
+                            $applyChargesOnIssuance = config('repayment_priority.charges.apply_on_issuance', true);
+                            $deductFromPrincipal = config('repayment_priority.charges.deduct_from_principal', false);
+                            // dd($applyChargesOnIssuance, $loanCharges, $deductFromPrincipal);
+                            $netDisbursement = $record->principal_amount;
+                            if ($applyChargesOnIssuance && $loanCharges > 0 && $deductFromPrincipal) {
+                                $netDisbursement = $record->principal_amount - $loanCharges;
+                            }
+                            // dd($netDisbursement);
+                            // Check if group has sufficient funds
+                            if ($currentBalance < $netDisbursement) {
+                                \Filament\Notifications\Notification::make()
+                                    ->danger()
+                                    ->title('Insufficient Group Funds')
+                                    ->body("Cannot approve loan. Group '{$group->name}' has insufficient funds. Current balance: KES " . number_format($currentBalance, 2) . ", Required: KES " . number_format($netDisbursement, 2) . ". Please transfer capital to the group first.")
+                                    ->persistent()
+                                    ->send();
+                                return;
+                            }
+                            
                             LoanAmortizationSchedule::generateSchedule($record);
                             $record->update([
                                 'status' => 'Approved',
@@ -272,8 +322,7 @@ class LoanResource extends Resource
                         ->icon('heroicon-o-pencil-square')
                         ->color('warning')
                         ->visible(fn(Loan $record): bool => !$record->is_completed && $record->status === 'Incomplete Application')
-                        ->url(fn(Loan $record): string => route('filament.admin.pages.loan-application', ['session_data' => $record->session_data]))
-                        ->openUrlInNewTab(),
+                        ->url(fn(Loan $record): string => route('filament.admin.pages.loan-application', ['loan_id' => $record->id])),
 
                     Action::make('reverse_reject')
                         ->label('Reverse Rejection')
@@ -337,13 +386,13 @@ class LoanResource extends Resource
 
         $loanAttribute = $loan_product->loanProductAttributes()->where('loan_attribute_id', $attributeId)->first();
         // dd($loanAttribute, $loanAttribute->value);
-        if ($loanAttribute->value == "Daily") {
+        if ($loanAttribute?->value == "Daily") {
             $units = 'days';
-        } elseif ($loanAttribute->value == "Weekly") {
+        } elseif ($loanAttribute?->value == "Weekly") {
             $units = 'weeks';
-        } elseif ($loanAttribute->value == "Monthly") {
+        } elseif ($loanAttribute?->value == "Monthly") {
             $units = 'months';
-        } elseif ($loanAttribute->value == "Yearly") {
+        } elseif ($loanAttribute?->value == "Yearly") {
             $units = 'years';
         } else {
             $units = 'N/A';
@@ -394,31 +443,31 @@ class LoanResource extends Resource
             }
         }
 
-        // Create loan receivable transaction
-        $loansReceivableName = self::getAccountNameFromLoanProduct($loan, 'loans_receivable') ?? config('repayment_priority.accounts.loans_receivable');
-        $loansReceivableNumber = self::getAccountNumberFromLoanProduct($loan, 'loans_receivable');
-        
+        // Get member's group for group-level accounting
+        $group = $loan->member->group;
+        $groupId = $group->id;
+
+        // Create loan receivable transaction (GROUP ACCOUNT)
         Transaction::create([
-            'account_name' => $loansReceivableName,
-            'account_number' => $loansReceivableNumber,
+            'account_name' => "{$group->name} - Loans Receivable",
+            'account_number' => "G{$groupId}-1101",//loans receivable account number
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
-            'transaction_type' => 'loan_issue',
+            'group_id' => $groupId,
+            'transaction_type' => 'loan_issue',//very important!
             'dr_cr' => 'dr',
             'amount' => $loan->principal_amount,
             'transaction_date' => $loan->release_date,
             'description' => "Loan issued to member {$loan->member->name}",
         ]);
 
-        // Create bank disbursement transaction
-        $bankAccountName = self::getAccountNameFromLoanProduct($loan, 'bank') ?? config('repayment_priority.accounts.bank');
-        $bankAccountNumber = self::getAccountNumberFromLoanProduct($loan, 'bank');
-        
+        // Create bank disbursement transaction (GROUP ACCOUNT)
         Transaction::create([
-            'account_name' => $bankAccountName,
-            'account_number' => $bankAccountNumber,
+            'account_name' => "{$group->name} - Bank Account",
+            'account_number' => "G{$groupId}-1001",//bank account number
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
+            'group_id' => $groupId,
             'transaction_type' => 'loan_issue',
             'dr_cr' => 'cr',
             'amount' => $netDisbursement,
@@ -428,15 +477,13 @@ class LoanResource extends Resource
 
         // Create loan charges transactions if applicable
         if ($applyChargesOnIssuance && $loanCharges > 0) {
-            // Credit loan charges income
-            $chargesIncomeName = self::getAccountNameFromLoanProduct($loan, 'loan_charges_income') ?? config('repayment_priority.accounts.loan_charges_income');
-            $chargesIncomeNumber = self::getAccountNumberFromLoanProduct($loan, 'loan_charges_income');
-            
+            // Credit loan charges income (GROUP ACCOUNT)
             Transaction::create([
-                'account_name' => $chargesIncomeName,
-                'account_number' => $chargesIncomeNumber,
+                'account_name' => "{$group->name} - Loan Charges Income",
+                'account_number' => "G{$groupId}-4001",//loan charges income account number
                 'loan_id' => $loan->id,
                 'member_id' => $loan->member_id,
+                'group_id' => $groupId,
                 'transaction_type' => 'loan_charges',
                 'dr_cr' => 'cr',
                 'amount' => $loanCharges,
@@ -444,16 +491,14 @@ class LoanResource extends Resource
                 'description' => "Loan charges income for loan issued to member {$loan->member->name}",
             ]);
 
-            // If charges are not deducted from principal, create receivable entry
+            // If charges are not deducted from principal, create receivable entry (GROUP ACCOUNT)
             if (!$deductFromPrincipal) {
-                $chargesReceivableName = self::getAccountNameFromLoanProduct($loan, 'loan_charges_receivable') ?? config('repayment_priority.accounts.loan_charges_receivable');
-                $chargesReceivableNumber = self::getAccountNumberFromLoanProduct($loan, 'loan_charges_receivable');
-                
                 Transaction::create([
-                    'account_name' => $chargesReceivableName,
-                    'account_number' => $chargesReceivableNumber,
+                    'account_name' => "{$group->name} - Loan Charges Receivable",
+                    'account_number' => "G{$groupId}-1102",//loan charges receivable account number
                     'loan_id' => $loan->id,
                     'member_id' => $loan->member_id,
+                    'group_id' => $groupId,
                     'transaction_type' => 'loan_charges',
                     'dr_cr' => 'dr',
                     'amount' => $loanCharges,

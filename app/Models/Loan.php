@@ -15,6 +15,7 @@ class Loan extends Model
     protected $casts = [
         'session_data' => 'array',
         'approved_at' => 'datetime',
+        'rejected_at' => 'datetime',
         'release_date' => 'date',
         'due_date' => 'date',
         'principal_amount' => 'decimal:2',
@@ -55,6 +56,16 @@ class Loan extends Model
     public function approvedBy()
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function rejectedBy()
+    {
+        return $this->belongsTo(User::class, 'rejected_by');
+    }
+
+    public function guarantors()
+    {
+        return $this->hasMany(LoanGuarantor::class);
     }
 
     public function repayments()

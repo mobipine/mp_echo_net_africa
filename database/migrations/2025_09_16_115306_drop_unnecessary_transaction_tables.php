@@ -11,10 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Drop the unnecessary tables
-        Schema::dropIfExists('creditor_transactions');
-        Schema::dropIfExists('debtor_transactions');
-        Schema::dropIfExists('chart_of_accounts');
+        // DO NOT drop these tables - they are still needed
+        // Commenting out to prevent migration errors
+        // Schema::dropIfExists('creditor_transactions');
+        // Schema::dropIfExists('debtor_transactions');
+        // Schema::dropIfExists('chart_of_accounts');
     }
 
     /**

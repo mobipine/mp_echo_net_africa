@@ -269,19 +269,17 @@ class AccrueLoanInterest extends Command
      */
     private function createInterestAccrualTransactions(Loan $loan, float $interestAmount): void
     {
-        // Get account info from loan product, fallback to config
-        $interestReceivableName = $loan->loanProduct->getAccountName('interest_receivable') ?? config('repayment_priority.accounts.interest_receivable');
-        $interestReceivableNumber = $loan->loanProduct->getAccountNumber('interest_receivable');
-        
-        $interestIncomeName = $loan->loanProduct->getAccountName('interest_income') ?? config('repayment_priority.accounts.interest_income');
-        $interestIncomeNumber = $loan->loanProduct->getAccountNumber('interest_income');
+        // Get member's group for group-level accounting
+        $group = $loan->member->group;
+        $groupId = $group->id;
 
-        // Debit: Interest Receivable (Asset - money owed to us)
+        // Debit: Interest Receivable (Asset - money owed to us) - GROUP ACCOUNT
         Transaction::create([
-            'account_name' => $interestReceivableName,
-            'account_number' => $interestReceivableNumber,
+            'account_name' => "{$group->name} - Interest Receivable",
+            'account_number' => "G{$groupId}-1103",
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
+            'group_id' => $groupId,
             'transaction_type' => 'interest_accrual',
             'dr_cr' => 'dr',
             'amount' => $interestAmount,
@@ -289,12 +287,13 @@ class AccrueLoanInterest extends Command
             'description' => "Interest accrued for loan #{$loan->loan_number} - {$loan->member->name}",
         ]);
 
-        // Credit: Interest Income (Revenue - income earned)
+        // Credit: Interest Income (Revenue - income earned) - GROUP ACCOUNT
         Transaction::create([
-            'account_name' => $interestIncomeName,
-            'account_number' => $interestIncomeNumber,
+            'account_name' => "{$group->name} - Interest Income",
+            'account_number' => "G{$groupId}-4002",
             'loan_id' => $loan->id,
             'member_id' => $loan->member_id,
+            'group_id' => $groupId,
             'transaction_type' => 'interest_accrual',
             'dr_cr' => 'cr',
             'amount' => $interestAmount,

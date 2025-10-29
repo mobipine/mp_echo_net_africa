@@ -70,7 +70,7 @@ class LoanProductResource extends Resource
     {
         return [
             RelationManagers\LoanProductAttributesRelationManager::class,
-            RelationManagers\ChartOfAccountsRelationManager::class,
+            // RelationManagers\ChartOfAccountsRelationManager::class,
             // RelationManagers\LoanProductCalculationsRelationManager::class,
         ];
     }

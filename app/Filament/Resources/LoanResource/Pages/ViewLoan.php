@@ -4,6 +4,7 @@ namespace App\Filament\Resources\LoanResource\Pages;
 
 use App\Filament\Resources\LoanResource;
 use App\Models\Loan;
+use App\Models\Member;
 use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Forms;
@@ -15,6 +16,8 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Tabs;
 use Filament\Forms\Components\Tabs\Tab;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Placeholder;
 
 class ViewLoan extends ViewRecord
 {
@@ -25,6 +28,14 @@ class ViewLoan extends ViewRecord
     public function mount(int | string $record): void
     {
         $this->record = $this->resolveRecord($record);
+        
+        // Eager load guarantors with their member details
+        $this->record->load([
+            // 'guarantors.guarantorMember',
+            'member',
+            // 'loanProduct.LoanProductAttributes'
+            'guarantors'
+        ]);
         
         // Populate the data array with loan record data
         $this->data = [
@@ -37,9 +48,6 @@ class ViewLoan extends ViewRecord
             'due_at' => $this->record->due_at,
             'loan_duration' => $this->record->loan_duration,
             'loan_purpose' => $this->record->loan_purpose,
-            'guarantor_name' => $this->record->guarantor_name,
-            'guarantor_phone' => $this->record->guarantor_phone,
-            'guarantor_national_id' => $this->record->guarantor_national_id,
             'collateral_description' => $this->record->collateral_description,
             'collateral_value' => $this->record->collateral_value,
             'additional_notes' => $this->record->additional_notes,
@@ -71,6 +79,11 @@ class ViewLoan extends ViewRecord
         }
         
         // dd($allAttributes->toArray());
+
+        //add all guarantors 
+        $allGuarantors = $this->record->guarantors->toArray();
+        // dd($allGuarantors);
+        $this->data['guarantors'] = $allGuarantors;
     
         // dd($this->data);
         $this->form->fill($this->data);
@@ -249,45 +262,64 @@ class ViewLoan extends ViewRecord
     {
         return [
             Grid::make(1)->schema([
-                Textarea::make('loan_purpose')
-                    ->label('Loan Purpose')
-                    ->rows(3)
-                    ->disabled(),
+                
                     
-                Textarea::make('guarantor_name')
-                    ->label('Guarantor Name')
-                    ->disabled(),
+                Section::make('Guarantors')
+                    ->description('Members guaranteeing this loan')
+                    ->schema([
+                        Placeholder::make('guarantors_summary')
+                            ->label('')
+                            ->content(fn() => $this->getGuarantorsSummaryContent()),
+                            
+                        Repeater::make('guarantors')
+                            // ->relationship('guarantors')
+                            ->schema([
+                                Grid::make(4)->schema([
+                                    TextInput::make('guarantor_member_id')
+                                        ->label('Guarantor Name')
+                                        ->formatStateUsing(function ($state) {
+                                            $member = Member::find($state);
+                                            return $member->name;
+                                        })
+                                        ->disabled(),
+                                  
+                                    
+                                    TextInput::make('guaranteed_amount')
+                                        ->label('Guaranteed Amount')
+                                        ->prefix('KSh')
+                                        ->disabled(),
+                                
+                                ]),
+                            ])
+                            ->disabled(),
+                    ])
+                    ->visible(function () {
+                        return ($this->record->guarantors ?? collect())->count() > 0;
+                    }),
+
+
+                //     Textarea::make('loan_purpose')
+                //     ->label('Loan Purpose')
+                //     ->rows(3)
+                //     ->disabled(),
                     
-                Textarea::make('guarantor_phone')
-                    ->label('Guarantor Phone')
-                    ->disabled(),
+                // Textarea::make('collateral_type')
+                //     ->label('Collateral Type')
+                //     ->disabled(),
                     
-                Textarea::make('guarantor_id')
-                    ->label('Guarantor ID')
-                    ->disabled(),
+                // Textarea::make('collateral_value')
+                //     ->label('Collateral Value')
+                //     ->disabled(),
                     
-                Textarea::make('guarantor_address')
-                    ->label('Guarantor Address')
-                    ->rows(3)
-                    ->disabled(),
+                // Textarea::make('collateral_description')
+                //     ->label('Collateral Description')
+                //     ->rows(3)
+                //     ->disabled(),
                     
-                Textarea::make('collateral_type')
-                    ->label('Collateral Type')
-                    ->disabled(),
-                    
-                Textarea::make('collateral_value')
-                    ->label('Collateral Value')
-                    ->disabled(),
-                    
-                Textarea::make('collateral_description')
-                    ->label('Collateral Description')
-                    ->rows(3)
-                    ->disabled(),
-                    
-                Textarea::make('additional_notes')
-                    ->label('Additional Notes')
-                    ->rows(3)
-                    ->disabled(),
+                // Textarea::make('additional_notes')
+                //     ->label('Additional Notes')
+                //     ->rows(3)
+                //     ->disabled(),
             ]),
         ];
     }
@@ -315,5 +347,36 @@ class ViewLoan extends ViewRecord
                     ->disabled(),
             ]),
         ];
+    }
+    
+    protected function getGuarantorsSummaryContent(): \Illuminate\Support\HtmlString
+    {
+        $loan = $this->record;
+        $guarantors = $loan->guarantors ?? collect();
+        $totalGuaranteed = $guarantors->sum('guaranteed_amount');
+        $count = $guarantors->count();
+        
+        if ($count === 0) {
+            return new \Illuminate\Support\HtmlString(
+                '<div class="p-4 rounded-lg bg-gray-50 dark:bg-gray-800">
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                        No guarantors assigned to this loan.
+                    </p>
+                </div>'
+            );
+        }
+        
+        return new \Illuminate\Support\HtmlString(
+            '<div class="p-4 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-semibold text-sm text-gray-700 dark:text-gray-300">Number of Guarantors:</span>
+                    <span class="text-lg font-bold text-gray-900 dark:text-gray-100">' . $count . '</span>
+                </div>
+                <div class="flex justify-between items-center pt-2 border-t border-green-300 dark:border-green-600">
+                    <span class="font-semibold text-sm text-gray-700 dark:text-gray-300">Total Guaranteed:</span>
+                    <span class="text-lg font-bold text-gray-900 dark:text-gray-100">KSh ' . number_format($totalGuaranteed, 2) . '</span>
+                </div>
+            </div>'
+        );
     }
 }

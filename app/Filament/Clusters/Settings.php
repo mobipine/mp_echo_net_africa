@@ -14,10 +14,10 @@ class Settings extends Cluster
     protected static ?int $navigationSort = 1;
 
 
-    // Control visibility in the navigation
-    public static function shouldRegisterNavigation(): bool
-    {
-        return auth()->user()->can('page_Settings');
-    }
+    // // Control visibility in the navigation
+    // public static function shouldRegisterNavigation(): bool
+    // {
+    //     return auth()->user()->can('cluster_Settings');
+    // }
     
 }

@@ -11,12 +11,14 @@ class Member extends Model
     use SoftDeletes;
     protected $fillable = [
         'group_id', 'name', 'email', 'phone', 'national_id',
-        'gender', 'dob', 'marital_status', 'profile_picture','is_active'
+        'gender', 'dob', 'marital_status', 'profile_picture','is_active',
+        'member_since', 'membership_status'
     ];
 
     protected $casts = [
         'dob' => 'date',
         'is_active' => 'boolean',
+        'member_since' => 'date',
     ];
 
     public function group()
@@ -73,6 +75,44 @@ class Member extends Model
     public function hasUserAccount(): bool
     {
         return !is_null($this->user);
+    }
+
+    /**
+     * Get member's savings accounts
+     */
+    public function savingsAccounts()
+    {
+        return $this->hasMany(MemberSavingsAccount::class);
+    }
+
+    /**
+     * Get member's product subscriptions
+     */
+    public function productSubscriptions()
+    {
+        return $this->hasMany(MemberProductSubscription::class);
+    }
+
+    /**
+     * Get member's fee obligations
+     */
+    public function feeObligations()
+    {
+        return $this->hasMany(MemberFeeObligation::class);
+    }
+
+    /**
+     * Get total savings across all accounts
+     */
+    public function getTotalSavingsAttribute(): float
+    {
+        // Check if SavingsService is available
+        if (app()->bound(\App\Services\SavingsService::class)) {
+            return app(\App\Services\SavingsService::class)->getCumulativeSavings($this);
+        }
+        
+        // Fallback: sum all savings account balances
+        return $this->savingsAccounts->sum('balance');
     }
 
     //create a boot function that will create a unique account number for each member on creation
