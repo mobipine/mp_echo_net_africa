@@ -171,7 +171,7 @@ function getNextQuestion($survey_id, $response = null, $current_question_id = nu
 
 }
 
-function formartQuestion($firstQuestion,$member,$survey){
+function formartQuestion($member,$survey,$firstQuestion,$reminder=false){
 
     if ($firstQuestion->answer_strictness == "Multiple Choice") {
         $message = "{$firstQuestion->question}\n\n"; 
@@ -206,6 +206,10 @@ function formartQuestion($firstQuestion,$member,$survey){
             $message .= "\n *Note: Your answer should contain only letters and numbers.*";
         }
     }
+    if ($reminder) {
+        $message = "Hi {member}, this is a gentle reminder to continue the survey. We’d appreciate your response.\n\nQuestion:\n$message";
+    }
+
     $loanReceivedMonthId=$loanAmountQuestionId = \App\Models\SurveyQuestion::where('purpose', 'loan_received_date')
     ->value('id');
     $loanMonth = null;

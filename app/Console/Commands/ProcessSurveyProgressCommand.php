@@ -100,10 +100,10 @@ class ProcessSurveyProgressCommand extends Command
                 continue;
             }
 
-            $confirmation_interval=$survey->continue_confirmation_interval;
-            $confirmation_interval_unit=$survey->continue_confirmation_interval_unit;
+            // $confirmation_interval=$survey->continue_confirmation_interval;
+            // $confirmation_interval_unit=$survey->continue_confirmation_interval_unit;
 
-            $confirmationDue=$lastDispatched->add($confirmation_interval, $confirmation_interval_unit);
+            $confirmationDue=$lastDispatched->add(3, "days");
             $isconfirmationDue=$confirmationDue->lessThanOrEqualTo(now());
 
             Log::info("If the user has not yet responded to the previous question sent in {$survey->title} and the time for to dispatch the confirmation question {$confirmationDue} has reached a confirmation message will be sent, if he has responded, the next question will be sent.");
@@ -145,7 +145,7 @@ class ProcessSurveyProgressCommand extends Command
                     $message=formartQuestion($nextQuestion,$member,$survey);
                     Log::info("This is the message ".$message);
 
-                    $this->sendSMS($member->phone, $message,$channel);
+                    $this->sendSMS($member->phone, $message,$channel,false);
                     $progress->update([
                         'current_question_id' => $nextQuestion->id,
                         'last_dispatched_at' => now(),
@@ -163,47 +163,34 @@ class ProcessSurveyProgressCommand extends Command
                 }
 
             } elseif($isconfirmationDue) {
-                
-                $continue_confirmation_question= $survey->continue_confirmation_question;
-                $placeholders = [
-                    '{member}' => $member->name,
-                    '{group}' => $member->group->name,
-                ];
-                $message = str_replace(
-                    array_keys($placeholders),
-                    array_values($placeholders),
-                    $continue_confirmation_question
-                );
-
+                    //reminder
+                $message=formartQuestion($member,$survey,$currentQuestion,true);
                 Log::info("This is the formated message $message");
-
-                
-                Log::info("No response from member. Sending the confirmation message {$message}...");
-                // No response and it's been more than 3 days, resend the last question
-                // $message = $this->formatQuestionMessage($currentQuestion, true); // Add a reminder prefix
+                Log::info("No response from member. Sending the reminder message {$message}...");
                  
-                // try {
-                //     // $smsService->send($member->phone, $message);
-                //     $this->sendSMS($member->phone, $message);
-                //     $progress->update([
-                //         'last_dispatched_at' => now(),
-                //         'status'=>'PENDING',
-                //     ]); // Update timestamp and status
-                //     Log::info("Confirmation sent to {$member->phone} for survey {$survey->title}.");
-                // } catch (\Exception $e) {
-                //     Log::error("Failed to send confirmation to {$member->phone}: " . $e->getMessage());
-                // }
+                try {
+                    // $smsService->send($member->phone, $message);
+                    $this->sendSMS($member->phone, $message, $progress?->channel ?? 'sms',true);
+                    $progress->update([
+                        'last_dispatched_at' => now(),
+                        
+                    ]); // Update timestamp and status
+                    Log::info("Confirmation sent to {$member->phone} for survey {$survey->title}.");
+                } catch (\Exception $e) {
+                    Log::error("Failed to send confirmation to {$member->phone}: " . $e->getMessage());
+                }
             }
         }
     }
 
-    public function sendSMS($msisdn, $message,$channel) {
+    public function sendSMS($msisdn, $message,$channel,$is_reminder) {
 
         try{
             SMSInbox::create([
                 'phone_number' => $msisdn, // Store the phone number in group_ids for tracking
                 'message' => $message,
                 'channel' => $channel,
+                'is_reminder' => $is_reminder
             ]);
         } catch (\Exception $e) {
             Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());
