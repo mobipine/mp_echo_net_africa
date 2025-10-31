@@ -18,6 +18,7 @@ class SMSInbox extends Model
         'phone_number',
         'member_id',
         'channel',
+        'is_reminder'
     ];
 
     protected $casts = [
