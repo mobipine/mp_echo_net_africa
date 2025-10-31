@@ -133,4 +133,8 @@ class Member extends Model
         });
     }
 
+    public function surveyProgresses()
+    {
+        return $this->hasMany(\App\Models\SurveyProgress::class, 'member_id');
+    }
 }
