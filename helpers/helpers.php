@@ -171,7 +171,7 @@ function getNextQuestion($survey_id, $response = null, $current_question_id = nu
 
 }
 
-function formartQuestion($member,$survey,$firstQuestion,$reminder=false){
+function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
 
     if ($firstQuestion->answer_strictness == "Multiple Choice") {
         $message = "{$firstQuestion->question}\n\n"; 
@@ -247,35 +247,35 @@ function formartQuestion($member,$survey,$firstQuestion,$reminder=false){
 
     if($latestEdit){
         $placeholders = [
-        '{member}' => $member->name,
-        '{group}' => $member->group->name,
-        '{id}' => $member->national_id,
-        '{gender}'=>$member->gender,
-        '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
-        '{LIP}' => $member?->group?->localImplementingPartner?->name,
-        '{month}' => \Carbon\Carbon::now()->monthName,
-        '{loan_received_month}' => $loanMonth ?? "N/A",
-        '{edit_id}' => $latestEdit->national_id ?? $member->national_id,
-        '{edit_year}' => $latestEdit->year_of_birth ?? \Carbon\Carbon::parse($member->dob)->format('Y'),
-        '{edit_gender}' => $latestEdit->gender ?? $member->gender,
-        '{edit_group}' => $latestEdit->group ?? $member->group->name,
-        '{loan_amount_received}' => $loanAmount ?? 'N/A', // Use 'N/A' or 0 if no response found
-        '{survey}' => $survey->title,
+        '{member}' => $member?->name  ?? "Not recorded",
+        '{group}' => $member?->group?->name ?? "Not recorded",
+        '{id}' => $member?->national_id ?? "Not recorded",
+        '{gender}'=>$member?->gender ?? "Not recorded",
+        '{dob}'=> \Carbon\Carbon::parse($member?->dob)->format('Y') ?? "Not recorded",
+        '{LIP}' => $member?->group?->localImplementingPartner?->name ?? "Not recorded",
+        '{month}' => \Carbon\Carbon::now()->monthName ?? "Not recorded",
+        '{loan_received_month}' => $loanMonth ?? "Not recorded",
+        '{edit_id}' => $latestEdit?->national_id ?? $member?->national_id ?? "Not recorded",
+        '{edit_year}' => $latestEdit?->year_of_birth ?? \Carbon\Carbon::parse($member?->dob)->format('Y') ?? "Not recorded",
+        '{edit_gender}' => $latestEdit?->gender ?? $member?->gender ?? "Not recorded",
+        '{edit_group}' => $latestEdit?->group ?? $member?->group?->name ?? "Not recorded",
+        '{loan_amount_received}' => $loanAmount  ?? "Not recorded", // Use 'N/A' or 0 if no response found
+        '{survey}' => $survey?->title  ?? "Not recorded",
 
     ];
     }else{
 
         $placeholders = [
-        '{member}' => $member->name,
-        '{group}' => $member->group->name,
-        '{id}' => $member->national_id,
-        '{gender}'=>$member->gender,
-        '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
-        '{LIP}' => $member?->group?->localImplementingPartner?->name,
-        '{month}' => \Carbon\Carbon::now()->monthName,
-        '{loan_received_month}' => $loanMonth ?? "N/A",
-        '{loan_amount_received}' => $loanAmount ?? 'N/A', // Use 'N/A' or 0 if no response found
-        '{survey}' => $survey->title,
+        '{member}' => $member?->name  ?? "Not recorded",
+        '{group}' => $member?->group?->name  ?? "Not recorded",
+        '{id}' => $member?->national_id   ?? "Not recorded",
+        '{gender}'=>$member?->gender   ?? "Not recorded",
+        '{dob}'=> \Carbon\Carbon::parse($member?->dob)->format('Y')   ?? "Not recorded",
+        '{LIP}' => $member?->group?->localImplementingPartner?->name  ?? "Not recorded" ,
+        '{month}' => \Carbon\Carbon::now()->monthName  ?? "Not recorded",
+        '{loan_received_month}' => $loanMonth   ?? "Not recorded",
+        '{loan_amount_received}' => $loanAmount  ?? "Not recorded", // Use 'N/A' or 0 if no response found
+        '{survey}' => $survey?->title   ?? "Not recorded",
 
     ];
     }
