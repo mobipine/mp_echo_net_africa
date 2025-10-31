@@ -18,10 +18,12 @@ class SMSInbox extends Model
         'phone_number',
         'member_id',
         'channel',
+        'is_reminder'
     ];
 
     protected $casts = [
         'group_ids' => 'array', // Cast group_ids as an array
+        'is_reminder' => 'boolean'
     ];
 
 
