@@ -121,12 +121,12 @@ class MemberResource extends Resource
                         Storage::disk('local')->delete($data['file']);
                         
                         // Get import results from session
-                        $results = session('import_results', ['imported' => 0, 'skipped' => 0]);
+                        $results = session('import_results', ['imported' => 0, 'skipped' => 0,'updated' => 0]);
                         
                         // Show success notification with results
                         Notification::make()
                             ->title('Import Completed')
-                            ->body("Successfully imported {$results['imported']} members. Skipped {$results['skipped']} rows due to errors or duplicates.")
+                            ->body("Successfully imported {$results['imported']} members. Updated {$results['updated']} rows. Skipped {$results['skipped']} rows due to errors or duplicates.")
                             ->success()
                             ->send();
                     })
