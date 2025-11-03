@@ -79,10 +79,7 @@ class ProcessSurveyProgressCommand extends Command
 
             Log::info("The survey ends on $endDate");
             //check if endDate has passed. If it has, continue to the next record
-            if ($endDate && now()->greaterThan(Carbon::parse($endDate))) {
-                Log::info("Survey {$survey->title} for member {$member->phone} has ended on $endDate. Skipping.");
-                continue;
-            }
+            
 
             // Check if the time since the last dispatch has exceeded the defined interval
             $lastDispatched = Carbon::parse($progress->last_dispatched_at);
@@ -100,10 +97,10 @@ class ProcessSurveyProgressCommand extends Command
                 continue;
             }
 
-            // $confirmation_interval=$survey->continue_confirmation_interval;
-            // $confirmation_interval_unit=$survey->continue_confirmation_interval_unit;
+            $reminder_interval=$survey->continue_confirmation_interval;
+            $reminder_interval_unit=$survey->continue_confirmation_interval_unit;
 
-            $confirmationDue=$lastDispatched->add(3, "days");
+            $confirmationDue=$lastDispatched->add($reminder_interval, $reminder_interval_unit);
             $isconfirmationDue=$confirmationDue->lessThanOrEqualTo(now());
 
             Log::info("If the user has not yet responded to the previous question sent in {$survey->title} and the time for to dispatch the confirmation question {$confirmationDue} has reached a confirmation message will be sent, if he has responded, the next question will be sent.");
@@ -117,6 +114,7 @@ class ProcessSurveyProgressCommand extends Command
                 
         
             if ($hasResponded) {
+                Log::info("The member {$member->name} has responded to the survey and next dispatch is due. Sending the next question...");
                 $progress = SurveyProgress::where('member_id', $member->id)
                     ->where('survey_id', $survey->id)
                     ->where('has_responded', true)
@@ -164,7 +162,8 @@ class ProcessSurveyProgressCommand extends Command
 
             } elseif($isconfirmationDue) {
                     //reminder
-                $message=formartQuestion($member,$survey,$currentQuestion,true);
+                    
+                $message=formartQuestion($currentQuestion,$member,$survey,true);
                 Log::info("This is the formated message $message");
                 Log::info("No response from member. Sending the reminder message {$message}...");
                  
@@ -183,17 +182,19 @@ class ProcessSurveyProgressCommand extends Command
         }
     }
 
-    public function sendSMS($msisdn, $message,$channel,$is_reminder) {
-
-        try{
+   public function sendSMS($msisdn, $message, $channel, $is_reminder)
+    {
+        try {
             SMSInbox::create([
-                'phone_number' => $msisdn, // Store the phone number in group_ids for tracking
+                'phone_number' => $msisdn,
                 'message' => $message,
                 'channel' => $channel,
-                'is_reminder' => $is_reminder
+                'is_reminder' => $is_reminder,
             ]);
         } catch (\Exception $e) {
+            // Log and rethrow the exception so the caller can handle it
             Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());
+            throw $e; // <-- this allows the outer try-catch to detect the failure
         }
     }
 }

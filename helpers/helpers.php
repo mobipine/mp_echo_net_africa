@@ -207,7 +207,10 @@ function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
         }
     }
     if ($reminder) {
-        $message = "Hi {member}, this is a gentle reminder to continue the survey. We’d appreciate your response.\n\nQuestion:\n$message";
+        
+        $message = "$survey->continue_confirmation_question\n$message";
+        $message = str_replace('\n', "\n", $message);
+        Log::info("The formarted message to be sent is {$survey->continue_confirmation_question}");
     }
 
     $loanReceivedMonthId=$loanAmountQuestionId = \App\Models\SurveyQuestion::where('purpose', 'loan_received_date')
