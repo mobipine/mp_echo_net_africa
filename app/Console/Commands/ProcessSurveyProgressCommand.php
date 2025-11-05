@@ -143,7 +143,7 @@ class ProcessSurveyProgressCommand extends Command
                     $message=formartQuestion($nextQuestion,$member,$survey);
                     Log::info("This is the message ".$message);
 
-                    $this->sendSMS($member->phone, $message,$channel,false);
+                    $this->sendSMS($member->phone, $message,$channel,false,$member);
                     $progress->update([
                         'current_question_id' => $nextQuestion->id,
                         'last_dispatched_at' => now(),
@@ -169,7 +169,7 @@ class ProcessSurveyProgressCommand extends Command
                  
                 try {
                     // $smsService->send($member->phone, $message);
-                    $this->sendSMS($member->phone, $message, $progress?->channel ?? 'sms',true);
+                    $this->sendSMS($member->phone, $message, $progress?->channel ?? 'sms',true,$member);
                     $progress->update([
                         'last_dispatched_at' => now(),
                         
@@ -182,7 +182,7 @@ class ProcessSurveyProgressCommand extends Command
         }
     }
 
-   public function sendSMS($msisdn, $message, $channel, $is_reminder)
+   public function sendSMS($msisdn, $message, $channel, $is_reminder,$member)
     {
         try {
             SMSInbox::create([
@@ -190,6 +190,7 @@ class ProcessSurveyProgressCommand extends Command
                 'message' => $message,
                 'channel' => $channel,
                 'is_reminder' => $is_reminder,
+                "member_id" => $member->id,
             ]);
         } catch (\Exception $e) {
             // Log and rethrow the exception so the caller can handle it
