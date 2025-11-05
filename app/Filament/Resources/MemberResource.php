@@ -44,7 +44,7 @@ class MemberResource extends Resource
                     ->label('Group')
                     ->relationship('group', 'name')
                     ->required(),
-                \Filament\Forms\Components\TextInput::make('name')->required()->placeholder('e.g. John Doe'),
+                \Filament\Forms\Components\TextInput::make('name')->required()->placeholder('e.g. John Doe')->hint("As it appears on the ID"),
                 \Filament\Forms\Components\TextInput::make('account_number')
                     ->required()
                     ->placeholder('e.g. ACC-0001')
@@ -59,7 +59,8 @@ class MemberResource extends Resource
                     ->unique(ignoreRecord: true)
                     ->maxLength(8)
                     ->minLength(7)
-                    ->numeric(),
+                    ->numeric()
+                    ->hint("As it appears on the ID"),
                 \Filament\Forms\Components\Select::make('gender')
                 ->native(false)
                     ->options([
@@ -67,7 +68,7 @@ class MemberResource extends Resource
                         'female' => 'Female',
                     ]),
                 \Filament\Forms\Components\DatePicker::make('dob')->label('Date of Birth')
-                ->native(false),
+                ->native(false)->hint("As it appears on the ID"),
                 \Filament\Forms\Components\Select::make('marital_status')
                 ->native(false)
                     ->options([
