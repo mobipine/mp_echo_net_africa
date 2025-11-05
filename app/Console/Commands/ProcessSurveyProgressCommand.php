@@ -63,9 +63,9 @@ class ProcessSurveyProgressCommand extends Command
                 $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
                 $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
 
-                $endDate = GroupSurvey::where('group_id', $member->group_id)
-                        ->where('survey_id',$survey->id)
-                        ->value('ends_at');
+                // $endDate = GroupSurvey::where('group_id', $member->group_id)
+                //         ->where('survey_id',$survey->id)
+                //         ->value('ends_at');
                 
 
             } else {
@@ -74,10 +74,10 @@ class ProcessSurveyProgressCommand extends Command
                 $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
                 $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
 
-                $endDate = null;
+                // $endDate = null;
             }
 
-            Log::info("The survey ends on $endDate");
+            // Log::info("The survey ends on $endDate");
             //check if endDate has passed. If it has, continue to the next record
             
 
