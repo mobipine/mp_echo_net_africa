@@ -102,7 +102,7 @@ class RedoSurveyResource extends Resource
 
                             // Format and send question
                             $message = formartQuestion($firstQuestion, $member,$survey);
-                            sendSMS($msisdn, $message, $channel);
+                            sendSMS($msisdn, $message, $channel,$member);
 
                             Notification::make()
                                 ->title('Redo Approved')
