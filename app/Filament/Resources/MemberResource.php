@@ -12,6 +12,7 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
+use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Actions\Action;
@@ -145,7 +146,7 @@ class MemberResource extends Resource
                 \Filament\Tables\Columns\TextColumn::make('name')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('group.name')->label('Group')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('email')->sortable()->searchable(),
-                \Filament\Tables\Columns\TextColumn::make('phone')->sortable()->toggleable(isToggledHiddenByDefault:true),
+                \Filament\Tables\Columns\TextColumn::make('phone')->sortable()->toggleable(isToggledHiddenByDefault:true)->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('national_id')->sortable()->toggleable(isToggledHiddenByDefault:true),
                 \Filament\Tables\Columns\TextColumn::make('gender')->sortable()->toggleable(isToggledHiddenByDefault:true),
                 \Filament\Tables\Columns\TextColumn::make('dob')->date()->sortable()->toggleable(isToggledHiddenByDefault:true),
@@ -182,6 +183,8 @@ class MemberResource extends Resource
             RelationManagers\KycDocumentRelationManager::class,
             RelationManagers\EmailInboxesRelationManager::class,
             RelationManagers\SmsInboxesRelationManager::class,
+            RelationManagers\SurveyResponsesRelationManager::class,
+            
         ];
     }
 
