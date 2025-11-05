@@ -137,4 +137,9 @@ class Member extends Model
     {
         return $this->hasMany(\App\Models\SurveyProgress::class, 'member_id');
     }
+    public function surveyResponses()
+    {
+        return $this->hasMany(\App\Models\SurveyResponse::class, 'msisdn', 'phone');
+    }
+
 }

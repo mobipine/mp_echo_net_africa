@@ -63,9 +63,9 @@ class ProcessSurveyProgressCommand extends Command
                 $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
                 $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
 
-                $endDate = GroupSurvey::where('group_id', $member->group_id)
-                        ->where('survey_id',$survey->id)
-                        ->value('ends_at');
+                // $endDate = GroupSurvey::where('group_id', $member->group_id)
+                //         ->where('survey_id',$survey->id)
+                //         ->value('ends_at');
                 
 
             } else {
@@ -74,10 +74,10 @@ class ProcessSurveyProgressCommand extends Command
                 $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
                 $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
 
-                $endDate = null;
+                // $endDate = null;
             }
 
-            Log::info("The survey ends on $endDate");
+            // Log::info("The survey ends on $endDate");
             //check if endDate has passed. If it has, continue to the next record
             
 
@@ -143,7 +143,7 @@ class ProcessSurveyProgressCommand extends Command
                     $message=formartQuestion($nextQuestion,$member,$survey);
                     Log::info("This is the message ".$message);
 
-                    $this->sendSMS($member->phone, $message,$channel,false);
+                    $this->sendSMS($member->phone, $message,$channel,false,$member);
                     $progress->update([
                         'current_question_id' => $nextQuestion->id,
                         'last_dispatched_at' => now(),
@@ -169,7 +169,7 @@ class ProcessSurveyProgressCommand extends Command
                  
                 try {
                     // $smsService->send($member->phone, $message);
-                    $this->sendSMS($member->phone, $message, $progress?->channel ?? 'sms',true);
+                    $this->sendSMS($member->phone, $message, $progress?->channel ?? 'sms',true,$member);
                     $progress->update([
                         'last_dispatched_at' => now(),
                         
@@ -182,7 +182,7 @@ class ProcessSurveyProgressCommand extends Command
         }
     }
 
-   public function sendSMS($msisdn, $message, $channel, $is_reminder)
+   public function sendSMS($msisdn, $message, $channel, $is_reminder,$member)
     {
         try {
             SMSInbox::create([
@@ -190,6 +190,7 @@ class ProcessSurveyProgressCommand extends Command
                 'message' => $message,
                 'channel' => $channel,
                 'is_reminder' => $is_reminder,
+                "member_id" => $member->id,
             ]);
         } catch (\Exception $e) {
             // Log and rethrow the exception so the caller can handle it

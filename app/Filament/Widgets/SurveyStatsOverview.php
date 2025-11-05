@@ -4,7 +4,8 @@ namespace App\Filament\Widgets;
 
 use App\Models\Member;
 use App\Models\SurveyProgress;
-use App\Filament\Pages\SurveyReports; 
+use App\Filament\Pages\SurveyReports;
+use App\Models\SMSInbox;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 
@@ -58,6 +59,30 @@ class SurveyStatsOverview extends BaseWidget
             ->whereNull('completed_at')
             ->whereIn('status', ['CANCELLED'])
             ->count();
+
+        $smsQuery = SMSInbox::query()->where('is_reminder', true);
+
+        // Filter reminders by group if applicable
+        if (!empty($groupIds)) {
+            $smsQuery->whereHas('member', function ($query) use ($groupIds) {
+                $query->whereIn('group_id', $groupIds);
+            });
+        }
+
+        // Total number of reminders sent (count all)
+        $remindersSent = (clone $smsQuery)->count();
+
+        // Unique members who have been sent at least one reminder
+        $membersSentReminder = (clone $smsQuery)
+            ->distinct('phone_number')
+            ->count('member_id');
+
+        $repeatReminders = (clone $smsQuery)
+            ->select('phone_number', 'message')
+            ->groupBy('phone_number', 'message')
+            ->havingRaw('COUNT(*) >= 3')
+            ->get()
+            ->count();
         
         $completionRate = $totalParticipants > 0 
             ? round(($completedCount / $totalParticipants) * 100, 1) 
@@ -81,6 +106,22 @@ class SurveyStatsOverview extends BaseWidget
                 ->description('Cancelled the survey progress.')
                 ->descriptionIcon('heroicon-o-x-circle')
                 ->color('danger'),
+
+            Stat::make('Reminders Sent', $remindersSent)
+                ->description('Total reminders sent to members.')
+                ->descriptionIcon('heroicon-o-bell')
+                ->color('info'),
+
+            Stat::make('Members Sent Reminder', $membersSentReminder)
+                ->description('Unique members who received reminders.')
+                ->descriptionIcon('heroicon-o-user-group')
+                ->color('primary'),
+            Stat::make('Repeated Reminders (3+ Times)', $repeatReminders)
+                ->description('Phone numbers that received the same reminder 3+ times.')
+                ->descriptionIcon('heroicon-o-exclamation-circle')
+                ->color('danger')
+                // ->url(route('filament.pages.send-sms')),
+
         ];
     }
 }

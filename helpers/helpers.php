@@ -8,6 +8,7 @@ use App\Models\RedoSurvey;
 use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
+use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
 use Illuminate\Support\Facades\Log;
 
@@ -336,7 +337,7 @@ function startSurvey($msisdn, Survey $survey,$channel)
         $redoFirstQuestion = getNextQuestion($redoSurvey->id);
         if ($redoFirstQuestion) {
             $message = formartQuestion($redoFirstQuestion, $member,$survey);
-            sendSMS($msisdn, $message,$channel);
+            sendSMS($msisdn, $message,$channel,$member);
 
             // Log for clarity
             Log::info("Sent redo survey question to {$msisdn}");
@@ -368,7 +369,7 @@ function startSurvey($msisdn, Survey $survey,$channel)
 
     // Send first question
     $message = formartQuestion($firstQuestion, $member, $survey);
-    sendSMS($msisdn, $message,$channel);
+    sendSMS($msisdn, $message,$channel,$member);
 
     return response()->json([
         'status' => 'success',
@@ -393,8 +394,9 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
     Log::info("The user responded with ".$userResponse);
     $actualAnswer = getActualAnswer($currentQuestion,$userResponse,$msisdn);
 
+    $member=Member::where("phone",$msisdn)->first();
     if ($actualAnswer==null){
-        sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel);
+        sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel,$member);
         return;
     }
 
@@ -425,7 +427,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
         $valid=validateResponse($currentQuestion,$msisdn,$response);
 
         if(!$valid){
-            sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel);
+            sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel,$member);
             return;
         }
     }
@@ -466,11 +468,29 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
                 'status' => 'COMPLETED'
             ]
         );
-        sendSMS($msisdn, $survey->final_response,$channel);
+        $placeholders = [
+        '{member}' => $member ? explode(' ', trim($member->name))[0] : 'Not recorded',
+        // '{group}' => $member?->group?->name  ?? "Not recorded",
+        // '{id}' => $member?->national_id   ?? "Not recorded",
+        // '{gender}'=>$member?->gender   ?? "Not recorded",
+        // '{dob}'=> \Carbon\Carbon::parse($member?->dob)->format('Y')   ?? "Not recorded",
+        // '{LIP}' => $member?->group?->localImplementingPartner?->name  ?? "Not recorded" ,
+        // '{month}' => \Carbon\Carbon::now()->monthName  ?? "Not recorded",
+        // '{loan_received_month}' => $loanMonth   ?? "Not recorded",
+        // '{loan_amount_received}' => $loanAmount  ?? "Not recorded", // Use 'N/A' or 0 if no response found
+        // '{survey}' => $survey?->title   ?? "Not recorded",
+
+    ];
+    $message = str_replace(
+        array_keys($placeholders),
+        array_values($placeholders),
+        $survey->final_response
+    );
+        sendSMS($msisdn, $message,$channel,$member);
         return response()->json([
             'status' => 'success',
             'message' => 'Survey completed.',
-            'final_response' => $survey->final_response
+            'final_response' => $message
         ]);
     }
     // The next question will be sent by the scheduled command.
@@ -626,6 +646,50 @@ function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$
 function getActualAnswer($currentQuestion, $userResponse, $msisdn)
 {
     $actualAnswer = null;
+    // Log::info($currentQuestion);
+
+    if($currentQuestion->purpose=="multiple_answers"){
+
+        Log::info("The current question is getting multiple answers.");
+
+        $responses = array_map('trim', explode(',', $userResponse));
+        $answers = [];
+
+        foreach ($responses as $response) {
+            $index = 1;
+            $matched = false;
+            $trainingsQuestion=SurveyQuestion::where('purpose','get_trainings_done')->first();
+
+            foreach ($trainingsQuestion->possible_answers as $answer) {
+                // Match by number
+                if ((string)$index === $response) {
+                    $answers[] = $answer['answer'];
+                    $matched = true;
+                    break;
+                }
+
+                // Match by actual text (case-insensitive)
+                if (strcasecmp($answer['answer'], $response) === 0) {
+                    $answers[] = $answer['answer'];
+                    $matched = true;
+                    break;
+                }
+
+                $index++;
+            }
+
+            // If a response doesn't match any valid answer, skip or handle as needed
+            if (!$matched) {
+                // You could log it or return null to indicate invalid input
+                // return null;
+            }
+        }
+
+        // Join multiple answers with commas (IoT, IP, etc.)
+        $actualAnswer = implode(',', $answers);
+        Log::info("The actual answers to be stored are: {$actualAnswer}");
+        return $actualAnswer;
+    }
 
     if ($currentQuestion->answer_strictness === "Multiple Choice") {
         $index = 1;
@@ -660,6 +724,10 @@ function getActualAnswer($currentQuestion, $userResponse, $msisdn)
 
 
 function validateResponse($currentQuestion,$msisdn,$response){
+
+    if($currentQuestion->purpose=="multiple_answers"){
+        return true;
+    }
 
     if ($currentQuestion->answer_data_type === 'Strictly Number') {
         // Remove commas and extra spaces
@@ -706,13 +774,15 @@ function normalizePhoneNumber(string $phoneNumber): string
 }
 
 
-function sendSMS($msisdn, $message,$channel)
+function sendSMS($msisdn, $message,$channel,$member)
 {
+    Log::info($member->id);
     try {
         SMSInbox::create([
             'phone_number' => $msisdn, // Store the phone number in group_ids for tracking
             'message' => $message,
             'channel' => $channel,
+            'member_id' => $member->id,
         ]);
     } catch (\Exception $e) {
         Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());
