@@ -32,7 +32,8 @@ class GroupResource extends Resource
                     ->schema([
                         Forms\Components\TextInput::make('name')
                             ->required()
-                            ->maxLength(255),
+                            ->maxLength(255)
+                            ->hint("As it appears on the Certificate"),
                         
                         Forms\Components\TextInput::make('email')
                             ->email()
@@ -43,10 +44,12 @@ class GroupResource extends Resource
                             ->maxLength(255),
                         
                         Forms\Components\TextInput::make('registration_number')
-                            ->maxLength(100),
+                            ->maxLength(100)
+                            ->hint("As it appears on the Certificate"),
                         
                         Forms\Components\DatePicker::make('formation_date')
-                            ->label('Formation Date'),
+                            ->label('Formation Date')
+                            ->hint("As it appears on the Certificate"),
                     ])
                     ->columns(2),
                 
