@@ -31,4 +31,9 @@ class SMSInbox extends Model
     // {
     //     return $this->belongsToMany(Group::class, 'sms_inbox_group', 'sms_inbox_id', 'group_id');
     // }
+    public function member()
+    {
+        return $this->belongsTo(Member::class);
+    }
+
 }
