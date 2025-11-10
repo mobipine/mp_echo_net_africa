@@ -90,6 +90,7 @@ class SendSMS extends Page implements Forms\Contracts\HasForms
         SMSInbox::create([
             'message' => $validated['message'],
             'group_ids' => $validated['group_ids'],
+            "channel" => "sms"
         ]);
 
         Notification::make()
