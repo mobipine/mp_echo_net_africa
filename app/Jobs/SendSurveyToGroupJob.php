@@ -7,7 +7,6 @@ use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
-use App\Services\UjumbeSMS;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -19,75 +18,78 @@ class SendSurveyToGroupJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(public array $groupIds, public Survey $survey, public $channel) {}
+    public function __construct(
+        public array $groupIds,
+        public Survey $survey,
+        public $channel
+    ) {}
 
     public function handle(): void
     {
-        Log::info("In the Send Survey To Multiple Groups Job");
-        // Find the first question once, outside the group loop, as it's the same for all groups.
-        $firstQuestion = getNextQuestion($this->survey->id, $response = null, $current_question_id = null);
+        Log::info("Starting SendSurveyToGroupJob for survey '{$this->survey->title}'");
 
+        // Fetch the first question
+        $firstQuestion = getNextQuestion($this->survey->id, null, null);
         if (!$firstQuestion) {
             Log::info("Survey '{$this->survey->title}' has no questions. No SMS sent.");
             return;
         }
-         $firstQuestion = getNextQuestion($this->survey->id, $response = null, $current_question_id = null);
 
-             if (!$firstQuestion) {
-                 Log::info("Survey '{$this->survey->title}' has no questions. Exiting the  handle function of dispatch due survey command. No SMS sent.");
-                 return;
-             }
-             Log::info("The first Question of {$this->survey->title} is {$firstQuestion} from the flow");
-             //Formatting the question if multiple choice
-             Log::info("the question is $firstQuestion->answer_strictness");
-
-             
-
-        Log::info("The first Question of {$this->survey->title} is {$firstQuestion->question} from the flow");
+        $surveyOrder = $this->survey->order;
 
         foreach ($this->groupIds as $groupId) {
             $group = Group::find($groupId);
-
             if (!$group) {
                 Log::warning("Group with ID {$groupId} not found. Skipping.");
                 continue;
             }
 
-           
             $members = $group->members()->where('is_active', true)->get();
             $sentCount = 0;
 
             foreach ($members as $member) {
+                // --- Stage check and sequencing ---
+                if ($surveyOrder === 1) {
+                    if ($member->stage !== 'New') {
+                        Log::info("Skipping {$member->name}: not in 'New' stage for first survey.");
+                        continue;
+                    }
+                } else {
+                    // Fetch previous survey by order
+                    $previousSurvey = Survey::where('order', $surveyOrder - 1)->first();
+                    if (!$previousSurvey) {
+                        Log::warning("Previous survey (order " . ($surveyOrder - 1) . ") not found. Skipping {$member->name}.");
+                        continue;
+                    }
 
-                $message=formartQuestion($firstQuestion,$member,$this->survey);
-                
-                Log::info("The message to be sent is {$message}");
-
-                    
-                if (empty($member->phone)) {
-                    continue;
+                    $expectedStage = str_replace(' ', '', ucfirst($previousSurvey->title)) . 'Completed';
+                    if ($member->stage !== $expectedStage) {
+                        Log::info("Skipping {$member->name}: stage '{$member->stage}' does not match expected '{$expectedStage}'.");
+                        continue;
+                    }
                 }
 
+                // --- Participant uniqueness check ---
                 $progress = SurveyProgress::where('member_id', $member->id)
+                    ->where('survey_id', $this->survey->id)
                     ->whereNull('completed_at')
                     ->first();
 
-                // Simplify logic to handle both cases efficiently
-                if ($progress) {
-                    if ($this->survey->participant_uniqueness) {
-                        Log::info("{$this->survey->title} has participant uniqueness turned on, and {$member->phone} has already started. Skipping him.");
-                        continue;
-                    }
-                    Log::info("{$member->name} has a record in the survey progress table but participant uniqueness for {$this->survey->title} is off. Cancelling previous records...");
+                if ($progress && $this->survey->participant_uniqueness) {
+                    Log::info("Skipping {$member->name}: participant uniqueness is ON and survey already started.");
+                    continue;
+                }
 
-                    // If not unique, cancel all previous incomplete progress records
+                // Cancel any previous incomplete progress if uniqueness is off
+                if ($progress) {
                     SurveyProgress::where('member_id', $member->id)
+                        ->where('survey_id', $this->survey->id)
                         ->whereNull('completed_at')
                         ->update(['status' => 'CANCELLED']);
+                    Log::info("Cancelled previous incomplete progress for {$member->name}.");
                 }
-                Log::info("Creating a new record for {$member->name} in the survey progress table");
 
-                // Create a new progress record for the member
+                // --- Create new progress record ---
                 $newProgress = SurveyProgress::create([
                     'survey_id' => $this->survey->id,
                     'member_id' => $member->id,
@@ -97,29 +99,33 @@ class SendSurveyToGroupJob implements ShouldQueue
                     'source' => 'manual',
                 ]);
 
-                Log::info("Saving the first question for {$this->survey->title} in the SMSInbox table and preparing it to be sent.");
-                // Prepare and log the SMS for sending
-                
-                
+                // --- Update member stage to SurveyInProgress ---
+                $memberStage = str_replace(' ', '', ucfirst($this->survey->title)) . 'InProgress';
+                if ($member->stage !== $memberStage) {
+                    $member->update(['stage' => $memberStage]);
+                    Log::info("Updated {$member->name}'s stage to {$memberStage}");
+                }
+
+                // --- Format and create SMSInbox record ---
+                $message = formartQuestion($firstQuestion, $member, $this->survey);
                 try {
                     SMSInbox::create([
-                        'message'      => $message,
+                        'message' => $message,
                         'phone_number' => $member->phone,
-                        'member_id'    => $member->id,
+                        'member_id' => $member->id,
                         'survey_progress_id' => $newProgress->id,
                         'channel' => $this->channel,
                     ]);
-
-                    // Here you would call your actual SMS service, e.g., UjumbeSMS::send($member->phone, $message);
-                    
-                    Log::info("SMS Inbox record created for {$member->phone}. To be sent via $this->channel.\n\n");
+                    Log::info("SMS queued for {$member->name}: '{$message}'");
                     $sentCount++;
                 } catch (\Exception $e) {
-                    Log::error("Failed to create SMS Inbox record for {$member->name}: " . $e->getMessage());
+                    Log::error("Failed to create SMSInbox for {$member->name}: " . $e->getMessage());
                 }
             }
 
-            Log::info("First question of survey '{$this->survey->title}' dispatched to {$sentCount} members in group '{$group->name}'.\n\n");
+            Log::info("Survey '{$this->survey->title}' dispatched to {$sentCount} members in group '{$group->name}'.");
         }
+
+        Log::info("SendSurveyToGroupJob completed for survey '{$this->survey->title}'.");
     }
 }

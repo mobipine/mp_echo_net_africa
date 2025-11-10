@@ -157,7 +157,11 @@ class ProcessSurveyProgressCommand extends Command
                         'completed_at' => now(),
                         'status' => 'COMPLETED'
                     ]);
-                    Log::info("Survey {$survey->title} completed by {$member->phone}.");
+                    $stage=str_replace(' ', '', ucfirst($survey->title)) . 'Completed';
+                    $member->update([
+                        'stage' => $stage
+                    ]);
+                    Log::info("Survey {$survey->title} completed by {$member->phone}. Updated his stage to $stage");
                 }
 
             } elseif($isconfirmationDue) {
