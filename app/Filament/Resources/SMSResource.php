@@ -50,14 +50,15 @@ class SMSResource extends Resource
                         ->disabled()
                         ->required()
                         ->maxLength(500),
-                    Forms\Components\TextInput::make('group_ids')
-                        ->label('Groups')
-                        ->disabled()
-                        ->formatStateUsing(function ($state) {
-                            $groups_array =  $state;
-                            $group_names = Group::whereIn('id', $groups_array)->pluck('name')->toArray();
-                            return is_array($group_names) ? implode(', ', $group_names) : $group_names;
-                        }),
+                    // Forms\Components\TextInput::make('group_ids')
+                    //     ->label('Groups')
+                    //     ->disabled()
+                    //     ->formatStateUsing(function ($state) {
+                    //         $groups_array =  $state;
+                    //         dd($groups_array);
+                    //         $group_names = Group::whereIn('id', $groups_array)->pluck('name')->toArray();
+                    //         return is_array($group_names) ? implode(', ', $group_names) : $group_names;
+                    //     }),
                     Forms\Components\TextInput::make('status')
                         ->label('Status')
                         ->disabled()
@@ -73,18 +74,18 @@ class SMSResource extends Resource
         ->columns([
             TextColumn::make('id')->label('ID')->sortable(),
             TextColumn::make('message')->label('Message')->limit(50)->searchable(),
-            TextColumn::make('group_ids')
-                ->label('Groups')
-                ->formatStateUsing(function ($state) {
-                    // dd($state);
-                    $groups_array = explode(',', $state);
-                    //get the names of the groups
-                    $group_names = Group::whereIn('id', $groups_array)->pluck('name')->toArray();
-                    // Return the names as a comma-separated string
-                    return is_array($group_names) ? implode(', ', $group_names) : $group_names;
+            // TextColumn::make('group_ids')
+            //     ->label('Groups')
+            //     ->formatStateUsing(function ($state) {
+            //         // dd($state);
+            //         $groups_array = explode(',', $state);
+            //         //get the names of the groups
+            //         $group_names = Group::whereIn('id', $groups_array)->pluck('name')->toArray();
+            //         // Return the names as a comma-separated string
+            //         return is_array($group_names) ? implode(', ', $group_names) : $group_names;
                     
-                    // return is_array($state) ? implode(', ', $state) : $state;
-                }),
+            //         // return is_array($state) ? implode(', ', $state) : $state;
+            //     }),
             BadgeColumn::make('status')
                 ->label('Status')
                 ->colors([

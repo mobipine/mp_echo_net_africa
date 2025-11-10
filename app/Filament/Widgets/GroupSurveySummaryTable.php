@@ -22,6 +22,13 @@ class GroupSurveySummaryTable extends TableWidget
     protected static ?string $page = SurveyReports::class;
     protected static ?int $sort = 3;
 
+    public static function canView(): bool
+    {
+        // Returning false prevents the widget from being automatically displayed 
+        // on the dashboard or resource pages.
+        return false; 
+    }
+
     protected function getTableQuery(): Builder
     {
         $groupQuery = Group::query();

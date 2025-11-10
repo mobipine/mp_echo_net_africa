@@ -26,6 +26,12 @@ class SurveyResource extends Resource
                 Forms\Components\Textarea::make('description')->maxLength(500),
                 Forms\Components\TextInput::make('trigger_word')->required()->maxLength(255),
                 Forms\Components\Textarea::make('final_response')->maxLength(500),
+                Forms\Components\TextInput::make('order')
+                    ->label('Survey Order')
+                    ->numeric()
+                    ->minValue(1)
+                    ->helperText('Determine the sequence of this survey. Lower numbers will be dispatched first.')
+                    ->required(),
                 Forms\Components\Select::make('status')
                     ->options(['Active' => 'Active', 'Inactive' => 'Inactive'])->native(false)
                     ->required(),
@@ -64,6 +70,9 @@ class SurveyResource extends Resource
                 Tables\Columns\TextColumn::make('status')->sortable(),
                 Tables\Columns\TextColumn::make('start_date')->date()->sortable(),
                 Tables\Columns\TextColumn::make('end_date')->date()->sortable(),
+                Tables\Columns\TextColumn::make('order')
+                    ->label('Survey Order')
+                    ->sortable(),
             ])
             ->filters([
                 //

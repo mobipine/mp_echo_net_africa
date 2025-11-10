@@ -7,12 +7,12 @@ use App\Models\Group;
 use App\Models\Survey;
 use Filament\Forms\Form;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Section;
 use Filament\Pages\Page;
 use Filament\Pages\Dashboard\Concerns\HasFiltersForm; 
 use App\Filament\Widgets\SurveyStatsOverview; 
 use App\Filament\Widgets\SurveyDropoutAnalysis; 
-use App\Filament\Widgets\SurveyDropoutTable; // 👈 add new table widget
-use Filament\Forms\Components\Section;
+use App\Filament\Widgets\SurveyDropoutTable; 
 
 class SurveyReports extends Page
 {
@@ -42,8 +42,15 @@ class SurveyReports extends Page
                             ->options(Survey::pluck('title', 'id'))
                             ->placeholder('All Surveys')
                             ->nullable(),
-                    ])->columns(2),
+                    ])
+                    ->columns(2),
             ]);
+    }
+
+    public function applyFilters(): void
+    {
+        // This just refreshes the page using current query parameters
+        $this->redirect(request()->fullUrl());
     }
 
     protected function getHeaderWidgets(): array

@@ -7,6 +7,7 @@ use App\Models\SMSInbox;
 use App\Services\BongaSMS;
 use App\Services\UjumbeSMS;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class SendSMS extends Command
 {
@@ -43,7 +44,7 @@ class SendSMS extends Command
         $sms_inboxes = SMSInbox::where('status', 'pending')
             ->where('channel','sms')
             ->where('group_ids', '!=', null) // Ensure group_ids is not null
-            ->where('group_ids', '!=', []) // Ensure group_ids is not an empty array
+            // ->where('group_ids', '!=', []) // Ensure group_ids is not an empty array
             ->take(10) // Limit to 10 SMS inboxes to process at a time
             ->get();
         // dd($sms_inboxes);
@@ -51,6 +52,8 @@ class SendSMS extends Command
         info('Processing pending SMS...');
 
         if ($sms_inboxes->isEmpty()) {
+
+            Log::info("Empty sms inbox");
 
 
             //check if there are SMSInbox with group_ids that are null or empty but phone_number and member_id is filled
@@ -85,6 +88,7 @@ class SendSMS extends Command
             return; // Exit if no groups are found
         }
 
+        // Log::info($sms_inboxes);
         foreach ($sms_inboxes as $sms_inbox) {
             $group_ids = $sms_inbox->group_ids; // This should be an array of group IDs
             // dd($group_ids);
@@ -103,6 +107,26 @@ class SendSMS extends Command
                     foreach ($group->members as $member) {
 
                         info(">>>>>>>>>>Sending SMS to {$member->phone} in group {$group->name}");
+                        $placeholders = [
+                            '{member}' => $member?->name  ?? "Not recorded",
+                            '{group}' => $member?->group?->name  ?? "Not recorded",
+                            '{id}' => $member?->national_id   ?? "Not recorded",
+                            '{gender}'=>$member?->gender   ?? "Not recorded",
+                            '{dob}'=> \Carbon\Carbon::parse($member?->dob)->format('Y')   ?? "Not recorded",
+                            '{LIP}' => $member?->group?->localImplementingPartner?->name  ?? "Not recorded" ,
+                            '{month}' => \Carbon\Carbon::now()->monthName  ?? "Not recorded",
+                            '{loan_received_month}' => $loanMonth   ?? "Not recorded",
+                            '{loan_amount_received}' => $loanAmount  ?? "Not recorded", // Use 'N/A' or 0 if no response found
+                            '{survey}' => $survey?->title   ?? "Not recorded",
+
+                        ];
+                        
+                        
+                        $message = str_replace(
+                            array_keys($placeholders),
+                            array_values($placeholders),
+                            $message
+                        );
 
                         $response = $this->sendSMS($member->phone, $message);
                         // dd($response);

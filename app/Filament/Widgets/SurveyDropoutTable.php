@@ -15,6 +15,13 @@ class SurveyDropoutTable extends TableWidget
     protected static ?string $page = SurveyReports::class;
     public ?array $filters = [];
 
+    public static function canView(): bool
+    {
+        // Returning false prevents the widget from being automatically displayed 
+        // on the dashboard or resource pages.
+        return false; 
+    }
+
     protected function getTableQuery(): Builder
     {
         $groupIds = $this->filters['group_id'] ?? null;

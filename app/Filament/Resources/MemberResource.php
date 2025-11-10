@@ -143,6 +143,7 @@ class MemberResource extends Resource
                 //     ->size(40)
                 //     ->sortable(),
                 \Filament\Tables\Columns\TextColumn::make('id')->sortable(),
+                \Filament\Tables\Columns\TextColumn::make('stage')->sortable()->toggleable(isToggledHiddenByDefault:true)->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('name')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('group.name')->label('Group')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('email')->sortable()->searchable(),

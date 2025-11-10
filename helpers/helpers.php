@@ -468,6 +468,11 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
                 'status' => 'COMPLETED'
             ]
         );
+        $stage=str_replace(' ', '', ucfirst($survey->title)) . 'Completed';
+                    $member->update([
+                        'stage' => $stage
+                    ]);
+                    Log::info("Survey {$survey->title} completed by {$member->phone}. Updated his stage to $stage");
         $placeholders = [
         '{member}' => $member ? explode(' ', trim($member->name))[0] : 'Not recorded',
         // '{group}' => $member?->group?->name  ?? "Not recorded",
