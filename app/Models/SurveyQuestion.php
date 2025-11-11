@@ -16,6 +16,10 @@ class SurveyQuestion extends Model
         'question_interval',
         'question_interval_unit',
         'purpose',
+        'is_recurrent',
+        'recur_interval',
+        'recur_unit',
+        'recur_times'
     ];
 
     protected $casts = [

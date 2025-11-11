@@ -52,7 +52,7 @@ class GroupResource extends Resource
                             ->hint("As it appears on the Certificate"),
                     ])
                     ->columns(2),
-                
+                               
                 Forms\Components\Section::make('Location')
                     ->schema([
                         Forms\Components\TextInput::make('county')
@@ -70,6 +70,39 @@ class GroupResource extends Resource
                         Forms\Components\Textarea::make('address')
                             ->rows(3)
                             ->columnSpanFull(),
+                    ])
+                    ->columns(2),
+                 Forms\Components\Section::make('Additional Details')
+                    ->schema([
+                        Forms\Components\TextInput::make('kra_pin')
+                            ->label('KRA Pin')
+                            ->maxLength(50),
+
+                        Forms\Components\TextInput::make('bank_name')
+                            ->label('Bank Name')
+                            ->maxLength(255),
+
+                        Forms\Components\TextInput::make('bank_account_number')
+                            ->label('Bank Account Number')
+                            ->maxLength(50),
+
+                        Forms\Components\TextInput::make('bank_branch')
+                            ->label('Bank Branch')
+                            ->maxLength(255),
+
+                        Forms\Components\Select::make('meeting_frequency')
+                            ->label('Frequency of Group Meetings')
+                            ->options([
+                                'weekly' => 'Weekly',
+                                'biweekly' => 'Biweekly',
+                                'monthly' => 'Monthly',
+                                'bimonthly' => 'Bimonthly',
+                            ]),
+
+                        Forms\Components\TextInput::make('meeting_day')
+                            ->label('Day of Meeting')
+                            ->placeholder('e.g., Monday')
+                            ->maxLength(50),
                     ])
                     ->columns(2),
             ]);
