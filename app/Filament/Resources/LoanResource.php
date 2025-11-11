@@ -243,27 +243,64 @@ class LoanResource extends Resource implements HasShieldPermissions
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
                         ->visible(fn(Loan $record): bool => $record->status === 'Pending Approval' && Gate::allows('approve_loan'))
-                        ->requiresConfirmation()
+                        ->form([
+                            Forms\Components\TextInput::make('approved_amount')
+                                ->label('Approved Amount')
+                                ->helperText('You can reduce the amount but cannot increase it. Leave as is to approve the full amount.')
+                                ->numeric()
+                                ->required()
+                                ->default(fn(Loan $record) => $record->applied_amount ?? $record->principal_amount)
+                                ->rules([
+                                    function (Loan $record) {
+                                        return function (string $attribute, $value, \Closure $fail) use ($record) {
+                                            $appliedAmount = $record->applied_amount ?? $record->principal_amount;
+                                            if ((float) $value > (float) $appliedAmount) {
+                                                $fail('The approved amount cannot be greater than the applied amount (' . number_format($appliedAmount, 2) . ').');
+                                            }
+                                        };
+                                    },
+                                ])
+                                ->mask(\Filament\Support\RawJs::make('$money($input)'))
+                                ->stripCharacters(',')
+                                ->columnSpanFull(),
+                        ])
                         ->modalHeading('Approve Loan')
-                        ->modalDescription('Are you sure you want to approve this loan? This will create the necessary transactions.')
-                        ->action(function (Loan $record) {
+                        ->modalDescription('Is this the amount you want to approve? You can reduce it but cannot increase it.')
+                        ->action(function (Loan $record, array $data) {
+                            $appliedAmount = $record->applied_amount ?? $record->principal_amount;
+                            $approvedAmount = (float) str_replace(',', '', $data['approved_amount']);
+
+                            // Validate approved amount is not greater than applied
+                            if ($approvedAmount > $appliedAmount) {
+                                \Filament\Notifications\Notification::make()
+                                    ->danger()
+                                    ->title('Invalid Amount')
+                                    ->body('The approved amount cannot be greater than the applied amount.')
+                                    ->send();
+                                return;
+                            }
+
                             // Check if group has sufficient funds
                             $group = $record->member->group;
                             $groupTransactionService = app(\App\Services\GroupTransactionService::class);
                             $bankAccount = $groupTransactionService->getGroupAccount($group, 'bank');
                             $currentBalance = $groupTransactionService->getGroupAccountBalance($bankAccount);
-                            
+
                             // Calculate loan charges to determine actual disbursement amount
                             $attributes = $record->all_attributes;
                             $loanCharges = (float) ($attributes['loan_charges']['value'] ?? 0);
                             $applyChargesOnIssuance = config('repayment_priority.charges.apply_on_issuance', true);
                             $deductFromPrincipal = config('repayment_priority.charges.deduct_from_principal', false);
-                            // dd($applyChargesOnIssuance, $loanCharges, $deductFromPrincipal);
-                            $netDisbursement = $record->principal_amount;
-                            if ($applyChargesOnIssuance && $loanCharges > 0 && $deductFromPrincipal) {
-                                $netDisbursement = $record->principal_amount - $loanCharges;
+
+                            // Calculate charges based on approved amount (proportional if amount was reduced)
+                            $chargeRatio = $appliedAmount > 0 ? ($approvedAmount / $appliedAmount) : 1;
+                            $adjustedLoanCharges = $loanCharges * $chargeRatio;
+
+                            $netDisbursement = $approvedAmount;
+                            if ($applyChargesOnIssuance && $adjustedLoanCharges > 0 && $deductFromPrincipal) {
+                                $netDisbursement = $approvedAmount - $adjustedLoanCharges;
                             }
-                            // dd($netDisbursement);
+
                             // Check if group has sufficient funds
                             if ($currentBalance < $netDisbursement) {
                                 \Filament\Notifications\Notification::make()
@@ -274,46 +311,64 @@ class LoanResource extends Resource implements HasShieldPermissions
                                     ->send();
                                 return;
                             }
-                            
-                            LoanAmortizationSchedule::generateSchedule($record);
+
+                            // Update loan with approved amount
+                            // Recalculate interest and repayment amounts based on approved amount
+                            $interestRate = $record->interest_rate;
+                            $loanDuration = $record->loan_duration;
+                            $interestAmount = ($approvedAmount * $interestRate * $loanDuration) / 100;
+                            $repaymentAmount = $approvedAmount + $interestAmount;
+
                             $record->update([
                                 'status' => 'Approved',
                                 'approved_by' => Auth::id(),
                                 'approved_at' => now(),
+                                'applied_amount' => $appliedAmount, // Store original applied amount
+                                'principal_amount' => $approvedAmount, // Update to approved amount
+                                'interest_amount' => $interestAmount,
+                                'repayment_amount' => $repaymentAmount,
                             ]);
 
-                            // Create transactions only when loan is approved
-                            static::createLoanTransactions($record);
+                            // Generate amortization schedule with approved amount
+                            LoanAmortizationSchedule::generateSchedule($record);
 
-                            // Generate amortization schedule
-                            // LoanAmortizationSchedule::generateSchedule($record);
+                            // Create transactions only when loan is approved (using approved amount)
+                            static::createLoanTransactions($record);
 
                             \Filament\Notifications\Notification::make()
                                 ->success()
                                 ->title('Loan Approved')
-                                ->body('The loan has been approved, transactions created, and amortization schedule generated.')
+                                ->body('The loan has been approved with amount ' . number_format($approvedAmount, 2) . ', transactions created, and amortization schedule generated.')
                                 ->send();
                         }),
-                        
+
                     Action::make('reject')
                         ->label('Reject')
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
                         ->visible(fn(Loan $record): bool => $record->status === 'Pending Approval' && Gate::allows('reject_loan'))
-                        ->requiresConfirmation()
-                        ->modalHeading('Reject Loan')
-                        ->modalDescription('Are you sure you want to reject this loan application?')
-                        ->action(function (Loan $record) {
+                        ->form([
+                            Forms\Components\Textarea::make('rejection_reason')
+                                ->label('Rejection Reason')
+                                ->placeholder('Please provide a reason for rejecting this loan application...')
+                                ->required()
+                                ->rows(4)
+                                ->columnSpanFull(),
+                        ])
+                        ->modalHeading('Reject Loan Application')
+                        ->modalDescription('Please provide a reason for rejecting this loan application.')
+                        ->action(function (Loan $record, array $data) {
                             $record->update([
                                 'status' => 'Rejected',
-                                'approved_by' => Auth::id(),
-                                'approved_at' => now(),
+                                'rejected_by' => Auth::id(),
+                                'rejected_at' => now(),
+                                'rejection_reason' => $data['rejection_reason'] ?? '',
                             ]);
 
                             \Filament\Notifications\Notification::make()
                                 ->success()
                                 ->title('Loan Rejected')
-                                ->body('The loan application has been rejected.')
+                                ->body('The loan application has been rejected with the provided reason.')
                                 ->send();
                         }),
 
@@ -321,7 +376,7 @@ class LoanResource extends Resource implements HasShieldPermissions
                         ->label('Complete Application')
                         ->icon('heroicon-o-pencil-square')
                         ->color('warning')
-                        ->visible(fn(Loan $record): bool => !$record->is_completed && $record->status === 'Incomplete Application')
+                        ->visible(fn(Loan $record): bool => !$record->is_completed)
                         ->url(fn(Loan $record): string => route('filament.admin.pages.loan-application', ['loan_id' => $record->id])),
 
                     Action::make('reverse_reject')
@@ -428,13 +483,13 @@ class LoanResource extends Resource implements HasShieldPermissions
     /**
      * Create transactions when loan is approved
      */
-    private static function createLoanTransactions(Loan $loan)
+    public static function createLoanTransactions(Loan $loan)
     {
         $attributes = $loan->all_attributes;
         $loanCharges = (float) ($attributes['loan_charges']['value'] ?? 0);
         $applyChargesOnIssuance = config('repayment_priority.charges.apply_on_issuance', true);
         $deductFromPrincipal = config('repayment_priority.charges.deduct_from_principal', false);
-        
+
         // Calculate net disbursement amount
         $netDisbursement = $loan->principal_amount;
         if ($applyChargesOnIssuance && $loanCharges > 0) {

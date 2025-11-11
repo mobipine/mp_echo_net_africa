@@ -30,13 +30,20 @@ class DocsMetaResource extends Resource
                 Forms\Components\TextInput::make('name')
                     ->required()
                     ->maxLength(255),
-                //make a select for tags
+                //make a multi-select for tags
                 Forms\Components\Select::make('tags')
+                    ->label('Tags')
                     ->options([
                         'member_kyc' => 'Member KYC',
-                        'loan_application' => 'Loan Application',  
+                        'loan_application' => 'Loan Application',
+                        'collaterals' => 'Collaterals',
                     ])
-                    ->required(),
+                    ->multiple()
+                    ->searchable()
+                    ->preload()
+                    ->native(false)
+                    ->required()
+                    ->helperText('Select one or more tags for this document type'),
                 Forms\Components\Select::make('expiry')
                     ->options([
                         'yes' => 'Yes',
@@ -48,7 +55,7 @@ class DocsMetaResource extends Resource
                 Forms\Components\TextInput::make('max_file_count')
                     ->required()
                     ->maxLength(255),
-                    
+
             ]);
     }
 
@@ -56,11 +63,39 @@ class DocsMetaResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('name'),
-                Tables\Columns\TextColumn::make('tags'),
-                Tables\Columns\TextColumn::make('expiry'),
-                Tables\Columns\TextColumn::make('description'),
-                Tables\Columns\TextColumn::make('max_file_count'),
+                Tables\Columns\TextColumn::make('name')
+                    ->searchable()
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('tags')
+                    ->label('Tags')
+                    ->formatStateUsing(function ($state) {
+                        if (empty($state)) {
+                            return new \Illuminate\Support\HtmlString('<span class="text-gray-400">—</span>');
+                        }
+                        $tagLabels = [
+                            'member_kyc' => 'Member KYC',
+                            'loan_application' => 'Loan Application',
+                            'collaterals' => 'Collaterals',
+                        ];
+
+                        $tags = is_array($state) ? $state : [$state];
+                        $badges = collect($tags)->map(function ($tag) use ($tagLabels) {
+                            $label = $tagLabels[$tag] ?? $tag;
+                            return '<span class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">' . htmlspecialchars($label) . '</span>';
+                        })->join(' ');
+
+                        return new \Illuminate\Support\HtmlString($badges);
+                    })
+                    ->searchable(),
+
+                //display the tags as badges
+
+                Tables\Columns\TextColumn::make('description')
+                    ->limit(50)
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('max_file_count')
+                    ->label('Max Files')
+                    ->sortable(),
             ])
             ->filters([
                 //
@@ -102,6 +137,6 @@ class DocsMetaResource extends Resource
     {
         return 'Document Management';
     }
-    
-    
+
+
 }

@@ -26,6 +26,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Filament\Support\RawJs;
+use Filament\Support\Exceptions\Halt;
 use Carbon\Carbon;
 
 class LoanApplication extends Page implements HasForms
@@ -37,6 +38,10 @@ class LoanApplication extends Page implements HasForms
     protected static ?string $title = 'Loan Application';
     protected static ?string $navigationLabel = 'Loan Application';
     protected static ?string $navigationGroup = 'Loan Management';
+
+    public bool $showKycModal = false;
+    public array $missingKycDocs = [];
+    public ?int $kycMemberId = null;
 
     public ?array $data = [];
 
@@ -72,6 +77,7 @@ class LoanApplication extends Page implements HasForms
     public function form(Form $form): Form
     {
         return $form
+            ->disabled(fn() => $this->showKycModal)
             ->schema([
                 Wizard::make([
                     Wizard\Step::make('Group & Member Selection')
@@ -91,9 +97,51 @@ class LoanApplication extends Page implements HasForms
                         ->schema($this->getStepFourSchema()),
                 ])
                     ->nextAction(
-                        fn(Action $action) => $action->action(function () {
-                            $this->saveSessionData();
-                        })
+                        fn(Action $action) => $action
+                            ->disabled(fn() => $this->showKycModal)
+                            ->action(function (Forms\Get $get) {
+                                // Prevent progression if KYC modal is showing
+                                if ($this->showKycModal) {
+                                    throw new Halt();
+                                }
+
+                                // Check KYC documents before allowing progression from step 2
+                                $currentStep = $this->form->getWizardCurrentStep();
+                                if ($currentStep === 1) { // Step 2 (0-indexed)
+                                    $memberId = $get('member_id');
+                                    $loanProductId = $get('loan_product_id');
+
+                                    if ($memberId && $loanProductId) {
+                                        $member = Member::find($memberId);
+                                        $loanProduct = LoanProduct::with('LoanProductAttributes')->find($loanProductId);
+
+                                        if ($member && $loanProduct) {
+                                            // Get attachments_required attribute
+                                            $attachmentsAttr = LoanAttribute::where('slug', 'attachments_required')->first();
+                                            if ($attachmentsAttr) {
+                                                $loanProductAttr = $loanProduct->LoanProductAttributes
+                                                    ->where('loan_attribute_id', $attachmentsAttr->id)
+                                                    ->first();
+
+                                                if ($loanProductAttr && $loanProductAttr->value) {
+                                                    $requiredDocTypes = json_decode($loanProductAttr->value, true);
+                                                    if (is_array($requiredDocTypes) && !empty($requiredDocTypes)) {
+                                                        $memberDocTypes = $member->kycDocuments()->pluck('document_type')->toArray();
+                                                        $missingDocs = array_diff($requiredDocTypes, $memberDocTypes);
+
+                                                        if (!empty($missingDocs)) {
+                                                            // Prevent wizard progression
+                                                            throw new Halt();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                $this->saveSessionData();
+                            })
                     )
                     ->previousAction(
                         fn(Action $action) => $action->action(function () {
@@ -147,7 +195,7 @@ class LoanApplication extends Page implements HasForms
                         $set('national_id', null);
                         $set('gender', null);
                         $set('marital_status', null);
-                        $this->dispatch('form-updated');
+                        // $this->dispatch('form-updated');
                     })
                     ->required()
                     ->columnSpan(2),
@@ -167,9 +215,16 @@ class LoanApplication extends Page implements HasForms
                     ->live()
                     ->native(false)
                     ->searchable()
-                    ->afterStateUpdated(function ($state, Forms\Set $set) {
+                    ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
                         $this->fillMemberDetails($set, $state);
                         $this->updateLoanNumber($set, $state);
+                        // Update max loan amount when member is selected (group might have changed)
+                        $maxLoanAmount = $this->getMaxLoanAmount($set, $get);
+                        if ($maxLoanAmount !== null) {
+                            $set('max_loan_amount', number_format($maxLoanAmount, 2));
+                        }
+                        // Check KYC documents when member is selected
+                        // $this->checkKycDocuments($get, $set);
                         $this->dispatch('form-updated');
                     })
                     ->required()
@@ -232,11 +287,15 @@ class LoanApplication extends Page implements HasForms
                     ->native(false)
                     ->options(LoanProduct::all()->pluck('name', 'id')->toArray())
                     ->live()
-                    ->afterStateUpdated(function ($state, Forms\Set $set) {
+                    ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
                         if ($state) {
+                            // Check KYC documents immediately when loan product is selected
+                            $this->checkKycDocumentsAndNotify($get, $set);
+
+                            // dd($state, $get("all_member_guarantors"));
                             $loanProduct = LoanProduct::with('LoanProductAttributes')->find($state);
                             if ($loanProduct) {
-                                $this->setLoanAttributes($set, $loanProduct);
+                                $this->setLoanAttributes($set, $loanProduct, $get);
                             }
                         }
                         $this->dispatch('form-updated');
@@ -391,118 +450,23 @@ class LoanApplication extends Page implements HasForms
                 ->content('✓ No guarantors are required for this loan product.')
                 ->visible(fn(Forms\Get $get) => !$this->checkGuarantorsRequired($get)),
 
-            // All Members Guarantee Section
+            // // All Members Guarantee Section - All group members act as guarantors
             // Section::make('All Group Members as Guarantors')
-            //     ->description('All group members must guarantee this loan. The total guaranteed amount must equal the loan amount.')
+            //     ->description('All group members must guarantee this loan. The principal amount is shared equally among all members.')
             //     ->visible(
             //         fn(Forms\Get $get) =>
-            //         $this->checkGuarantorsRequired($get) &&
-            //             $this->checkAllMembersGuarantee($get)
+            //         $this->checkGuarantorsRequired($get)
             //     )
             //     ->schema([
-            //         Placeholder::make('guarantee_summary')
-            //             ->label('')
-            //             ->content(function (Forms\Get $get) {
-            //                 $principalAmount = (float) str_replace(',', '', $get('principal_amount') ?? 0);
-            //                 $guarantors = $get('all_member_guarantors') ?? [];
-            //                 $totalGuaranteed = collect($guarantors)->sum(fn($g) => (float) str_replace(',', '', $g['amount'] ?? 0));
-            //                 $remaining = $principalAmount - $totalGuaranteed;
-            //                 $count = count($guarantors);
-
-            //                 $isValid = abs($remaining) < 0.01;
-            //                 $status = $isValid ? '✓ Complete' : '⚠ Incomplete';
-            //                 $bgColor = $isValid ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800';
-            //                 $textColor = $isValid ? 'text-success-600 dark:text-success-400' : 'text-warning-600 dark:text-warning-400';
-
-            //                 return new \Illuminate\Support\HtmlString(
-            //                     "<div class='p-4 rounded-lg border {$bgColor}'>
-            //                                 <div class='flex justify-between items-center mb-3'>
-            //                                     <span class='font-semibold text-sm'>Loan Amount:</span>
-            //                                     <span class='text-lg font-bold'>KSh " . number_format($principalAmount, 2) . "</span>
-            //                                 </div>
-            //                                 <div class='flex justify-between items-center mb-3'>
-            //                                     <span class='font-semibold text-sm'>Number of Guarantors:</span>
-            //                                     <span class='text-lg font-bold'>" . $count . " members</span>
-            //                                 </div>
-            //                                 <div class='flex justify-between items-center mb-3'>
-            //                                     <span class='font-semibold text-sm'>Total Guaranteed:</span>
-            //                                     <span class='text-lg font-bold'>KSh " . number_format($totalGuaranteed, 2) . "</span>
-            //                                 </div>
-            //                                 <div class='flex justify-between items-center pt-3 border-t border-gray-300 dark:border-gray-600'>
-            //                                     <span class='font-semibold text-sm'>Status:</span>
-            //                                     <span class='font-bold {$textColor}'>{$status}</span>
-            //                                 </div>
-            //                                 <div class='flex justify-between items-center mt-2'>
-            //                                     <span class='font-semibold text-sm'>" . ($remaining > 0 ? 'Remaining to assign:' : 'Amount over-allocated:') . "</span>
-            //                                     <span class='text-lg font-bold {$textColor}'>KSh " . number_format(abs($remaining), 2) . "</span>
-            //                                 </div>
-            //                             </div>"
-            //                 );
-            //             }),
-
-            //         Repeater::make('all_member_guarantors')
-            //             ->label('')
-            //             ->schema([
-            //                 Grid::make(3)->schema([
-            //                     Select::make('member_id')
-            //                         ->label('Member')
-            //                         ->options(function (Forms\Get $get) {
-            //                             $groupId = $get('../../group_id');
-            //                             $currentMemberId = $get('../../member_id');
-            //                             if (!$groupId) {
-            //                                 return [];
-            //                             }
-            //                             return Member::where('group_id', $groupId)
-            //                                 ->where('id', '!=', $currentMemberId)
-            //                                 ->get()
-            //                                 ->pluck('name', 'id')
-            //                                 ->toArray();
-            //                         })
-            //                         ->required()
-            //                         ->disabled()
-            //                         ->dehydrated(),
-
-            //                     TextInput::make('name')
-            //                         ->label('Member Name')
-            //                         ->readOnly()
-            //                         ->dehydrated(),
-
-            //                     TextInput::make('amount')
-            //                         ->label('Guaranteed Amount')
-            //                         ->numeric()
-            //                         ->required()
-            //                         ->live(onBlur: true)
-            //                         ->afterStateUpdated(function () {
-            //                             $this->dispatch('form-updated');
-            //                         })
-            //                         ->mask(RawJs::make('$money($input)'))
-            //                         ->stripCharacters(',')
-            //                         ->helperText('Enter the amount this member will guarantee'),
-            //                 ]),
-            //             ])
-            //             ->default(function (Forms\Get $get) {
-            //                 return $this->getDefaultAllMemberGuarantors($get);
-            //             })
-            //             ->addable(false)
-            //             ->deletable(false)
-            //             ->reorderable(false)
-            //             ->columnSpanFull(),
-            //     ]),
-
-            // Selected Members Guarantee Section
-            Section::make('Select Guarantors')
-                ->description('Choose one or more group members to guarantee this loan. The total guaranteed amount must equal the loan amount.')
-                ->visible(
-                    fn(Forms\Get $get) =>
-                    $this->checkGuarantorsRequired($get) &&
-                        !$this->checkAllMembersGuarantee($get)
-                )
-                ->schema([
-                    Placeholder::make('selected_guarantee_summary')
+                    Placeholder::make('guarantee_summary')
                         ->label('')
-                        ->content(function (Forms\Get $get) {
+                        ->content(function (Forms\Get $get, Forms\Set $set) {
+                            $all_member_guarantors = $this->getDefaultAllMemberGuarantors($get);
+                            // dd($all_member_guarantors);
+                            $set('all_member_guarantors', $all_member_guarantors);
+
                             $principalAmount = (float) str_replace(',', '', $get('principal_amount') ?? 0);
-                            $guarantors = $get('selected_guarantors') ?? [];
+                            $guarantors = $get('all_member_guarantors') ?? [];
                             $totalGuaranteed = collect($guarantors)->sum(fn($g) => (float) str_replace(',', '', $g['amount'] ?? 0));
                             $remaining = $principalAmount - $totalGuaranteed;
                             $count = count($guarantors);
@@ -512,6 +476,8 @@ class LoanApplication extends Page implements HasForms
                             $bgColor = $isValid ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800';
                             $textColor = $isValid ? 'text-success-600 dark:text-success-400' : 'text-warning-600 dark:text-warning-400';
 
+                            // dd($all_member_guarantors);
+
                             return new \Illuminate\Support\HtmlString(
                                 "<div class='p-4 rounded-lg border {$bgColor}'>
                                             <div class='flex justify-between items-center mb-3'>
@@ -519,8 +485,8 @@ class LoanApplication extends Page implements HasForms
                                                 <span class='text-lg font-bold'>KSh " . number_format($principalAmount, 2) . "</span>
                                             </div>
                                             <div class='flex justify-between items-center mb-3'>
-                                                <span class='font-semibold text-sm'>Guarantors Selected:</span>
-                                                <span class='text-lg font-bold'>" . $count . "</span>
+                                                <span class='font-semibold text-sm'>Number of Guarantors:</span>
+                                                <span class='text-lg font-bold'>" . count($all_member_guarantors) . " members</span>
                                             </div>
                                             <div class='flex justify-between items-center mb-3'>
                                                 <span class='font-semibold text-sm'>Total Guaranteed:</span>
@@ -538,114 +504,130 @@ class LoanApplication extends Page implements HasForms
                             );
                         }),
 
-                    Repeater::make('selected_guarantors')
-                        ->label('Add Guarantors')
+                    Repeater::make('all_member_guarantors')
+                        ->label('Group Members (All members are guarantors)')
                         ->schema([
                             Grid::make(3)->schema([
-                                Select::make('member_id')
-                                    ->label('Select Member')
-                                    ->options(function (Forms\Get $get) {
-                                        $groupId = $get('../../group_id');
-                                        $currentMemberId = $get('../../member_id');
-                                        $selectedGuarantors = collect($get('../../selected_guarantors') ?? [])
-                                            ->pluck('member_id')
-                                            ->filter()
-                                            ->toArray();
-
-                                        if (!$groupId) {
-                                            return [];
-                                        }
-
-                                        return Member::where('group_id', $groupId)
-                                            ->where('id', '!=', $currentMemberId)
-                                            ->whereNotIn('id', $selectedGuarantors)
-                                            ->get()
-                                            ->pluck('name', 'id')
-                                            ->toArray();
-                                    })
-                                    ->required()
-                                    ->live()
-                                    ->afterStateUpdated(function ($state, Forms\Set $set) {
-                                        if ($state) {
-                                            $member = Member::find($state);
-                                            if ($member) {
-                                                $set('name', $member->name);
-                                                $set('phone', $member->phone);
-                                                $set('national_id', $member->national_id);
-                                            }
-                                        }
-                                        $this->dispatch('form-updated');
-                                    })
-                                    ->searchable()
-                                    ->native(false),
+                                TextInput::make('member_id')
+                                    ->label('Member ID')
+                                    ->disabled()
+                                    ->dehydrated(),
 
                                 TextInput::make('name')
                                     ->label('Member Name')
                                     ->readOnly()
+                                    ->disabled()
                                     ->dehydrated(),
 
                                 TextInput::make('amount')
                                     ->label('Guaranteed Amount')
                                     ->numeric()
-                                    ->required()
-                                    ->live(onBlur: true)
-                                    ->afterStateUpdated(function () {
-                                        $this->dispatch('form-updated');
-                                    })
+                                    ->readOnly()
+                                    ->disabled()
+                                    ->dehydrated()
                                     ->mask(RawJs::make('$money($input)'))
                                     ->stripCharacters(',')
-                                    ->helperText('Enter the amount this member will guarantee'),
-
-                                Forms\Components\Hidden::make('phone'),
-                                Forms\Components\Hidden::make('national_id'),
+                                    ->helperText('Amount is automatically calculated and shared equally'),
                             ]),
                         ])
-                        ->defaultItems(0)
-                        ->addActionLabel('Add Guarantor')
+                        ->addable(false)
+                        ->deletable(false)
                         ->reorderable(false)
                         ->columnSpanFull(),
-                ]),
+                // ]),
+
+
 
         ];
     }
 
     protected function getStepFourSchema(): array
     {
-      
-            return [
-                Section::make('Select Guarantors')
-                ->description('Choose one or more group members to guarantee this loan. The total guaranteed amount must equal the loan amount.')
-                    ->visible(
-                        fn(Forms\Get $get) =>
-                        $this->checkCollateralsRequired($get)
-                    )
-                ->schema([
-                    Placeholder::make('selected_guarantee_summary')
-                        ->label('')
-                        ->content(function (Forms\Get $get) {
-                            "WIP on Collaterals";
-                        }),
-                ]),
+        return [
+            ...$this->getCollateralAttachmentsSchema(),
 
-                Placeholder::make('no_collaterals')
+            Placeholder::make('no_collaterals')
                 ->label('')
                 ->content('✓ No collaterals are required for this loan product.')
                 ->visible(fn(Forms\Get $get) => !$this->checkCollateralsRequired($get)),
-            ];
-        // } else {
-        //     return [
-        //         Placeholder::make('no_collaterals')
-        //         ->label('')
-        //         ->content('✓ No collaterals are required for this loan product.')
-        //         ->visible(fn(Forms\Get $get) => !$this->isCollateralsRequired($get)),
-        //     ];
-        // }
+        ];
+    }
+
+    protected function getCollateralAttachmentsSchema(): array
+    {
+        // Return fields directly without any wrapper
+        // The fields will be dynamically generated based on loan product requirements
+        return [
+            Forms\Components\Group::make()
+                ->schema(function (Forms\Get $get) {
+                    return $this->buildCollateralFields($get);
+                })
+                ->visible(fn(Forms\Get $get) => $this->checkCollateralsRequired($get))
+                ->columnSpanFull(),
+        ];
+    }
+
+    protected function buildCollateralFields(Forms\Get $get): array
+    {
+        if (!$this->checkCollateralsRequired($get)) {
+            return [];
+        }
+
+        $loanProductId = $get('loan_product_id');
+        if (!$loanProductId) {
+            return [];
+        }
+
+        $loanProduct = LoanProduct::with('LoanProductAttributes')->find($loanProductId);
+        if (!$loanProduct) {
+            return [];
+        }
+
+        // Get collateral_attachments_required attribute
+        $collateralAttr = LoanAttribute::where('slug', 'collateral_attachments_required')->first();
+        if (!$collateralAttr) {
+            return [];
+        }
+
+        $loanProductAttr = $loanProduct->LoanProductAttributes
+            ->where('loan_attribute_id', $collateralAttr->id)
+            ->first();
+
+        if (!$loanProductAttr || !$loanProductAttr->value) {
+            return [];
+        }
+
+        $requiredDocTypes = explode(',', $loanProductAttr->value);
+        if (!is_array($requiredDocTypes) || empty($requiredDocTypes)) {
+            return [];
+        }
+
+        // Get document type names from DocsMeta
+        $docTypes = \App\Models\DocsMeta::whereIn('id', $requiredDocTypes)->get();
+
+        $fields = [];
+        foreach ($docTypes as $docType) {
+            $fields[] = Forms\Components\FileUpload::make('collateral_attachment_' . $docType->id)
+                ->label($docType->name)
+                ->directory('loan-collaterals')
+                ->visibility('public')
+                ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'])
+                ->maxSize(5120) // 5MB
+                ->required()
+                ->helperText('Upload ' . $docType->name . ' document (Required)')
+                ->dehydrated()
+                ->columnSpanFull();
+        }
+
+        return $fields;
     }
 
     protected function getListeners(): array
     {
         return [
             'form-updated' => 'saveSessionData',
+
+
         ];
     }
 
@@ -686,14 +668,19 @@ class LoanApplication extends Page implements HasForms
 
     protected function getDefaultAllMemberGuarantors(Forms\Get $get): array
     {
+        // Log::info('getDefaultAllMemberGuarantors');
         $groupId = $get('group_id');
         $currentMemberId = $get('member_id');
         $principalAmount = (float) str_replace(',', '', $get('principal_amount') ?? 0);
 
-        if (!$groupId || !$currentMemberId) {
+        if (!$groupId || !$currentMemberId || $principalAmount <= 0) {
             return [];
         }
 
+        // dd($groupId, $currentMemberId, $principalAmount);
+        // Log::info($groupId, $currentMemberId, $principalAmount);
+
+        // Get all members in the group except the loan applicant
         $members = Member::where('group_id', $groupId)
             ->where('id', '!=', $currentMemberId)
             ->get();
@@ -702,6 +689,7 @@ class LoanApplication extends Page implements HasForms
             return [];
         }
 
+        // Share the principal amount equally among all group members
         $equalAmount = $principalAmount / $members->count();
 
         return $members->map(function ($member) use ($equalAmount) {
@@ -713,8 +701,151 @@ class LoanApplication extends Page implements HasForms
         })->toArray();
     }
 
+    /**
+     * Check if member has all required KYC documents and show notification immediately
+     */
+    protected function checkKycDocumentsAndNotify(Forms\Get $get, Forms\Set $set): void
+    {
+        $memberId = $get('member_id');
+        $loanProductId = $get('loan_product_id');
+
+        if (!$memberId || !$loanProductId) {
+            return;
+        }
+
+        $member = Member::find($memberId);
+        if (!$member) {
+            return;
+        }
+
+        $loanProduct = LoanProduct::with('LoanProductAttributes')->find($loanProductId);
+        if (!$loanProduct) {
+            return;
+        }
+
+        // Get attachments_required attribute
+        $attachmentsAttr = LoanAttribute::where('slug', 'attachments_required')->first();
+        if (!$attachmentsAttr) {
+            return; // No attachments required attribute found
+        }
+
+        $loanProductAttr = $loanProduct->LoanProductAttributes
+            ->where('loan_attribute_id', $attachmentsAttr->id)
+            ->first();
+
+        if (!$loanProductAttr || !$loanProductAttr->value) {
+            return; // No attachments required for this product
+        }
+
+        // Parse the attachments_required value
+        $requiredDocTypes = is_string($loanProductAttr->value) && strpos($loanProductAttr->value, ',') !== false
+            ? explode(',', $loanProductAttr->value)
+            : json_decode($loanProductAttr->value, true);
+
+        if (!is_array($requiredDocTypes) || empty($requiredDocTypes)) {
+            return;
+        }
+
+        // Get member's uploaded KYC documents
+        $memberDocTypes = $member->kycDocuments()->pluck('document_type')->toArray();
+
+        // Check if all required documents are uploaded
+        $missingDocs = array_diff($requiredDocTypes, $memberDocTypes);
+
+        if (!empty($missingDocs)) {
+            // Set flag to disable next button and form
+            $set('kyc_incomplete', true);
+            $set('missing_kyc_docs', $missingDocs);
+
+            // Get document names for display
+            $docNames = \App\Models\DocsMeta::whereIn('id', $missingDocs)->pluck('name')->toArray();
+
+            // Set Livewire properties to show modal and disable form
+            $this->missingKycDocs = $docNames;
+            $this->kycMemberId = $memberId;
+            $this->showKycModal = true;
+        } else {
+            $set('kyc_incomplete', false);
+            $set('missing_kyc_docs', []);
+            $this->showKycModal = false;
+            $this->missingKycDocs = [];
+            $this->kycMemberId = null;
+        }
+    }
+
+    /**
+     * Check if member has all required KYC documents
+     */
+    protected function checkKycDocuments(Forms\Get $get, Forms\Set $set): void
+    {
+        $memberId = $get('member_id');
+        $loanProductId = $get('loan_product_id');
+
+        if (!$memberId || !$loanProductId) {
+            return;
+        }
+
+        $member = Member::find($memberId);
+        if (!$member) {
+            return;
+        }
+
+        $loanProduct = LoanProduct::with('LoanProductAttributes')->find($loanProductId);
+        if (!$loanProduct) {
+            return;
+        }
+
+        // Get attachments_required attribute
+        $attachmentsAttr = LoanAttribute::where('slug', 'attachments_required')->first();
+        if (!$attachmentsAttr) {
+            return; // No attachments required attribute found
+        }
+
+        $loanProductAttr = $loanProduct->LoanProductAttributes
+            ->where('loan_attribute_id', $attachmentsAttr->id)
+            ->first();
+
+        if (!$loanProductAttr || !$loanProductAttr->value) {
+            return; // No attachments required for this product
+        }
+
+        // Parse the attachments_required value
+        $requiredDocTypes = is_string($loanProductAttr->value) && strpos($loanProductAttr->value, ',') !== false
+            ? explode(',', $loanProductAttr->value)
+            : json_decode($loanProductAttr->value, true);
+
+        if (!is_array($requiredDocTypes) || empty($requiredDocTypes)) {
+            return;
+        }
+
+        // Get member's uploaded KYC documents
+        $memberDocTypes = $member->kycDocuments()->pluck('document_type')->toArray();
+
+        // Check if all required documents are uploaded
+        $missingDocs = array_diff($requiredDocTypes, $memberDocTypes);
+
+        if (!empty($missingDocs)) {
+            // Set flag to disable next button
+            $set('kyc_incomplete', true);
+            $set('missing_kyc_docs', $missingDocs);
+        } else {
+            $set('kyc_incomplete', false);
+            $set('missing_kyc_docs', []);
+        }
+    }
+
     public function submit(): void
     {
+        // Prevent submission if KYC is incomplete
+        if ($this->showKycModal) {
+            Notification::make()
+                ->title('Cannot Submit Application')
+                ->body('Please complete all required KYC documents before submitting the loan application.')
+                ->danger()
+                ->send();
+            return;
+        }
+
         $data = $this->form->getState();
 
         try {
@@ -738,14 +869,26 @@ class LoanApplication extends Page implements HasForms
                 }
             }
 
+            // Validate collaterals if required
+            $collateralsRequired = $this->checkCollateralsRequiredForData($data);
+            if ($collateralsRequired) {
+                $isValid = $this->validateCollaterals($data);
+                if (!$isValid) {
+                    return;
+                }
+            }
+
             $existingLoan = Loan::where('member_id', $data['member_id'])
                 ->where('loan_product_id', $data['loan_product_id'])
                 ->where('status', 'Incomplete Application')
                 ->first();
 
+            $principalAmount = (float) str_replace(',', '', $data['principal_amount'] ?? 0);
+
             $loanData = [
                 'loan_number' => $data['loan_number'] ?? $this->generateLoanNumber($data['member_id']),
-                'principal_amount' => (float) str_replace(',', '', $data['principal_amount'] ?? 0),
+                'principal_amount' => $principalAmount,
+                'applied_amount' => $principalAmount, // Store applied amount (same as principal initially)
                 'interest_rate' => (float) ($data['interest_rate'] ?? 0),
                 'interest_amount' => 0,
                 'repayment_amount' => (float) str_replace(',', '', $data['repayment_amount'] ?? 0),
@@ -771,9 +914,12 @@ class LoanApplication extends Page implements HasForms
                     'loan_product_id' => $data['loan_product_id'],
                 ]));
             }
-            
+
             // Save guarantors to loan_guarantors table
             $this->saveGuarantorsToDatabase($loan, $data);
+
+            // Save collateral attachments to loan_collateral_attachments table
+            $this->saveCollateralsToDatabase($loan, $data);
 
             $this->resetForm();
 
@@ -798,44 +944,29 @@ class LoanApplication extends Page implements HasForms
     protected function validateGuarantors(array $data): bool
     {
         $principalAmount = (float) str_replace(',', '', $data['principal_amount'] ?? 0);
-        $allMembersGuarantee = $this->isAllMembersGuarantee($data);
 
-        // dd($allMembersGuarantee, $data, $principalAmount);
+        // When guarantors are required, all group members are guarantors
+        $guarantors = $data['all_member_guarantors'] ?? [];
+        // dd($guarantors, $data);
 
-        if ($allMembersGuarantee) {
-            $guarantors = $data['all_member_guarantors'] ?? [];
-            $totalGuaranteed = collect($guarantors)->sum(fn($g) => (float) str_replace(',', '', $g['amount'] ?? 0));
+        if (empty($guarantors)) {
+            Notification::make()
+                ->title('Validation Error')
+                ->body('No guarantors found. Please ensure all group members are listed as guarantors.')
+                ->danger()
+                ->send();
+            return false;
+        }
 
-            if (abs($totalGuaranteed - $principalAmount) > 0.01) {
-                Notification::make()
-                    ->title('Validation Error')
-                    ->body("Total guaranteed amount (" . number_format($totalGuaranteed, 2) . ") must equal the loan amount (" . number_format($principalAmount, 2) . ").")
-                    ->danger()
-                    ->send();
-                return false;
-            }
-        } else {
-            $guarantors = $data['selected_guarantors'] ?? [];
+        $totalGuaranteed = collect($guarantors)->sum(fn($g) => (float) str_replace(',', '', $g['amount'] ?? 0));
 
-            if (empty($guarantors)) {
-                Notification::make()
-                    ->title('Validation Error')
-                    ->body('At least one guarantor is required for this loan product.')
-                    ->danger()
-                    ->send();
-                return false;
-            }
-
-            $totalGuaranteed = collect($guarantors)->sum(fn($g) => (float) str_replace(',', '', $g['amount'] ?? 0));
-
-            if (abs($totalGuaranteed - $principalAmount) > 0.01) {
-                Notification::make()
-                    ->title('Validation Error')
-                    ->body("Total guaranteed amount (" . number_format($totalGuaranteed, 2) . ") must equal the loan amount (" . number_format($principalAmount, 2) . ").")
-                    ->danger()
-                    ->send();
-                return false;
-            }
+        if (abs($totalGuaranteed - $principalAmount) > 0.01) {
+            Notification::make()
+                ->title('Validation Error')
+                ->body("Total guaranteed amount (" . number_format($totalGuaranteed, 2) . ") must equal the loan amount (" . number_format($principalAmount, 2) . ").")
+                ->danger()
+                ->send();
+            return false;
         }
 
         return true;
@@ -881,6 +1012,8 @@ class LoanApplication extends Page implements HasForms
         if (!$collateralsAttr) {
             return false;
         }
+
+        // dd($collateralsAttr);
 
         $collateralsAttr = $loanProduct->LoanProductAttributes
             ->where('loan_attribute_id', $collateralsAttr->id)
@@ -945,11 +1078,8 @@ class LoanApplication extends Page implements HasForms
         // Delete existing guarantors for this loan
         \App\Models\LoanGuarantor::where('loan_id', $loan->id)->delete();
 
-        // Get guarantors data based on selection mode
-        $allMembersGuarantee = $this->isAllMembersGuarantee($data);
-        $guarantors = $allMembersGuarantee 
-            ? ($data['all_member_guarantors'] ?? [])
-            : ($data['selected_guarantors'] ?? []);
+        // When guarantors are required, use all_member_guarantors (all group members)
+        $guarantors = $data['all_member_guarantors'] ?? [];
 
         // Save each guarantor
         foreach ($guarantors as $guarantorData) {
@@ -958,7 +1088,7 @@ class LoanApplication extends Page implements HasForms
             }
 
             $guarantorMember = Member::find($guarantorData['member_id']);
-            
+
             if ($guarantorMember) {
                 $guaranteedAmount = (float) str_replace(',', '', $guarantorData['amount']);
 
@@ -971,6 +1101,158 @@ class LoanApplication extends Page implements HasForms
                 ]);
             }
         }
+    }
+
+    /**
+     * Save collateral attachments to the loan_collateral_attachments table
+     */
+    protected function saveCollateralsToDatabase($loan, array $data): void
+    {
+        if (!$loan) {
+            return;
+        }
+
+        // Check if collaterals are required
+        if (!$this->checkCollateralsRequiredForData($data)) {
+            return;
+        }
+
+        // Delete existing collateral attachments for this loan
+        \App\Models\LoanCollateralAttachment::where('loan_id', $loan->id)->delete();
+
+        // Get loan product to find required document types
+        $loanProduct = LoanProduct::with('LoanProductAttributes')->find($data['loan_product_id'] ?? null);
+        if (!$loanProduct) {
+            return;
+        }
+
+        // Get collateral_attachments_required attribute
+        $collateralAttr = LoanAttribute::where('slug', 'collateral_attachments_required')->first();
+        if (!$collateralAttr) {
+            return;
+        }
+
+        $loanProductAttr = $loanProduct->LoanProductAttributes
+            ->where('loan_attribute_id', $collateralAttr->id)
+            ->first();
+
+        if (!$loanProductAttr || !$loanProductAttr->value) {
+            return;
+        }
+
+        $requiredDocTypes = explode(',', $loanProductAttr->value);
+        if (!is_array($requiredDocTypes) || empty($requiredDocTypes)) {
+            return;
+        }
+
+        // Save each collateral attachment
+        foreach ($requiredDocTypes as $docTypeId) {
+            $fieldName = 'collateral_attachment_' . $docTypeId;
+            $filePath = $data[$fieldName] ?? null;
+
+            if ($filePath) {
+                \App\Models\LoanCollateralAttachment::create([
+                    'loan_id' => $loan->id,
+                    'document_type' => $docTypeId,
+                    'file_path' => $filePath,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Validate that all required collateral documents are uploaded
+     */
+    protected function validateCollaterals(array $data): bool
+    {
+        $loanProductId = $data['loan_product_id'] ?? null;
+        if (!$loanProductId) {
+            return true; // No loan product selected, skip validation
+        }
+
+        $loanProduct = LoanProduct::with('LoanProductAttributes')->find($loanProductId);
+        if (!$loanProduct) {
+            return true; // Loan product not found, skip validation
+        }
+
+        // Get collateral_attachments_required attribute
+        $collateralAttr = LoanAttribute::where('slug', 'collateral_attachments_required')->first();
+        if (!$collateralAttr) {
+            return true; // No collateral attribute, skip validation
+        }
+
+        $loanProductAttr = $loanProduct->LoanProductAttributes
+            ->where('loan_attribute_id', $collateralAttr->id)
+            ->first();
+
+        if (!$loanProductAttr || !$loanProductAttr->value) {
+            return true; // No collaterals required, validation passes
+        }
+
+        $requiredDocTypes = explode(',', $loanProductAttr->value);
+        if (!is_array($requiredDocTypes) || empty($requiredDocTypes)) {
+            return true; // No document types specified, validation passes
+        }
+
+        // Check if all required documents are uploaded
+        $missingDocs = [];
+        foreach ($requiredDocTypes as $docTypeId) {
+            $fieldName = 'collateral_attachment_' . $docTypeId;
+            $filePath = $data[$fieldName] ?? null;
+
+            if (empty($filePath)) {
+                $docType = \App\Models\DocsMeta::find($docTypeId);
+                $missingDocs[] = $docType ? $docType->name : "Document Type ID: {$docTypeId}";
+            }
+        }
+
+        if (!empty($missingDocs)) {
+            Notification::make()
+                ->title('Missing Collateral Documents')
+                ->body('Please upload all required collateral documents: ' . implode(', ', $missingDocs))
+                ->danger()
+                ->send();
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if collaterals are required for the given data
+     */
+    protected function checkCollateralsRequiredForData(array $data): bool
+    {
+        $loanProductId = $data['loan_product_id'] ?? null;
+        if (!$loanProductId) {
+            return false;
+        }
+
+        $loanProduct = LoanProduct::with('LoanProductAttributes')->find($loanProductId);
+        if (!$loanProduct) {
+            return false;
+        }
+
+        $collateralsAttr = LoanAttribute::where('slug', 'is_collaterals_required')->first();
+        if (!$collateralsAttr) {
+            return false;
+        }
+
+        $collateralsAttr = $loanProduct->LoanProductAttributes
+            ->where('loan_attribute_id', $collateralsAttr->id)
+            ->first();
+
+        if (!$collateralsAttr || !$collateralsAttr->value) {
+            return false;
+        }
+
+        if ($collateralsAttr->value == "false" || $collateralsAttr->value == 0 || $collateralsAttr->value == "0") {
+            return false;
+        } elseif ($collateralsAttr->value == "true" || $collateralsAttr->value == 1 || $collateralsAttr->value == "1") {
+            return true;
+        }
+
+        return (bool) $collateralsAttr->value;
     }
 
     public function saveDraft(): void
@@ -1014,7 +1296,7 @@ class LoanApplication extends Page implements HasForms
         return 'LN' . str_pad(Loan::count() + 1, 6, '0', STR_PAD_LEFT) . ' - (' . $accountNumber . ')';
     }
 
-    public function setLoanAttributes(callable $set, $loanProduct)
+    public function setLoanAttributes(callable $set, $loanProduct, callable $get)
     {
         $attributes = $loanProduct->LoanProductAttributes;
         $arranged_attributes = [];
@@ -1031,17 +1313,66 @@ class LoanApplication extends Page implements HasForms
             ];
         }
 
-        $this->setLoanParticulars($set, $arranged_attributes);
+        // dd($arranged_attributes);
+
+        $this->setLoanParticulars($set, $arranged_attributes, $get);
     }
 
-    public function setLoanParticulars($set, $arranged_attributes)
+    public function setLoanParticulars($set, $arranged_attributes, callable $get)
     {
         foreach ($arranged_attributes as $attribute) {
-            $set(
-                $attribute['slug'],
-                (int)($attribute['value']) > 0 ? number_format($attribute['value'], 2) : $attribute['value']
-            );
+            // Special handling for max_loan_amount - check group first
+            if ($attribute['slug'] === 'max_loan_amount') {
+                // dd($arranged_attributes, "here");
+                $maxLoanAmount = $this->getMaxLoanAmount($set, $get);
+                // dd($maxLoanAmount);
+                if ($maxLoanAmount !== null) {
+                    // dd(number_format($maxLoanAmount, 2));
+                    $set('max_loan_amount', $maxLoanAmount);
+                    continue;
+                }
+            }
+
+            // $maxLoanAmount = $get('max_loan_amount') ?? null;
+            // dd($maxLoanAmount);
+
+            try {
+                $currentVal = (int)($attribute['value']);
+                $set($attribute['slug'], $currentVal > 0 ? number_format($currentVal, 2) : $attribute['value']);
+            } catch (\Exception $e) {
+                Log::error('Error setting loan attribute: ' . $e->getMessage());
+            }
+
+
         }
+    }
+
+    /**
+     * Get max loan amount - check group first, then fall back to loan attributes
+     */
+    protected function getMaxLoanAmount($set, callable $get): ?float
+    {
+        $groupId = $get('group_id') ?? null;
+        $memberId = $get('member_id') ?? null;
+
+        // If we have member_id, get group from member
+        if ($memberId && !$groupId) {
+            $member = Member::find($memberId);
+            if ($member) {
+                $groupId = $member->group_id;
+            }
+        }
+
+        // Check group's max_loan_amount first
+        if ($groupId) {
+            $group = Group::find($groupId);
+            if ($group && $group->max_loan_amount !== null) {
+                return (float) $group->max_loan_amount;
+            }
+        }
+
+        // Fall back to loan attributes (will be set in the loop)
+        return null;
     }
 
     public function calculateLoanAmounts(Forms\Set $set, $principalAmount, Forms\Get $get): void

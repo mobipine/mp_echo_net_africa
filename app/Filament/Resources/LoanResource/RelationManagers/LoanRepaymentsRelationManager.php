@@ -39,13 +39,13 @@ class LoanRepaymentsRelationManager extends RelationManager
     protected static ?string $modelLabel = 'Repayment';
 
     protected static ?string $pluralModelLabel = 'Repayments';
-    
+
     // Override the default read-only behavior when viewed from ViewRecord
     public function isReadOnly(): bool
     {
         return false; // Always allow editing regardless of parent page
     }
-       
+
 
     public function form(Form $form): Form
     {
@@ -59,13 +59,13 @@ class LoanRepaymentsRelationManager extends RelationManager
                         ->required()
                         ->minValue(0.01)
                         ->step(0.01),
-                        
+
                     DatePicker::make('repayment_date')
                         ->label('Repayment Date')
                         ->required()
                         ->default(now())
                         ->maxDate(now()),
-                        
+
                     Select::make('payment_method')
                         ->label('Payment Method')
                         ->options([
@@ -77,12 +77,12 @@ class LoanRepaymentsRelationManager extends RelationManager
                         ])
                         ->required()
                         ->native(false),
-                        
+
                     TextInput::make('reference_number')
                         ->label('Reference Number')
                         ->maxLength(255)
                         ->placeholder('Transaction reference or receipt number'),
-                        
+
                     Textarea::make('notes')
                         ->label('Notes')
                         ->rows(3)
@@ -108,12 +108,12 @@ class LoanRepaymentsRelationManager extends RelationManager
                     ->money('KES')
                     ->weight('bold')
                     ->sortable(),
-                    
+
                 TextColumn::make('repayment_date')
                     ->label('Date')
                     ->date('M j, Y')
                     ->sortable(),
-                    
+
                 BadgeColumn::make('payment_method')
                     ->label('Payment Method')
                     ->colors([
@@ -131,13 +131,13 @@ class LoanRepaymentsRelationManager extends RelationManager
                         'other' => 'Other',
                         default => ucfirst(str_replace('_', ' ', $state)),
                     }),
-                    
+
                 TextColumn::make('reference_number')
                     ->label('Reference')
                     ->searchable()
                     ->placeholder('N/A')
                     ->toggleable(),
-                    
+
                 TextColumn::make('notes')
                     ->label('Notes')
                     ->limit(30)
@@ -147,7 +147,7 @@ class LoanRepaymentsRelationManager extends RelationManager
                     })
                     ->placeholder('No notes')
                     ->toggleable(isToggledHiddenByDefault: true),
-                    
+
                 TextColumn::make('created_at')
                     ->label('Recorded')
                     ->dateTime('M j, Y g:i A')
@@ -164,7 +164,7 @@ class LoanRepaymentsRelationManager extends RelationManager
                         'cheque' => 'Cheque',
                         'other' => 'Other',
                     ]),
-                    
+
                 Filter::make('repayment_date')
                     ->form([
                         DatePicker::make('from')
@@ -183,71 +183,71 @@ class LoanRepaymentsRelationManager extends RelationManager
                                 fn (Builder $query, $date): Builder => $query->whereDate('repayment_date', '<=', $date),
                             );
                     }),
-                    
+
                 Filter::make('recent')
                     ->label('Recent (Last 30 days)')
                     ->query(fn (Builder $query): Builder => $query->where('repayment_date', '>=', now()->subDays(30))),
             ])
             ->headerActions([])
             ->actions([
-                ActionGroup::make([
+                // ActionGroup::make([
                     ViewAction::make()
                         ->label('View Details')
                         ->icon('heroicon-o-eye')
                         ->modalHeading(fn ($record) => 'Repayment Details - KES ' . number_format($record->amount, 2)),
-                        
-                    EditAction::make()
-                    //TODO: create a custom permission for this action
-                        ->label('Edit Repayment')
-                        ->icon('heroicon-o-pencil')
-                        ->modalHeading('Edit Repayment')
-                        ->modalSubmitActionLabel('Update Repayment')
-                        ->mutateFormDataUsing(function (array $data, $record): array {
-                            // Store the original amount for comparison
-                            $data['original_amount'] = $record->amount;
-                            return $data;
-                        })
-                        ->using(function (Model $record, array $data): Model {
-                            $originalAmount = $record->amount;
-                            $newAmount = (float) $data['amount'];
-                            $difference = $newAmount - $originalAmount;
-                            
-                            // Remove the temporary field before updating
-                            unset($data['original_amount']);
-                            
-                            // Update the repayment record
-                            $record->update($data);
-                            
-                            // If there's a difference, create adjustment transactions
-                            if ($difference != 0) {
-                                $this->createAdjustmentTransactions($record, $difference, $originalAmount, $newAmount);
-                            }
-                            
-                            // Check and update loan status if needed
-                            $this->updateLoanStatusIfNeeded($record);
-                            
-                            return $record;
-                        })
-                        ->after(function ($record) {
-                            $loan = $record->loan ?? $this->ownerRecord;
-                            $loan->refresh();
-                            
-                            $message = 'The repayment has been updated successfully.';
-                            
-                            // Add status change notification if applicable
-                            if ($loan->status === 'Approved' && $loan->remaining_balance > 0) {
-                                $message .= ' Note: The loan status has been reverted from "Fully Repaid" to "Approved" due to outstanding balance.';
-                            } elseif ($loan->status === 'Fully Repaid' && $loan->remaining_balance <= 0) {
-                                $message .= ' Note: The loan status has been updated to "Fully Repaid".';
-                            }
-                            
-                            Notification::make()
-                                ->title('Repayment Updated')
-                                ->body($message)
-                                ->success()
-                                ->send();
-                        }),
-                        
+
+                    // EditAction::make()
+                    // //TODO: create a custom permission for this action
+                    //     ->label('Edit Repayment')
+                    //     ->icon('heroicon-o-pencil')
+                    //     ->modalHeading('Edit Repayment')
+                    //     ->modalSubmitActionLabel('Update Repayment')
+                    //     ->mutateFormDataUsing(function (array $data, $record): array {
+                    //         // Store the original amount for comparison
+                    //         $data['original_amount'] = $record->amount;
+                    //         return $data;
+                    //     })
+                    //     ->using(function (Model $record, array $data): Model {
+                    //         $originalAmount = $record->amount;
+                    //         $newAmount = (float) $data['amount'];
+                    //         $difference = $newAmount - $originalAmount;
+
+                    //         // Remove the temporary field before updating
+                    //         unset($data['original_amount']);
+
+                    //         // Update the repayment record
+                    //         $record->update($data);
+
+                    //         // If there's a difference, create adjustment transactions
+                    //         if ($difference != 0) {
+                    //             $this->createAdjustmentTransactions($record, $difference, $originalAmount, $newAmount);
+                    //         }
+
+                    //         // Check and update loan status if needed
+                    //         $this->updateLoanStatusIfNeeded($record);
+
+                    //         return $record;
+                    //     })
+                    //     ->after(function ($record) {
+                    //         $loan = $record->loan ?? $this->ownerRecord;
+                    //         $loan->refresh();
+
+                    //         $message = 'The repayment has been updated successfully.';
+
+                    //         // Add status change notification if applicable
+                    //         if ($loan->status === 'Approved' && $loan->remaining_balance > 0) {
+                    //             $message .= ' Note: The loan status has been reverted from "Fully Repaid" to "Approved" due to outstanding balance.';
+                    //         } elseif ($loan->status === 'Fully Repaid' && $loan->remaining_balance <= 0) {
+                    //             $message .= ' Note: The loan status has been updated to "Fully Repaid".';
+                    //         }
+
+                    //         Notification::make()
+                    //             ->title('Repayment Updated')
+                    //             ->body($message)
+                    //             ->success()
+                    //             ->send();
+                    //     }),
+
                     // DeleteAction::make()
                     //     ->label('Delete Repayment')
                     //     ->icon('heroicon-o-trash')
@@ -266,12 +266,12 @@ class LoanRepaymentsRelationManager extends RelationManager
                     //             ->success()
                     //             ->send();
                     //     }),
-                ])
-                ->label('Actions')
-                ->icon('heroicon-m-ellipsis-vertical')
-                ->size('sm')
-                ->color('gray')
-                ->button(),
+                // ])
+                // ->label('Actions')
+                // ->icon('heroicon-m-ellipsis-vertical')
+                // ->size('sm')
+                // ->color('gray')
+                // ->button(),
             ])
             ->bulkActions([
                 BulkActionGroup::make([
@@ -308,10 +308,10 @@ class LoanRepaymentsRelationManager extends RelationManager
     private function createAdjustmentTransactions($repayment, float $difference, float $originalAmount, float $newAmount): void
     {
         $loan = $repayment->loan ?? $this->ownerRecord;
-        $adjustmentDescription = "Repayment adjustment: KES " . number_format($originalAmount, 2) . 
-                               " → KES " . number_format($newAmount, 2) . 
+        $adjustmentDescription = "Repayment adjustment: KES " . number_format($originalAmount, 2) .
+                               " → KES " . number_format($newAmount, 2) .
                                " (Difference: KES " . number_format(abs($difference), 2) . ")";
-        
+
         try {
             if ($difference > 0) {
                 // Increase in repayment amount - create additional transactions
@@ -328,23 +328,23 @@ class LoanRepaymentsRelationManager extends RelationManager
             ]);
         }
     }
-    
+
     /**
      * Create additional repayment transactions for increased amount
      */
     private function createAdditionalRepaymentTransactions($repayment, float $amount, string $description): void
     {
         $loan = $repayment->loan ?? $this->ownerRecord;
-        
+
         // Get account info from loan product, fallback to config
         $bankAccountName = $this->getAccountNameFromLoanProduct($loan, 'bank') ?? config('repayment_priority.accounts.bank');
         $bankAccountNumber = $this->getAccountNumberFromLoanProduct($loan, 'bank');
-        
+
         // For fully repaid loans, we need to determine what the additional amount should go to
         // Since the loan is fully repaid, any additional payment should go to principal
         $loansReceivableName = $this->getAccountNameFromLoanProduct($loan, 'loans_receivable') ?? config('repayment_priority.accounts.loans_receivable');
         $loansReceivableNumber = $this->getAccountNumberFromLoanProduct($loan, 'loans_receivable');
-        
+
         // Create principal payment transactions for the additional amount
         Transaction::create([
             'account_name' => $bankAccountName,
@@ -358,7 +358,7 @@ class LoanRepaymentsRelationManager extends RelationManager
             'transaction_date' => $repayment->repayment_date,
             'description' => $description,
         ]);
-        
+
         Transaction::create([
             'account_name' => $loansReceivableName,
             'account_number' => $loansReceivableNumber,
@@ -372,23 +372,23 @@ class LoanRepaymentsRelationManager extends RelationManager
             'description' => $description,
         ]);
     }
-    
+
     /**
      * Create reversal transactions for decreased amount
      */
     private function createReversalTransactions($repayment, float $amount, string $description): void
     {
         $loan = $repayment->loan ?? $this->ownerRecord;
-        
+
         // Get account info from loan product, fallback to config
         $bankAccountName = $this->getAccountNameFromLoanProduct($loan, 'bank') ?? config('repayment_priority.accounts.bank');
         $bankAccountNumber = $this->getAccountNumberFromLoanProduct($loan, 'bank');
-        
+
         // For reversal transactions, we need to reverse the principal payment
         // This will create an outstanding balance on the loan
         $loansReceivableName = $this->getAccountNameFromLoanProduct($loan, 'loans_receivable') ?? config('repayment_priority.accounts.loans_receivable');
         $loansReceivableNumber = $this->getAccountNumberFromLoanProduct($loan, 'loans_receivable');
-        
+
         // Create principal reversal transactions
         Transaction::create([
             'account_name' => $bankAccountName,
@@ -402,7 +402,7 @@ class LoanRepaymentsRelationManager extends RelationManager
             'transaction_date' => $repayment->repayment_date,
             'description' => $description,
         ]);
-        
+
         Transaction::create([
             'account_name' => $loansReceivableName,
             'account_number' => $loansReceivableNumber,
@@ -416,21 +416,21 @@ class LoanRepaymentsRelationManager extends RelationManager
             'description' => $description,
         ]);
     }
-    
+
     /**
      * Update loan status if needed after repayment edit
      */
     private function updateLoanStatusIfNeeded($repayment): void
     {
         $loan = $repayment->loan ?? $this->ownerRecord;
-        
+
         // Refresh the loan to get updated outstanding balance
         $loan->refresh();
-        
+
         // Check if loan was fully repaid and now has outstanding balance
         if ($loan->status === 'Fully Repaid' && $loan->remaining_balance > 0) {
             $loan->update(['status' => 'Approved']);
-            
+
             Log::info('Loan status reverted from Fully Repaid to Approved', [
                 'loan_id' => $loan->id,
                 'repayment_id' => $repayment->id,
@@ -440,7 +440,7 @@ class LoanRepaymentsRelationManager extends RelationManager
         // Check if loan is now fully repaid after increase
         elseif ($loan->status === 'Approved' && $loan->remaining_balance <= 0) {
             $loan->update(['status' => 'Fully Repaid']);
-            
+
             Log::info('Loan status updated to Fully Repaid', [
                 'loan_id' => $loan->id,
                 'repayment_id' => $repayment->id,

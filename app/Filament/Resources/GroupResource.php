@@ -17,11 +17,11 @@ class GroupResource extends Resource
     protected static ?string $model = Group::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
-    
+
     protected static ?string $navigationLabel = 'Groups';
-    
+
     // protected static ?string $navigationGroup = 'Group Management';
-    
+
     protected static ?int $navigationSort = 3;
 
     public static function form(Form $form): Form
@@ -33,37 +33,46 @@ class GroupResource extends Resource
                         Forms\Components\TextInput::make('name')
                             ->required()
                             ->maxLength(255),
-                        
+
                         Forms\Components\TextInput::make('email')
                             ->email()
                             ->maxLength(255),
-                        
+
                         Forms\Components\TextInput::make('phone_number')
                             ->tel()
                             ->maxLength(255),
-                        
+
                         Forms\Components\TextInput::make('registration_number')
                             ->maxLength(100),
-                        
+
                         Forms\Components\DatePicker::make('formation_date')
                             ->label('Formation Date'),
+
+                        Forms\Components\TextInput::make('max_loan_amount')
+                            ->label('Maximum Loan Amount')
+                            ->numeric()
+                            ->helperText('Maximum loan amount for this group. If set, this will override the loan product\'s max loan amount during loan applications.')
+                            ->prefix('KES')
+                            ->mask(\Filament\Support\RawJs::make('$money($input)'))
+                            ->stripCharacters(',')
+                            ->columnSpanFull(),
                     ])
                     ->columns(2),
-                
+
                 Forms\Components\Section::make('Location')
                     ->schema([
                         Forms\Components\TextInput::make('county')
                             ->maxLength(255),
-                        
+
                         Forms\Components\TextInput::make('sub_county')
                             ->maxLength(255),
-                        
+
                         Forms\Components\TextInput::make('ward')
                             ->maxLength(255),
-                        
+
                         Forms\Components\TextInput::make('township')
                             ->maxLength(255),
-                        
+
                         Forms\Components\Textarea::make('address')
                             ->rows(3)
                             ->columnSpanFull(),
@@ -79,39 +88,45 @@ class GroupResource extends Resource
                 Tables\Columns\TextColumn::make('id')
                     ->label('ID')
                     ->sortable(),
-                
+
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
-                
+
                 Tables\Columns\TextColumn::make('registration_number')
                     ->label('Reg No.')
                     ->searchable(),
-                
+
                 Tables\Columns\TextColumn::make('members_count')
                     ->label('Members')
                     ->counts('members')
                     ->sortable(),
-                
+
                 Tables\Columns\TextColumn::make('bank_balance')
                     ->label('Bank Balance')
                     ->money('KES')
                     ->getStateUsing(fn (Group $record) => $record->bank_balance),
-                
+
                 Tables\Columns\TextColumn::make('total_capital_advanced')
                     ->label('Capital Advanced')
                     ->money('KES')
                     ->getStateUsing(fn (Group $record) => $record->total_capital_advanced),
-                
+
                 Tables\Columns\TextColumn::make('net_capital_outstanding')
                     ->label('Net Outstanding')
                     ->money('KES')
                     ->getStateUsing(fn (Group $record) => $record->net_capital_outstanding),
-                
+
+                Tables\Columns\TextColumn::make('max_loan_amount')
+                    ->label('Max Loan Amount')
+                    ->money('KES')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('formation_date')
                     ->date()
                     ->sortable(),
-                
+
                 Tables\Columns\TextColumn::make('county')
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -137,6 +152,7 @@ class GroupResource extends Resource
             RelationManagers\GroupAccountsRelationManager::class,
             RelationManagers\MembersRelationManager::class,
             RelationManagers\LoansRelationManager::class,
+            RelationManagers\LoanRepaymentsRelationManager::class,
             RelationManagers\TransactionsRelationManager::class,
             RelationManagers\CapitalTransfersRelationManager::class,
         ];

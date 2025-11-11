@@ -9,22 +9,23 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use App\Models\Loan;
+use App\Filament\Resources\LoanResource\Actions\ApproveLoanAction;
 
 class LoansRelationManager extends RelationManager
 {
     protected static string $relationship = 'members';
 
     protected static ?string $title = 'Group Loans';
-    
+
     protected static ?string $label = 'Loan';
-    
+
     protected static ?string $pluralLabel = 'Loans';
-    
+
     public function isReadOnly(): bool
     {
         return true;
     }
-    
+
     protected function getTableQuery(): Builder
     {
         // Get all loans for members of this group
@@ -41,26 +42,26 @@ class LoansRelationManager extends RelationManager
                     ->label('Loan No.')
                     ->searchable()
                     ->sortable(),
-                
+
                 Tables\Columns\TextColumn::make('member.name')
                     ->label('Member')
                     ->searchable()
                     ->sortable(),
-                
+
                 Tables\Columns\TextColumn::make('loanProduct.name')
                     ->label('Product')
                     ->searchable(),
-                
+
                 Tables\Columns\TextColumn::make('principal_amount')
                     ->label('Principal')
                     ->money('KES')
                     ->sortable(),
-                
+
                 Tables\Columns\TextColumn::make('remaining_balance')
                     ->label('Outstanding')
                     ->money('KES')
                     ->sortable(),
-                
+
                 Tables\Columns\BadgeColumn::make('status')
                     ->label('Status')
                     ->colors([
@@ -70,7 +71,7 @@ class LoansRelationManager extends RelationManager
                         'danger' => 'Rejected',
                         'success' => 'Fully Repaid',
                     ]),
-                
+
                 Tables\Columns\TextColumn::make('release_date')
                     ->label('Release Date')
                     ->date()
@@ -90,8 +91,11 @@ class LoansRelationManager extends RelationManager
                 //
             ])
             ->actions([
+                ApproveLoanAction::makeForRelationManager(),
+
                 Tables\Actions\Action::make('view')
                     ->label('View Loan')
+                    ->color('blue')
                     ->url(fn ($record) => route('filament.admin.resources.loans.view', $record))
                     ->icon('heroicon-o-eye'),
             ])

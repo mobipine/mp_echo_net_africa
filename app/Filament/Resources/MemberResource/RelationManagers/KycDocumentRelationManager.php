@@ -20,11 +20,19 @@ class KycDocumentRelationManager extends RelationManager
             // Forms\Components\TextInput::make('document_type')->required(),
             //select for document type
             Forms\Components\Select::make('document_type')
-                ->options(DocsMeta::all()->pluck('name', 'id'))
+                ->options(function () {
+                    // Only show documents with 'member_kyc' tag
+                    return DocsMeta::whereJsonContains('tags', 'member_kyc')
+                        ->pluck('name', 'id')
+                        ->toArray();
+                })
                 ->required()
                 ->native(false)
                 ->searchable(),
-            Forms\Components\FileUpload::make('file_path')->directory('kyc-documents')->required()->visibility('public'),
+            Forms\Components\FileUpload::make('file_path')
+                ->directory('kyc-documents')->required()->visibility('public')
+            ->enableDownload()
+            ->enableOpen(),
             Forms\Components\Textarea::make('description'),
         ]);
     }
@@ -32,7 +40,7 @@ class KycDocumentRelationManager extends RelationManager
     public function table(Tables\Table $table): Tables\Table
     {
         return $table->columns([
-            
+
 
             //show the name of the document type
             Tables\Columns\TextColumn::make('document_type')
@@ -41,15 +49,18 @@ class KycDocumentRelationManager extends RelationManager
                 })
                 ->sortable()
                 ->searchable(),
-            
+
 
             Tables\Columns\TextColumn::make('file_path')
-                ->url(function ($record) {
-                    // dd($record);
-                    return Storage::disk('public')->url($record->file_path);
-                })
+                    ->url(function ($record) {
+                        // dd($record);
+                        return Storage::disk('public')->url($record->file_path);
+                        // return '<a href="' . Storage::disk('public')->url($record->file_path) . '" target="_blank">View Document</a>';
+                    })
                 ->label('File Link')
                 ->html()
+                //open the file in a new tab
+                ->openUrlInNewTab()
                 ->sortable(),
             Tables\Columns\TextColumn::make('description')->limit(30),
         ])->actions([
@@ -59,4 +70,4 @@ class KycDocumentRelationManager extends RelationManager
             Tables\Actions\CreateAction::make(),
         ]);
     }
-} 
+}

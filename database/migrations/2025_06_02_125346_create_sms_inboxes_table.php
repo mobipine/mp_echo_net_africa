@@ -16,6 +16,7 @@ return new class extends Migration
             $table->foreignId('member_id')->constrained()->onDelete('cascade')->nullable();;
             $table->string('phone_number')->nullable();;
             $table->text('message')->nullable();
+            $table->json('group_ids')->nullable();
             $table->string('status')->default('pending');
             $table->timestamps();
         });

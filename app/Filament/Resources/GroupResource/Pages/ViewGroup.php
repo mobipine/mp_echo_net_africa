@@ -19,17 +19,17 @@ class ViewGroup extends ViewRecord
     protected static string $resource = GroupResource::class;
 
     public ?array $data = [];
-    
+
     public array $financialSummary = [];
 
     public function mount(int | string $record): void
     {
         $this->record = $this->resolveRecord($record);
-        
+
         // Calculate financial summary
         $groupTransactionService = app(GroupTransactionService::class);
         $this->financialSummary = $groupTransactionService->getGroupFinancialSummary($this->record);
-        
+
         // Populate data
         $this->data = [
             'name' => $this->record->name,
@@ -37,6 +37,7 @@ class ViewGroup extends ViewRecord
             'phone_number' => $this->record->phone_number,
             'registration_number' => $this->record->registration_number,
             'formation_date' => $this->record->formation_date?->format('Y-m-d'),
+            'max_loan_amount' => $this->record->max_loan_amount,
             'county' => $this->record->county,
             'sub_county' => $this->record->sub_county,
             'ward' => $this->record->ward,
@@ -54,7 +55,7 @@ class ViewGroup extends ViewRecord
             'total_capital_returned' => $this->record->total_capital_returned,
             'net_capital_outstanding' => $this->record->net_capital_outstanding,
         ];
-        
+
         $this->form->fill($this->data);
     }
 
@@ -89,19 +90,19 @@ class ViewGroup extends ViewRecord
                             ->prefix('KES')
                             ->numeric()
                             ->extraAttributes(['class' => 'text-green-600 font-bold']),
-                        
+
                         Forms\Components\TextInput::make('total_liabilities')
                             ->label('Total Liabilities')
                             ->prefix('KES')
                             ->numeric()
                             ->extraAttributes(['class' => 'text-red-600 font-bold']),
-                        
+
                         // Forms\Components\TextInput::make('equity_balance')
                         //     ->label('Equity')
                         //     ->prefix('KES')
                         //     ->numeric()
                         //     ->extraAttributes(['class' => 'text-blue-600 font-bold']),
-                        
+
                         // Forms\Components\TextInput::make('net_income')
                         //     ->label('Net Income')
                         //     ->prefix('KES')
@@ -110,17 +111,17 @@ class ViewGroup extends ViewRecord
                     ]),
                 ])
                 ->collapsible(),
-            
+
             Tabs::make('Group Details')
                 ->tabs([
                     Tab::make('Basic Information')
                         ->icon('heroicon-o-information-circle')
                         ->schema($this->getBasicInformationSchema()),
-                    
+
                     Tab::make('Financial Metrics')
                         ->icon('heroicon-o-currency-dollar')
                         ->schema($this->getFinancialMetricsSchema()),
-                    
+
                     Tab::make('Location Details')
                         ->icon('heroicon-o-map-pin')
                         ->schema($this->getLocationSchema()),
@@ -135,19 +136,27 @@ class ViewGroup extends ViewRecord
             Grid::make(2)->schema([
                 Forms\Components\TextInput::make('name')
                     ->label('Group Name'),
-                
+
                 Forms\Components\TextInput::make('registration_number')
                     ->label('Registration Number'),
-                
+
                 Forms\Components\TextInput::make('email')
                     ->label('Email'),
-                
+
                 Forms\Components\TextInput::make('phone_number')
                     ->label('Phone Number'),
-                
+
                 Forms\Components\TextInput::make('formation_date')
                     ->label('Formation Date'),
-                
+
+                Forms\Components\TextInput::make('max_loan_amount')
+                    ->label('Maximum Loan Amount')
+                    ->prefix('KES')
+                    ->numeric()
+                    ->helperText('Maximum loan amount for this group. If set, this will override the loan product\'s max loan amount during loan applications.')
+                    ->mask(\Filament\Support\RawJs::make('$money($input)'))
+                    ->stripCharacters(','),
+
                 Forms\Components\TextInput::make('total_members')
                     ->label('Total Members')
                     ->suffix('members'),
@@ -163,27 +172,27 @@ class ViewGroup extends ViewRecord
                     ->label('Bank Balance')
                     ->prefix('KES')
                     ->numeric(),
-                
+
                 Forms\Components\TextInput::make('total_capital_advanced')
                     ->label('Capital Advanced from Organization')
                     ->prefix('KES')
                     ->numeric(),
-                
+
                 Forms\Components\TextInput::make('total_capital_returned')
                     ->label('Capital Returned to Organization')
                     ->prefix('KES')
                     ->numeric(),
-                
+
                 Forms\Components\TextInput::make('net_capital_outstanding')
                     ->label('Net Capital Outstanding')
                     ->prefix('KES')
                     ->numeric(),
-                
+
                 Forms\Components\TextInput::make('total_revenue')
                     ->label('Total Revenue')
                     ->prefix('KES')
                     ->numeric(),
-                
+
                 Forms\Components\TextInput::make('total_expenses')
                     ->label('Total Expenses')
                     ->prefix('KES')
@@ -198,16 +207,16 @@ class ViewGroup extends ViewRecord
             Grid::make(2)->schema([
                 Forms\Components\TextInput::make('county')
                     ->label('County'),
-                
+
                 Forms\Components\TextInput::make('sub_county')
                     ->label('Sub County'),
-                
+
                 Forms\Components\TextInput::make('ward')
                     ->label('Ward'),
-                
+
                 Forms\Components\TextInput::make('township')
                     ->label('Township'),
-                
+
                 Forms\Components\Textarea::make('address')
                     ->label('Physical Address')
                     ->rows(3)

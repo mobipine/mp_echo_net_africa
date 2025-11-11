@@ -24,9 +24,9 @@ class Group extends Model
         return $this->belongsTo(\App\Models\LocalImplementingPartner::class,'local_implementing_partner_id');
     }
     public function CountyENAStaff(){
-        return $this->belongsTo(\App\Models\CountyENAStaff::class,'county_ENA_staff_id');   
+        return $this->belongsTo(\App\Models\CountyENAStaff::class,'county_ENA_staff_id');
     }
-    
+
     public function surveys()
     {
         return $this->belongsToMany(Survey::class, 'group_survey');
@@ -59,6 +59,28 @@ class Group extends Model
     public function loans()
     {
         return $this->hasManyThrough(Loan::class, Member::class);
+    }
+
+    /**
+     * Get all loan repayments for loans belonging to members of this group
+     * This is a virtual relationship for Filament relation manager.
+     * The actual filtering is done in the relation manager's getTableQuery() method.
+     */
+    public function loanRepayments()
+    {
+        // Create a relationship through members - this satisfies Filament's requirement
+        // The relation manager will override the query with the correct filtering
+        return $this->hasManyThrough(
+            \App\Models\LoanRepayment::class,
+            \App\Models\Member::class,
+            'group_id', // Foreign key on members table
+            'member_id', // Foreign key on loan_repayments table
+            'id', // Local key on groups table
+            'id' // Local key on members table
+        )->whereHas('loan', function ($query) {
+            // Additional filter to ensure we only get repayments for loans
+            $query->whereNotNull('id');
+        });
     }
 
     /**

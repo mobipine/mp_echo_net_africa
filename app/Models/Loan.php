@@ -68,6 +68,11 @@ class Loan extends Model
         return $this->hasMany(LoanGuarantor::class);
     }
 
+    public function collateralAttachments()
+    {
+        return $this->hasMany(LoanCollateralAttachment::class);
+    }
+
     public function repayments()
     {
         return $this->hasMany(LoanRepayment::class);
@@ -90,16 +95,16 @@ class Loan extends Model
     {
         // Get outstanding loan charges
         $outstandingCharges = $this->getOutstandingLoanCharges();
-        
+
         // Get outstanding interest
         $outstandingInterest = $this->getOutstandingInterest();
-        
+
         // Get outstanding principal
         $outstandingPrincipal = $this->getOutstandingPrincipal();
-        
+
         return $outstandingCharges + $outstandingInterest + $outstandingPrincipal;
     }
-    
+
     /**
      * Get outstanding loan charges
      */
@@ -131,7 +136,7 @@ class Loan extends Model
 
         return max(0, $debitedToReceivable - $creditedToReceivable + $totalChargesReversals);
     }
-    
+
     /**
      * Get outstanding interest
      */
@@ -142,22 +147,22 @@ class Loan extends Model
             ->where('transaction_type', 'interest_accrual')
             ->where('dr_cr', 'dr')
             ->sum('amount');
-            
+
         // Get total interest paid
         $totalInterestPaid = $this->transactions()
             ->where('transaction_type', 'interest_payment')
             ->where('dr_cr', 'cr')
             ->sum('amount');
-            
+
         // Add interest payment reversals (which increase outstanding balance)
         $totalInterestReversals = $this->transactions()
             ->where('transaction_type', 'interest_payment_reversal')
             ->where('dr_cr', 'dr')
             ->sum('amount');
-            
+
         return max(0, $totalInterestAccrued - $totalInterestPaid + $totalInterestReversals);
     }
-    
+
     /**
      * Get outstanding principal
      */
@@ -168,19 +173,19 @@ class Loan extends Model
             ->where('transaction_type', 'loan_issue')
             ->where('dr_cr', 'dr')
             ->sum('amount');
-            
+
         // Get total principal repaid (including reversals)
         $totalPrincipalRepaid = $this->transactions()
             ->where('transaction_type', 'principal_payment')
             ->where('dr_cr', 'cr')
             ->sum('amount');
-            
+
         // Subtract principal payment reversals (which increase outstanding balance)
         $totalPrincipalReversals = $this->transactions()
             ->where('transaction_type', 'principal_payment_reversal')
             ->where('dr_cr', 'dr')
             ->sum('amount');
-            
+
         return max(0, $totalPrincipalDisbursed - $totalPrincipalRepaid + $totalPrincipalReversals);
     }
 
@@ -256,7 +261,7 @@ class Loan extends Model
     {
         return $this->approvedBy?->name;
     }
-    
+
 
     public function getAllAttributesAttribute()
     {

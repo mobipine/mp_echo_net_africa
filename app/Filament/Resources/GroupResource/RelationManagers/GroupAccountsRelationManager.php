@@ -21,11 +21,11 @@ class GroupAccountsRelationManager extends RelationManager
                 Forms\Components\TextInput::make('account_code')
                     ->required()
                     ->disabled(),
-                
+
                 Forms\Components\TextInput::make('account_name')
                     ->required()
                     ->disabled(),
-                
+
                 Forms\Components\Select::make('account_type')
                     ->required()
                     ->disabled()
@@ -42,7 +42,7 @@ class GroupAccountsRelationManager extends RelationManager
                         'group_contribution_income' => 'Contribution Income',
                         'group_savings_interest_expense' => 'Savings Interest Expense',
                     ]),
-                
+
                 Forms\Components\Select::make('account_nature')
                     ->required()
                     ->disabled()
@@ -53,7 +53,7 @@ class GroupAccountsRelationManager extends RelationManager
                         'revenue' => 'Revenue',
                         'expense' => 'Expense',
                     ]),
-                
+
                 Forms\Components\Toggle::make('is_active')
                     ->required(),
             ]);
@@ -67,12 +67,12 @@ class GroupAccountsRelationManager extends RelationManager
                     ->label('Account Code')
                     ->searchable()
                     ->sortable(),
-                
+
                 Tables\Columns\TextColumn::make('account_name')
                     ->label('Account Name')
                     ->searchable()
                     ->wrap(),
-                
+
                 Tables\Columns\BadgeColumn::make('account_nature')
                     ->label('Nature')
                     ->colors([
@@ -82,7 +82,7 @@ class GroupAccountsRelationManager extends RelationManager
                         'warning' => 'revenue',
                         'gray' => 'expense',
                     ]),
-                
+
                 Tables\Columns\TextColumn::make('balance')
                     ->label('Current Balance')
                     ->money('KES')
@@ -90,11 +90,11 @@ class GroupAccountsRelationManager extends RelationManager
                         return $record->balance;
                     })
                     ->sortable(),
-                
+
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Active')
                     ->boolean(),
-                
+
                 Tables\Columns\TextColumn::make('opening_date')
                     ->label('Opened')
                     ->date()
@@ -109,7 +109,7 @@ class GroupAccountsRelationManager extends RelationManager
                         'revenue' => 'Revenue',
                         'expense' => 'Expense',
                     ]),
-                
+
                 Tables\Filters\TernaryFilter::make('is_active')
                     ->label('Active Status'),
             ])
@@ -118,7 +118,7 @@ class GroupAccountsRelationManager extends RelationManager
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                // Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([
                 // Don't allow bulk delete
