@@ -12,7 +12,7 @@ class Member extends Model
     protected $fillable = [
         'group_id', 'name', 'email', 'phone', 'national_id',
         'gender', 'dob', 'marital_status', 'profile_picture','is_active',
-        'member_since', 'membership_status'
+        'member_since', 'membership_status','stage','is_disabled','disability'
     ];
 
     protected $casts = [
@@ -131,6 +131,15 @@ class Member extends Model
             $member->account_number = 'ACC-' . str_pad($member->id, 4, '0', STR_PAD_LEFT);
             $member->saveQuietly();
         });
+    }
+
+    public function surveyProgresses()
+    {
+        return $this->hasMany(\App\Models\SurveyProgress::class, 'member_id');
+    }
+    public function surveyResponses()
+    {
+        return $this->hasMany(\App\Models\SurveyResponse::class, 'msisdn', 'phone');
     }
 
 }

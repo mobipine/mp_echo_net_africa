@@ -18,10 +18,12 @@ class SMSInbox extends Model
         'phone_number',
         'member_id',
         'channel',
+        'is_reminder'
     ];
 
     protected $casts = [
         'group_ids' => 'array', // Cast group_ids as an array
+        'is_reminder' => 'boolean'
     ];
 
 
@@ -29,4 +31,9 @@ class SMSInbox extends Model
     // {
     //     return $this->belongsToMany(Group::class, 'sms_inbox_group', 'sms_inbox_id', 'group_id');
     // }
+    public function member()
+    {
+        return $this->belongsTo(Member::class);
+    }
+
 }

@@ -63,9 +63,9 @@ class ProcessSurveyProgressCommand extends Command
                 $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
                 $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
 
-                $endDate = GroupSurvey::where('group_id', $member->group_id)
-                        ->where('survey_id',$survey->id)
-                        ->value('ends_at');
+                // $endDate = GroupSurvey::where('group_id', $member->group_id)
+                //         ->where('survey_id',$survey->id)
+                //         ->value('ends_at');
                 
 
             } else {
@@ -74,15 +74,12 @@ class ProcessSurveyProgressCommand extends Command
                 $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
                 $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
 
-                $endDate = null;
+                // $endDate = null;
             }
 
-            Log::info("The survey ends on $endDate");
+            // Log::info("The survey ends on $endDate");
             //check if endDate has passed. If it has, continue to the next record
-            if ($endDate && now()->greaterThan(Carbon::parse($endDate))) {
-                Log::info("Survey {$survey->title} for member {$member->phone} has ended on $endDate. Skipping.");
-                continue;
-            }
+            
 
             // Check if the time since the last dispatch has exceeded the defined interval
             $lastDispatched = Carbon::parse($progress->last_dispatched_at);
@@ -100,10 +97,10 @@ class ProcessSurveyProgressCommand extends Command
                 continue;
             }
 
-            $confirmation_interval=$survey->continue_confirmation_interval;
-            $confirmation_interval_unit=$survey->continue_confirmation_interval_unit;
+            $reminder_interval=$survey->continue_confirmation_interval;
+            $reminder_interval_unit=$survey->continue_confirmation_interval_unit;
 
-            $confirmationDue=$lastDispatched->add($confirmation_interval, $confirmation_interval_unit);
+            $confirmationDue=$lastDispatched->add($reminder_interval, $reminder_interval_unit);
             $isconfirmationDue=$confirmationDue->lessThanOrEqualTo(now());
 
             Log::info("If the user has not yet responded to the previous question sent in {$survey->title} and the time for to dispatch the confirmation question {$confirmationDue} has reached a confirmation message will be sent, if he has responded, the next question will be sent.");
@@ -117,6 +114,7 @@ class ProcessSurveyProgressCommand extends Command
                 
         
             if ($hasResponded) {
+                Log::info("The member {$member->name} has responded to the survey and next dispatch is due. Sending the next question...");
                 $progress = SurveyProgress::where('member_id', $member->id)
                     ->where('survey_id', $survey->id)
                     ->where('has_responded', true)
@@ -142,10 +140,10 @@ class ProcessSurveyProgressCommand extends Command
                     Log::info("The member responded to previous question. Sending the next question");
 
                     //Formatting the question 
-                    $message=formartQuestion($nextQuestion,$member);
+                    $message=formartQuestion($nextQuestion,$member,$survey);
                     Log::info("This is the message ".$message);
 
-                    $this->sendSMS($member->phone, $message,$channel);
+                    $this->sendSMS($member->phone, $message,$channel,false,$member);
                     $progress->update([
                         'current_question_id' => $nextQuestion->id,
                         'last_dispatched_at' => now(),
@@ -159,54 +157,49 @@ class ProcessSurveyProgressCommand extends Command
                         'completed_at' => now(),
                         'status' => 'COMPLETED'
                     ]);
-                    Log::info("Survey {$survey->title} completed by {$member->phone}.");
+                    $stage=str_replace(' ', '', ucfirst($survey->title)) . 'Completed';
+                    $member->update([
+                        'stage' => $stage
+                    ]);
+                    Log::info("Survey {$survey->title} completed by {$member->phone}. Updated his stage to $stage");
                 }
 
             } elseif($isconfirmationDue) {
-                
-                $continue_confirmation_question= $survey->continue_confirmation_question;
-                $placeholders = [
-                    '{member}' => $member->name,
-                    '{group}' => $member->group->name,
-                ];
-                $message = str_replace(
-                    array_keys($placeholders),
-                    array_values($placeholders),
-                    $continue_confirmation_question
-                );
-
+                    //reminder
+                    
+                $message=formartQuestion($currentQuestion,$member,$survey,true);
                 Log::info("This is the formated message $message");
-
-                
-                Log::info("No response from member. Sending the confirmation message {$message}...");
-                // No response and it's been more than 3 days, resend the last question
-                // $message = $this->formatQuestionMessage($currentQuestion, true); // Add a reminder prefix
+                Log::info("No response from member. Sending the reminder message {$message}...");
                  
-                // try {
-                //     // $smsService->send($member->phone, $message);
-                //     $this->sendSMS($member->phone, $message);
-                //     $progress->update([
-                //         'last_dispatched_at' => now(),
-                //         'status'=>'PENDING',
-                //     ]); // Update timestamp and status
-                //     Log::info("Confirmation sent to {$member->phone} for survey {$survey->title}.");
-                // } catch (\Exception $e) {
-                //     Log::error("Failed to send confirmation to {$member->phone}: " . $e->getMessage());
-                // }
+                try {
+                    // $smsService->send($member->phone, $message);
+                    $this->sendSMS($member->phone, $message, $progress?->channel ?? 'sms',true,$member);
+                    $progress->update([
+                        'last_dispatched_at' => now(),
+                        
+                    ]); // Update timestamp and status
+                    Log::info("Confirmation sent to {$member->phone} for survey {$survey->title}.");
+                } catch (\Exception $e) {
+                    Log::error("Failed to send confirmation to {$member->phone}: " . $e->getMessage());
+                }
             }
         }
     }
 
-    public function sendSMS($msisdn, $message,$channel) {
-
-        try{
+   public function sendSMS($msisdn, $message, $channel, $is_reminder,$member)
+    {
+        try {
             SMSInbox::create([
-                'phone_number' => $msisdn, // Store the phone number in group_ids for tracking
+                'phone_number' => $msisdn,
                 'message' => $message,
                 'channel' => $channel,
+                'is_reminder' => $is_reminder,
+                "member_id" => $member->id,
             ]);
         } catch (\Exception $e) {
+            // Log and rethrow the exception so the caller can handle it
             Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());
+            throw $e; // <-- this allows the outer try-catch to detect the failure
         }
     }
 }

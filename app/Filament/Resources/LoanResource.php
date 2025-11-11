@@ -441,13 +441,13 @@ class LoanResource extends Resource implements HasShieldPermissions
 
         $loanAttribute = $loan_product->loanProductAttributes()->where('loan_attribute_id', $attributeId)->first();
         // dd($loanAttribute, $loanAttribute->value);
-        if ($loanAttribute->value == "Daily") {
+        if ($loanAttribute?->value == "Daily") {
             $units = 'days';
-        } elseif ($loanAttribute->value == "Weekly") {
+        } elseif ($loanAttribute?->value == "Weekly") {
             $units = 'weeks';
-        } elseif ($loanAttribute->value == "Monthly") {
+        } elseif ($loanAttribute?->value == "Monthly") {
             $units = 'months';
-        } elseif ($loanAttribute->value == "Yearly") {
+        } elseif ($loanAttribute?->value == "Yearly") {
             $units = 'years';
         } else {
             $units = 'N/A';

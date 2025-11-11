@@ -71,7 +71,7 @@ class SurveyQuestionResource extends Resource
                             ->label('Question Interval')
                             ->numeric()
                             ->helperText('After how long would you want the next question after this is dispatched?'),
-                 Forms\Components\Select::make('question_interval_unit')
+                Forms\Components\Select::make('question_interval_unit')
                             ->label('Interval Unit')
                             ->native(false)
                             ->options([
@@ -83,6 +83,39 @@ class SurveyQuestionResource extends Resource
                                 'months' => 'Months',
                             ])
                             ->default('days'),
+                Forms\Components\Toggle::make('is_recurrent')
+                    ->label('Is Recurrent?')
+                    ->reactive(), // reactive to trigger conditional fields
+
+                Forms\Components\TextInput::make('recur_interval')
+                    ->label('Recur Interval')
+                    ->numeric()
+                    ->minValue(1)
+                    ->visible(fn ($get) => $get('is_recurrent')) // show only if recurrent
+                    ->helperText('How often should this question be repeated?'),
+
+                Forms\Components\Select::make('recur_unit')
+                    ->label('Recur Interval Unit')
+                    ->options([
+                        'seconds' => 'Seconds',
+                        'minutes' => 'Minutes',
+                        'hours'   => 'Hours',
+                        'days'    => 'Days',
+                        'weeks'   => 'Weeks',
+                        'months'  => 'Months',
+                    ])
+                    ->visible(fn ($get) => $get('is_recurrent')) // show only if recurrent
+                    ->required(fn ($get) => $get('is_recurrent')),
+
+                Forms\Components\TextInput::make('recur_times')
+                    ->label('Number of Repeats')
+                    ->numeric()
+                    ->minValue(1)
+                    ->visible(fn ($get) => $get('is_recurrent')) // show only if recurrent
+                    ->helperText('How many times should this question be repeated?')
+                    ->required(fn ($get) => $get('is_recurrent')),
+
+
                 
                 //do a repeater for possible_answers that only shows if answer_strictness is Multiple Choice with  afield for the letter and the answer
                 Forms\Components\Repeater::make('possible_answers')
@@ -95,6 +128,8 @@ class SurveyQuestionResource extends Resource
                     ->minItems(2)
                     ->maxItems(26)
                     ->required(fn ($get) => $get('answer_strictness') === 'Multiple Choice'),
+
+                
             ]);
     }
 

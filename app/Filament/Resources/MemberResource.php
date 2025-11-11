@@ -12,6 +12,7 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
+use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Actions\Action;
@@ -44,7 +45,7 @@ class MemberResource extends Resource
                     ->label('Group')
                     ->relationship('group', 'name')
                     ->required(),
-                \Filament\Forms\Components\TextInput::make('name')->required()->placeholder('e.g. John Doe'),
+                \Filament\Forms\Components\TextInput::make('name')->required()->placeholder('e.g. John Doe')->hint("As it appears on the ID"),
                 \Filament\Forms\Components\TextInput::make('account_number')
                     ->required()
                     ->placeholder('e.g. ACC-0001')
@@ -53,21 +54,33 @@ class MemberResource extends Resource
                     ->minLength(5)
                     ->readOnly()
                     ->visibleOn('edit'),
-                \Filament\Forms\Components\TextInput::make('email')->email()->placeholder('john.doe@example.com')->required()->maxLength(255)->unique(ignoreRecord: true),
-                \Filament\Forms\Components\TextInput::make('phone')->placeholder('e.g. 0712345678'),
+                \Filament\Forms\Components\TextInput::make('email')->email()->placeholder('john.doe@example.com')->nullable()->maxLength(255)->unique(ignoreRecord: true),
+                \Filament\Forms\Components\TextInput::make('phone')->placeholder('e.g. 0712345678')->maxLength(10)->minLength(10),
                 \Filament\Forms\Components\TextInput::make('national_id')->required()->placeholder('e.g. 11111111')
                     ->unique(ignoreRecord: true)
                     ->maxLength(8)
                     ->minLength(7)
-                    ->numeric(),
+                    ->numeric()
+                    ->hint("As it appears on the ID"),
                 \Filament\Forms\Components\Select::make('gender')
                 ->native(false)
                     ->options([
                         'male' => 'Male',
                         'female' => 'Female',
                     ]),
+                Toggle::make('is_disabled')
+                    ->label('Is Disabled')
+                    ->reactive()
+                    ->inline(false),
+
+                \Filament\Forms\Components\TextInput::make('disability')
+                    ->label('Type of Disability')
+                    ->placeholder('e.g. Visual impairment')
+                    ->visible(fn (callable $get) => $get('is_disabled') === true)
+                    ->required(fn (callable $get) => $get('is_disabled') === true)
+                    ->maxLength(255),
                 \Filament\Forms\Components\DatePicker::make('dob')->label('Date of Birth')
-                ->native(false),
+                ->native(false)->hint("As it appears on the ID"),
                 \Filament\Forms\Components\Select::make('marital_status')
                 ->native(false)
                     ->options([
@@ -121,12 +134,12 @@ class MemberResource extends Resource
                         Storage::disk('local')->delete($data['file']);
                         
                         // Get import results from session
-                        $results = session('import_results', ['imported' => 0, 'skipped' => 0]);
+                        $results = session('import_results', ['imported' => 0, 'skipped' => 0,'updated' => 0]);
                         
                         // Show success notification with results
                         Notification::make()
                             ->title('Import Completed')
-                            ->body("Successfully imported {$results['imported']} members. Skipped {$results['skipped']} rows due to errors or duplicates.")
+                            ->body("Successfully imported {$results['imported']} members. Updated {$results['updated']} rows. Skipped {$results['skipped']} rows due to errors or duplicates.")
                             ->success()
                             ->send();
                     })
@@ -141,10 +154,11 @@ class MemberResource extends Resource
                 //     ->size(40)
                 //     ->sortable(),
                 \Filament\Tables\Columns\TextColumn::make('id')->sortable(),
+                \Filament\Tables\Columns\TextColumn::make('stage')->sortable()->toggleable(isToggledHiddenByDefault:true)->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('name')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('group.name')->label('Group')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('email')->sortable()->searchable(),
-                \Filament\Tables\Columns\TextColumn::make('phone')->sortable()->toggleable(isToggledHiddenByDefault:true),
+                \Filament\Tables\Columns\TextColumn::make('phone')->sortable()->toggleable(isToggledHiddenByDefault:true)->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('national_id')->sortable()->toggleable(isToggledHiddenByDefault:true),
                 \Filament\Tables\Columns\TextColumn::make('gender')->sortable()->toggleable(isToggledHiddenByDefault:true),
                 \Filament\Tables\Columns\TextColumn::make('dob')->date()->sortable()->toggleable(isToggledHiddenByDefault:true),
@@ -181,6 +195,8 @@ class MemberResource extends Resource
             RelationManagers\KycDocumentRelationManager::class,
             RelationManagers\EmailInboxesRelationManager::class,
             RelationManagers\SmsInboxesRelationManager::class,
+            RelationManagers\SurveyResponsesRelationManager::class,
+            
         ];
     }
 

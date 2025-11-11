@@ -32,7 +32,8 @@ class GroupResource extends Resource
                     ->schema([
                         Forms\Components\TextInput::make('name')
                             ->required()
-                            ->maxLength(255),
+                            ->maxLength(255)
+                            ->hint("As it appears on the Certificate"),
 
                         Forms\Components\TextInput::make('email')
                             ->email()
@@ -43,10 +44,12 @@ class GroupResource extends Resource
                             ->maxLength(255),
 
                         Forms\Components\TextInput::make('registration_number')
-                            ->maxLength(100),
+                            ->maxLength(100)
+                            ->hint("As it appears on the Certificate"),
 
                         Forms\Components\DatePicker::make('formation_date')
-                            ->label('Formation Date'),
+                            ->label('Formation Date')
+                            ->hint("As it appears on the Certificate"),
 
                         Forms\Components\TextInput::make('max_loan_amount')
                             ->label('Maximum Loan Amount')
@@ -76,6 +79,39 @@ class GroupResource extends Resource
                         Forms\Components\Textarea::make('address')
                             ->rows(3)
                             ->columnSpanFull(),
+                    ])
+                    ->columns(2),
+                 Forms\Components\Section::make('Additional Details')
+                    ->schema([
+                        Forms\Components\TextInput::make('kra_pin')
+                            ->label('KRA Pin')
+                            ->maxLength(50),
+
+                        Forms\Components\TextInput::make('bank_name')
+                            ->label('Bank Name')
+                            ->maxLength(255),
+
+                        Forms\Components\TextInput::make('bank_account_number')
+                            ->label('Bank Account Number')
+                            ->maxLength(50),
+
+                        Forms\Components\TextInput::make('bank_branch')
+                            ->label('Bank Branch')
+                            ->maxLength(255),
+
+                        Forms\Components\Select::make('meeting_frequency')
+                            ->label('Frequency of Group Meetings')
+                            ->options([
+                                'weekly' => 'Weekly',
+                                'biweekly' => 'Biweekly',
+                                'monthly' => 'Monthly',
+                                'bimonthly' => 'Bimonthly',
+                            ]),
+
+                        Forms\Components\TextInput::make('meeting_day')
+                            ->label('Day of Meeting')
+                            ->placeholder('e.g., Monday')
+                            ->maxLength(50),
                     ])
                     ->columns(2),
             ]);

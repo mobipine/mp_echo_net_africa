@@ -19,6 +19,7 @@ class Survey extends Model
         'continue_confirmation_interval_unit',
         'continue_confirmation_interval',
         'continue_confirmation_question',
+        'order'
     ];
 
     protected $casts = [

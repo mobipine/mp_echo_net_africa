@@ -4,10 +4,12 @@
 use Carbon\Carbon;
 use App\Models\Member;
 use App\Models\MemberEditRequest;
+use App\Models\MemberRecurrentQuestion;
 use App\Models\RedoSurvey;
 use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
+use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
 use Illuminate\Support\Facades\Log;
 
@@ -171,30 +173,34 @@ function getNextQuestion($survey_id, $response = null, $current_question_id = nu
 
 }
 
-function formartQuestion($firstQuestion,$member){
+function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
 
     if ($firstQuestion->answer_strictness == "Multiple Choice") {
         $message = "{$firstQuestion->question}\n\n"; 
         
-        $letters = [];
+        $numbers = [];
+        $index = 1;
+
         foreach ($firstQuestion->possible_answers as $answer) {
-            $message .= "{$answer['letter']}. {$answer['answer']}\n";
-            $letters[] = $answer['letter'];
+            $message .= "{$index}. {$answer['answer']}\n";
+            $numbers[] = $index;
+            $index++;
         }
-        
-        // Dynamically build the letter options string
-        if (count($letters) === 1) {
-            $letterText = $letters[0];
-        } elseif (count($letters) === 2) {
-            $letterText = $letters[0] . " or " . $letters[1];
+
+        // Dynamically build the number options string
+        if (count($numbers) === 1) {
+            $numberText = $numbers[0];
+        } elseif (count($numbers) === 2) {
+            $numberText = $numbers[0] . " or " . $numbers[1];
         } else {
-            $lastLetter = array_pop($letters);
-            $letterText = implode(', ', $letters) . " or " . $lastLetter;
+            $lastNumber = array_pop($numbers);
+            $numberText = implode(', ', $numbers) . " or " . $lastNumber;
         }
-        
-        $message .= "\nPlease reply with the letter {$letterText}.";
+
+        $message .= "\nPlease reply with the number {$numberText}.";
         Log::info("The message to be sent is {$message}");
-    } else {
+    }
+    else {
         $message = $firstQuestion->question;
         if ($firstQuestion->answer_data_type === 'Strictly Number') {
             $message .= "\n *Note: Your answer should be a number.*";
@@ -202,6 +208,13 @@ function formartQuestion($firstQuestion,$member){
             $message .= "\n *Note: Your answer should contain only letters and numbers.*";
         }
     }
+    if ($reminder) {
+        
+        $message = "$survey->continue_confirmation_question\n$message";
+        $message = str_replace('\n', "\n", $message);
+        Log::info("The formarted message to be sent is {$survey->continue_confirmation_question}");
+    }
+
     $loanReceivedMonthId=$loanAmountQuestionId = \App\Models\SurveyQuestion::where('purpose', 'loan_received_date')
     ->value('id');
     $loanMonth = null;
@@ -239,33 +252,35 @@ function formartQuestion($firstQuestion,$member){
 
     if($latestEdit){
         $placeholders = [
-        '{member}' => $member->name,
-        '{group}' => $member->group->name,
-        '{id}' => $member->national_id,
-        '{gender}'=>$member->gender,
-        '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
-        '{LIP}' => $member?->group?->localImplementingPartner?->name,
-        '{month}' => \Carbon\Carbon::now()->monthName,
-        '{loan_received_month}' => $loanMonth ?? "N/A",
-        '{edit_id}' => $latestEdit->national_id ?? $member->national_id,
-        '{edit_year}' => $latestEdit->year_of_birth ?? \Carbon\Carbon::parse($member->dob)->format('Y'),
-        '{edit_gender}' => $latestEdit->gender ?? $member->gender,
-        '{edit_group}' => $latestEdit->group ?? $member->group->name,
-        '{loan_amount_received}' => $loanAmount ?? 'N/A', // Use 'N/A' or 0 if no response found
+        '{member}' => $member?->name  ?? "Not recorded",
+        '{group}' => $member?->group?->name ?? "Not recorded",
+        '{id}' => $member?->national_id ?? "Not recorded",
+        '{gender}'=>$member?->gender ?? "Not recorded",
+        '{dob}'=> \Carbon\Carbon::parse($member?->dob)->format('Y') ?? "Not recorded",
+        '{LIP}' => $member?->group?->localImplementingPartner?->name ?? "Not recorded",
+        '{month}' => \Carbon\Carbon::now()->monthName ?? "Not recorded",
+        '{loan_received_month}' => $loanMonth ?? "Not recorded",
+        '{edit_id}' => $latestEdit?->national_id ?? $member?->national_id ?? "Not recorded",
+        '{edit_year}' => $latestEdit?->year_of_birth ?? \Carbon\Carbon::parse($member?->dob)->format('Y') ?? "Not recorded",
+        '{edit_gender}' => $latestEdit?->gender ?? $member?->gender ?? "Not recorded",
+        '{edit_group}' => $latestEdit?->group ?? $member?->group?->name ?? "Not recorded",
+        '{loan_amount_received}' => $loanAmount  ?? "Not recorded", // Use 'N/A' or 0 if no response found
+        '{survey}' => $survey?->title  ?? "Not recorded",
 
     ];
     }else{
 
         $placeholders = [
-        '{member}' => $member->name,
-        '{group}' => $member->group->name,
-        '{id}' => $member->national_id,
-        '{gender}'=>$member->gender,
-        '{dob}'=> \Carbon\Carbon::parse($member->dob)->format('Y'),
-        '{LIP}' => $member?->group?->localImplementingPartner?->name,
-        '{month}' => \Carbon\Carbon::now()->monthName,
-        '{loan_received_month}' => $loanMonth ?? "N/A",
-        '{loan_amount_received}' => $loanAmount ?? 'N/A', // Use 'N/A' or 0 if no response found
+        '{member}' => $member?->name  ?? "Not recorded",
+        '{group}' => $member?->group?->name  ?? "Not recorded",
+        '{id}' => $member?->national_id   ?? "Not recorded",
+        '{gender}'=>$member?->gender   ?? "Not recorded",
+        '{dob}'=> \Carbon\Carbon::parse($member?->dob)->format('Y')   ?? "Not recorded",
+        '{LIP}' => $member?->group?->localImplementingPartner?->name  ?? "Not recorded" ,
+        '{month}' => \Carbon\Carbon::now()->monthName  ?? "Not recorded",
+        '{loan_received_month}' => $loanMonth   ?? "Not recorded",
+        '{loan_amount_received}' => $loanAmount  ?? "Not recorded", // Use 'N/A' or 0 if no response found
+        '{survey}' => $survey?->title   ?? "Not recorded",
 
     ];
     }
@@ -319,21 +334,11 @@ function startSurvey($msisdn, Survey $survey,$channel)
             return response()->json(['status' => 'error', 'message' => 'Redo Survey not found.']);
         }
 
-        // Create redo request entry
-        $redoRecord = RedoSurvey::create([
-            'member_id' => $member->id,
-            'phone_number' => $msisdn,
-            'survey_to_redo_id' => $survey->id,
-            'reason' => 'User triggered redo for a unique survey.',
-            'action' => 'pending',
-            'channel' => $channel,
-        ]);
-
         // Get first question of the “Redo Survey”
         $redoFirstQuestion = getNextQuestion($redoSurvey->id);
         if ($redoFirstQuestion) {
-            $message = formartQuestion($redoFirstQuestion, $member);
-            sendSMS($msisdn, $message,$channel);
+            $message = formartQuestion($redoFirstQuestion, $member,$survey);
+            sendSMS($msisdn, $message,$channel,$member);
 
             // Log for clarity
             Log::info("Sent redo survey question to {$msisdn}");
@@ -364,8 +369,8 @@ function startSurvey($msisdn, Survey $survey,$channel)
     ]);
 
     // Send first question
-    $message = formartQuestion($firstQuestion, $member);
-    sendSMS($msisdn, $message,$channel);
+    $message = formartQuestion($firstQuestion, $member, $survey);
+    sendSMS($msisdn, $message,$channel,$member);
 
     return response()->json([
         'status' => 'success',
@@ -390,8 +395,9 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
     Log::info("The user responded with ".$userResponse);
     $actualAnswer = getActualAnswer($currentQuestion,$userResponse,$msisdn);
 
+    $member=Member::where("phone",$msisdn)->first();
     if ($actualAnswer==null){
-        sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel);
+        sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel,$member);
         return;
     }
 
@@ -422,7 +428,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
         $valid=validateResponse($currentQuestion,$msisdn,$response);
 
         if(!$valid){
-            sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel);
+            sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel,$member);
             return;
         }
     }
@@ -432,7 +438,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
 
     if($currentQuestion->purpose !=="regular"){
         Log::info("This is not  regular question ");
-        processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer);
+        processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$survey,$channel);
     }
          
     $inbox_id = SMSInbox::where('phone_number', $msisdn)
@@ -450,6 +456,42 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
     ]);
     // Mark the question as responded to in the progress table
     $progress->update(['has_responded' => true]);
+
+    if ($currentQuestion->is_recurrent) {
+        $nextDispatch = now();
+        switch ($currentQuestion->recur_unit) {
+            case 'seconds':
+                $nextDispatch = $nextDispatch->addSeconds($currentQuestion->recur_interval);
+                break;
+            case 'minutes':
+                $nextDispatch = $nextDispatch->addMinutes($currentQuestion->recur_interval);
+                break;
+            case 'hours':
+                $nextDispatch = $nextDispatch->addHours($currentQuestion->recur_interval);
+                break;
+            case 'days':
+                $nextDispatch = $nextDispatch->addDays($currentQuestion->recur_interval);
+                break;
+            case 'weeks':
+                $nextDispatch = $nextDispatch->addWeeks($currentQuestion->recur_interval);
+                break;
+            case 'months':
+                $nextDispatch = $nextDispatch->addMonths($currentQuestion->recur_interval);
+                break;
+            default:
+                Log::warning("Unknown recur unit '{$currentQuestion->recur_unit}' for question ID {$currentQuestion->id}");
+        }
+
+        // Create record in member_recurrent_questions
+        MemberRecurrentQuestion::create([
+            'member_id' => $progress->member_id,
+            'question_id' => $currentQuestion->id,
+            'sent_count' => 1,
+            'next_dispatch_at' => $nextDispatch,
+        ]);
+
+        Log::info("Created recurrent question record for member {$progress->member_id} for question {$currentQuestion->id}, next dispatch at {$nextDispatch}");
+    }
     
     Log::info("Response recorded for question ID: {$currentQuestion->id}. Waiting for next scheduled dispatch.");
     // Check if this was the last question in the survey.
@@ -463,11 +505,34 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
                 'status' => 'COMPLETED'
             ]
         );
-        sendSMS($msisdn, $survey->final_response,$channel);
+        $stage=str_replace(' ', '', ucfirst($survey->title)) . 'Completed';
+                    $member->update([
+                        'stage' => $stage
+                    ]);
+                    Log::info("Survey {$survey->title} completed by {$member->phone}. Updated his stage to $stage");
+        $placeholders = [
+        '{member}' => $member ? explode(' ', trim($member->name))[0] : 'Not recorded',
+        // '{group}' => $member?->group?->name  ?? "Not recorded",
+        // '{id}' => $member?->national_id   ?? "Not recorded",
+        // '{gender}'=>$member?->gender   ?? "Not recorded",
+        // '{dob}'=> \Carbon\Carbon::parse($member?->dob)->format('Y')   ?? "Not recorded",
+        // '{LIP}' => $member?->group?->localImplementingPartner?->name  ?? "Not recorded" ,
+        // '{month}' => \Carbon\Carbon::now()->monthName  ?? "Not recorded",
+        // '{loan_received_month}' => $loanMonth   ?? "Not recorded",
+        // '{loan_amount_received}' => $loanAmount  ?? "Not recorded", // Use 'N/A' or 0 if no response found
+        // '{survey}' => $survey?->title   ?? "Not recorded",
+
+    ];
+    $message = str_replace(
+        array_keys($placeholders),
+        array_values($placeholders),
+        $survey->final_response
+    );
+        sendSMS($msisdn, $message,$channel,$member);
         return response()->json([
             'status' => 'success',
             'message' => 'Survey completed.',
-            'final_response' => $survey->final_response
+            'final_response' => $message
         ]);
     }
     // The next question will be sent by the scheduled command.
@@ -529,7 +594,7 @@ function parse_member_date_response(string $answer): ?Carbon
     }
 }
 
-function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer){
+function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$survey,$channel){
     if ($currentQuestion->purpose=="edit_id") {
        
         $memberEditRequest=MemberEditRequest::updateOrCreate(
@@ -598,46 +663,121 @@ function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer){
            
         }
     }
+    elseif ($currentQuestion->purpose=="redo_request"){
+         $redoSurvey = Survey::where('title', 'Redo Survey')->first();
+
+        if (!$redoSurvey) {
+            Log::error("Redo Survey not found in database.");
+            return response()->json(['status' => 'error', 'message' => 'Redo Survey not found.']);
+        }
+
+        // Create redo request entry
+        if($actualAnswer=="Yes"){
+                $redoRecord = RedoSurvey::create([
+                'member_id' => $member->id,
+                'phone_number' => $msisdn,
+                'survey_to_redo_id' => $survey->id,
+                'reason' => 'User triggered redo for a unique survey.',
+                'action' => 'pending',
+                'channel' => $channel,
+            ]);
+        }  
+    }
 
 }
 function getActualAnswer($currentQuestion, $userResponse, $msisdn)
 {
     $actualAnswer = null;
+    // Log::info($currentQuestion);
+
+    if($currentQuestion->purpose=="multiple_answers"){
+
+        Log::info("The current question is getting multiple answers.");
+
+        $responses = array_map('trim', explode(',', $userResponse));
+        $answers = [];
+
+        foreach ($responses as $response) {
+            $index = 1;
+            $matched = false;
+            $trainingsQuestion=SurveyQuestion::where('purpose','get_trainings_done')->first();
+
+            foreach ($trainingsQuestion->possible_answers as $answer) {
+                // Match by number
+                if ((string)$index === $response) {
+                    $answers[] = $answer['answer'];
+                    $matched = true;
+                    break;
+                }
+
+                // Match by actual text (case-insensitive)
+                if (strcasecmp($answer['answer'], $response) === 0) {
+                    $answers[] = $answer['answer'];
+                    $matched = true;
+                    break;
+                }
+
+                $index++;
+            }
+
+            // If a response doesn't match any valid answer, skip or handle as needed
+            if (!$matched) {
+                // You could log it or return null to indicate invalid input
+                // return null;
+            }
+        }
+
+        // Join multiple answers with commas (IoT, IP, etc.)
+        $actualAnswer = implode(',', $answers);
+        Log::info("The actual answers to be stored are: {$actualAnswer}");
+        return $actualAnswer;
+    }
 
     if ($currentQuestion->answer_strictness === "Multiple Choice") {
+        $index = 1;
+
         foreach ($currentQuestion->possible_answers as $answer) {
-            // Check if user typed the letter (case-insensitive)
-            if (strcasecmp($answer['letter'], $userResponse) === 0) {
-                $actualAnswer = $answer['answer']; // preserve original answer case
+            // Check if user typed the number
+            if ((string)$index === trim($userResponse)) {
+                $actualAnswer = $answer['answer']; // select answer based on number
                 break;
             }
 
-            // Check if user typed the actual answer (case-insensitive)
+            // Also allow typing the full answer text
             if (strcasecmp($answer['answer'], $userResponse) === 0) {
-                $actualAnswer = $answer['answer']; // preserve original answer case
+                $actualAnswer = $answer['answer'];
                 break;
             }
+
+            $index++;
         }
 
         if ($actualAnswer === null) {
-            // User gave something invalid (neither letter nor valid answer)
-            
-            
+            // User gave something invalid (neither number nor valid answer)
             return $actualAnswer; // stop further processing
         }
     } else {
-        // For non-multiple-choice, store response but normalize casing if needed
+        // For non-multiple-choice, store response directly
         $actualAnswer = trim($userResponse);
     }
 
     return $actualAnswer;
 }
 
+
 function validateResponse($currentQuestion,$msisdn,$response){
 
-    if ($currentQuestion->answer_data_type === 'Strictly Number' && !is_numeric($response)) {
-       
-        return false;
+    if($currentQuestion->purpose=="multiple_answers"){
+        return true;
+    }
+
+    if ($currentQuestion->answer_data_type === 'Strictly Number') {
+        // Remove commas and extra spaces
+        $normalizedResponse = str_replace(',', '', trim($response));
+
+        if (!is_numeric($normalizedResponse)) {
+            return false;
+        }
     }
     if ($currentQuestion->answer_data_type === 'Alphanumeric' && !ctype_alnum(str_replace(' ', '', $response))) {
         
@@ -676,13 +816,15 @@ function normalizePhoneNumber(string $phoneNumber): string
 }
 
 
-function sendSMS($msisdn, $message,$channel)
+function sendSMS($msisdn, $message,$channel,$member)
 {
+    Log::info($member->id);
     try {
         SMSInbox::create([
             'phone_number' => $msisdn, // Store the phone number in group_ids for tracking
             'message' => $message,
             'channel' => $channel,
+            'member_id' => $member->id,
         ]);
     } catch (\Exception $e) {
         Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());
