@@ -4,6 +4,7 @@
 use Carbon\Carbon;
 use App\Models\Member;
 use App\Models\MemberEditRequest;
+use App\Models\MemberRecurrentQuestion;
 use App\Models\RedoSurvey;
 use App\Models\SMSInbox;
 use App\Models\Survey;
@@ -455,6 +456,42 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
     ]);
     // Mark the question as responded to in the progress table
     $progress->update(['has_responded' => true]);
+
+    if ($currentQuestion->is_recurrent) {
+        $nextDispatch = now();
+        switch ($currentQuestion->recur_unit) {
+            case 'seconds':
+                $nextDispatch = $nextDispatch->addSeconds($currentQuestion->recur_interval);
+                break;
+            case 'minutes':
+                $nextDispatch = $nextDispatch->addMinutes($currentQuestion->recur_interval);
+                break;
+            case 'hours':
+                $nextDispatch = $nextDispatch->addHours($currentQuestion->recur_interval);
+                break;
+            case 'days':
+                $nextDispatch = $nextDispatch->addDays($currentQuestion->recur_interval);
+                break;
+            case 'weeks':
+                $nextDispatch = $nextDispatch->addWeeks($currentQuestion->recur_interval);
+                break;
+            case 'months':
+                $nextDispatch = $nextDispatch->addMonths($currentQuestion->recur_interval);
+                break;
+            default:
+                Log::warning("Unknown recur unit '{$currentQuestion->recur_unit}' for question ID {$currentQuestion->id}");
+        }
+
+        // Create record in member_recurrent_questions
+        MemberRecurrentQuestion::create([
+            'member_id' => $progress->member_id,
+            'question_id' => $currentQuestion->id,
+            'sent_count' => 1,
+            'next_dispatch_at' => $nextDispatch,
+        ]);
+
+        Log::info("Created recurrent question record for member {$progress->member_id} for question {$currentQuestion->id}, next dispatch at {$nextDispatch}");
+    }
     
     Log::info("Response recorded for question ID: {$currentQuestion->id}. Waiting for next scheduled dispatch.");
     // Check if this was the last question in the survey.
