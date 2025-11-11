@@ -54,8 +54,8 @@ class MemberResource extends Resource
                     ->minLength(5)
                     ->readOnly()
                     ->visibleOn('edit'),
-                \Filament\Forms\Components\TextInput::make('email')->email()->placeholder('john.doe@example.com')->required()->maxLength(255)->unique(ignoreRecord: true),
-                \Filament\Forms\Components\TextInput::make('phone')->placeholder('e.g. 0712345678'),
+                \Filament\Forms\Components\TextInput::make('email')->email()->placeholder('john.doe@example.com')->nullable()->maxLength(255)->unique(ignoreRecord: true),
+                \Filament\Forms\Components\TextInput::make('phone')->placeholder('e.g. 0712345678')->maxLength(10)->minLength(10),
                 \Filament\Forms\Components\TextInput::make('national_id')->required()->placeholder('e.g. 11111111')
                     ->unique(ignoreRecord: true)
                     ->maxLength(8)
@@ -68,6 +68,17 @@ class MemberResource extends Resource
                         'male' => 'Male',
                         'female' => 'Female',
                     ]),
+                Toggle::make('is_disabled')
+                    ->label('Is Disabled')
+                    ->reactive()
+                    ->inline(false),
+
+                \Filament\Forms\Components\TextInput::make('disability')
+                    ->label('Type of Disability')
+                    ->placeholder('e.g. Visual impairment')
+                    ->visible(fn (callable $get) => $get('is_disabled') === true)
+                    ->required(fn (callable $get) => $get('is_disabled') === true)
+                    ->maxLength(255),
                 \Filament\Forms\Components\DatePicker::make('dob')->label('Date of Birth')
                 ->native(false)->hint("As it appears on the ID"),
                 \Filament\Forms\Components\Select::make('marital_status')
