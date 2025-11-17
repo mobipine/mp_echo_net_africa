@@ -45,25 +45,32 @@ class FetchDeliveryStatuses extends Command
 
             if (($data['status'] ?? null) == 222) {
 
-            $desc = $data['delivery_status_desc'] ?? null;
+                $desc = $data['delivery_status_desc'] ?? null;
 
-            // normalize
-            if ($desc === 'DeliveredToTerminal') {
-                $sms->delivery_status = 'Delivered';
+                // If NULL → leave as pending
+                if ($desc === null) {
+                    $this->info("Status still pending for {$sms->unique_id} (NULL response) → not updating");
+                    continue; // skip updating
+                }
+
+                // Normalize based on provider response
+                if ($desc === 'DeliveredToTerminal') {
+                    $sms->delivery_status = 'Delivered';
+                } else {
+                    $sms->delivery_status = 'failed';
+                }
+
+                // always store provider description
+                $sms->delivery_status_desc = $desc;
+
+                $sms->save();
+
+                $this->info("Updated {$sms->unique_id} → {$sms->delivery_status} ({$desc})");
+
             } else {
-                $sms->delivery_status = "failed";
-            }
-
-            // also save exact provider description
-            $sms->delivery_status_desc = $desc;
-
-            $sms->save();
-
-            $this->info("Updated {$sms->unique_id} → {$sms->delivery_status} ({$desc})");
-        }
-        else {
                 $this->error("Error fetching status for {$sms->unique_id}: " . ($data['status_message'] ?? 'Unknown error'));
             }
         }
+
     }
 }
