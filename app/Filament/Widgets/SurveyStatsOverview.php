@@ -122,11 +122,17 @@ class SurveyStatsOverview extends BaseWidget
                 ->description('Unique members who received reminders.')
                 ->descriptionIcon('heroicon-o-user-group')
                 ->color('primary'),
-            Stat::make('Repeated Reminders (3+ Times)', $repeatReminders)
-                ->description('Phone numbers that received the same reminder 3+ times.')
+            Stat::make('Repeated Reminders (3 Times)', $repeatReminders)
+                ->description('Phone numbers that received the same reminder 3 times.')
                 ->descriptionIcon('heroicon-o-exclamation-circle')
                 ->color('danger')
-                // ->url(route('filament.pages.send-sms')),
+                ->url(
+                    \App\Filament\Resources\SurveyProgressResource::getUrl('index', [
+                        'tableFilters' => [
+                            '3_reminders' => true,   // 👈 apply your filter here
+                        ],
+                    ])
+                ),
 
         ];
     }
