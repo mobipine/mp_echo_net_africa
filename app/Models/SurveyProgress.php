@@ -31,6 +31,7 @@ class SurveyProgress extends Model
         'completed_at',
         'status',
         'source',
+        'number_of_reminders'
     ];
 
     /**
