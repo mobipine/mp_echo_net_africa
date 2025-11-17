@@ -85,22 +85,27 @@ class GroupResource extends Resource
                     ->schema([
                         Forms\Components\TextInput::make('kra_pin')
                             ->label('KRA Pin')
-                            ->maxLength(50),
+                            ->maxLength(50)
+                            ->required(),
 
                         Forms\Components\TextInput::make('bank_name')
                             ->label('Bank Name')
+                            ->required()
                             ->maxLength(255),
 
                         Forms\Components\TextInput::make('bank_account_number')
                             ->label('Bank Account Number')
+                            ->required()
                             ->maxLength(50),
 
                         Forms\Components\TextInput::make('bank_branch')
                             ->label('Bank Branch')
+                            ->required()
                             ->maxLength(255),
 
                         Forms\Components\Select::make('meeting_frequency')
                             ->label('Frequency of Group Meetings')
+                            ->required()
                             ->options([
                                 'weekly' => 'Weekly',
                                 'biweekly' => 'Biweekly',
