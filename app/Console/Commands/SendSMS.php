@@ -78,6 +78,7 @@ class SendSMS extends Command
                     info("SMS sent to {$phone_number}");
                     // After processing, update the SMS inbox status to 'sent'
                     $sms_inbox->status = 'sent';
+                    $sms_inbox->unique_id = $response['unique_id'];
                     $sms_inbox->save();
                     info("SMS inbox with ID {$sms_inbox->id} marked as sent.");
                 } else {
