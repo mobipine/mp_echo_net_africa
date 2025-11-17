@@ -74,6 +74,14 @@ class SMSResource extends Resource
         ->columns([
             TextColumn::make('id')->label('ID')->sortable(),
             TextColumn::make('message')->label('Message')->limit(50)->searchable(),
+            TextColumn::make('member.name')
+                ->label('Member')
+                ->formatStateUsing(fn ($state, $record) =>
+                    $state ?? $record->phone_number
+                )
+                ->searchable(['member.name', 'phone_number'])
+                ->sortable(),
+            TextColumn::make('phone_number'),
             // TextColumn::make('group_ids')
             //     ->label('Groups')
             //     ->formatStateUsing(function ($state) {
@@ -93,8 +101,26 @@ class SMSResource extends Resource
                     'success' => fn ($state): bool => $state === 'sent',
                     'danger' => fn ($state): bool => $state === 'failed',
                 ])
+                ->sortable()
                 ->formatStateUsing(fn ($state) => ucfirst($state)), // Capitalize the status
-            TextColumn::make('created_at')->label('Created At')->dateTime(),
+
+                BadgeColumn::make('delivery_status')
+                ->label('Delivery Status')
+                ->colors([
+                    'warning' => fn ($state): bool => $state === 'pending',
+                    'success' => fn ($state): bool => $state === 'sent',
+                    'danger' => fn ($state): bool => $state === 'failed',
+                ])
+                ->sortable()
+                ->formatStateUsing(fn ($state) => ucfirst($state)), // Capitalize the status
+
+                BadgeColumn::make('delivery_status_desc')
+                ->label('Delivery Status Description')
+                ->sortable()
+                ->formatStateUsing(fn ($state) => ucfirst($state)),
+                
+
+            // TextColumn::make('created_at')->label('Created At')->dateTime(),
         ])
         ->filters([
             //
