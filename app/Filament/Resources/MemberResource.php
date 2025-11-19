@@ -19,12 +19,13 @@ use Filament\Tables\Actions\Action;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Maatwebsite\Excel\Facades\Excel;
 use pxlrbt\FilamentExcel\Actions\Tables\ExportBulkAction;
 use pxlrbt\FilamentExcel\Exports\ExcelExport;
-
+use Illuminate\Validation\ValidationException;
 class MemberResource extends Resource
 {
     protected static ?string $model = Member::class;
@@ -43,6 +44,7 @@ class MemberResource extends Resource
                 \Filament\Forms\Components\Select::make('group_id')
                 ->native(false)
                     ->label('Group')
+                    ->searchable()
                     ->relationship('group', 'name')
                     ->required(),
                 \Filament\Forms\Components\TextInput::make('name')->required()->placeholder('e.g. John Doe')->hint("As it appears on the ID"),
@@ -58,7 +60,7 @@ class MemberResource extends Resource
                 \Filament\Forms\Components\TextInput::make('phone')->placeholder('e.g. 0712345678')->maxLength(10)->minLength(10),
                 \Filament\Forms\Components\TextInput::make('national_id')->required()->placeholder('e.g. 11111111')
                     ->unique(ignoreRecord: true)
-                    ->maxLength(8)
+                    ->maxLength(9)
                     ->minLength(7)
                     ->numeric()
                     ->hint("As it appears on the ID"),
@@ -80,7 +82,7 @@ class MemberResource extends Resource
                     ->required(fn (callable $get) => $get('is_disabled') === true)
                     ->maxLength(255),
                 \Filament\Forms\Components\DatePicker::make('dob')->label('Date of Birth')
-                ->native(false)->hint("As it appears on the ID"),
+                ->hint("As it appears on the ID"),
                 \Filament\Forms\Components\Select::make('marital_status')
                 ->native(false)
                     ->options([
@@ -103,6 +105,33 @@ class MemberResource extends Resource
                 Toggle::make('is_active',)
 
             ]);
+    }
+    //    use Filament\Forms\Validation\ValidationException;
+
+
+    public static function validateDob(array $data): void
+    {
+        Log::info("validating date");
+        if (!isset($data['dob'])) {
+            return;
+        }
+
+        $dob = \Carbon\Carbon::parse($data['dob']);
+        $age = $dob->diffInYears(now());
+
+        $isDisabled = $data['is_disabled'] ?? false;
+
+        if ($isDisabled && ($age < 18 || $age > 40)) {
+            throw ValidationException::withMessages([
+                'dob' => 'Persons with disabilities must be between 18 and 40 years old.',
+            ]);
+        }
+
+        if (!$isDisabled && ($age < 18 || $age > 35)) {
+            throw ValidationException::withMessages([
+                'dob' => 'Standard members must be between 18 and 35 years old.',
+            ]);
+        }
     }
 
     public static function table(Table $table): Table

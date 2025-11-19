@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\SendGroupSMSJob;
 use App\Models\Group;
 use App\Models\SMSInbox;
 use App\Services\BongaSMS;
@@ -40,123 +41,26 @@ class SendSMS extends Command
 
     public function handle()
     {
-        //for this cron job, we will send SMS to all groups that have been selected in the SendSMS page
-        $sms_inboxes = SMSInbox::where('status', 'pending')
-            ->where('channel','sms')
-            ->where('group_ids', '!=', null) // Ensure group_ids is not null
-            // ->where('group_ids', '!=', []) // Ensure group_ids is not an empty array
-            ->take(10) // Limit to 10 SMS inboxes to process at a time
+        // Fetch pending SMSInbox records, limit to avoid memory issues
+        $pendingSms = SMSInbox::where('status', 'pending')
+            ->where('channel', 'sms')
+            ->take(100) // dispatch in batches of 100, adjust as needed
             ->get();
-        // dd($sms_inboxes);
 
-        info('Processing pending SMS...');
-
-        if ($sms_inboxes->isEmpty()) {
-
-            Log::info("Empty sms inbox");
-
-
-            //check if there are SMSInbox with group_ids that are null or empty but phone_number and member_id is filled
-            $sms_inboxes = SMSInbox::where('status', 'pending')
-                ->where('channel','sms')
-                ->whereNotNull('phone_number')
-                // ->whereNotNull('member_id')
-                ->take(10)
-                ->get();
-
-            // dd($sms_inboxes);
-
-            foreach ($sms_inboxes as $sms_inbox) {
-                $phone_number = $sms_inbox->phone_number;
-                $message = $sms_inbox->message;
-
-                // Send SMS to the phone number
-                info("Sending SMS to {$phone_number}");
-                $response = $this->sendSMS($phone_number, $message);
-
-                if (($response['status'] ?? null) == 222) {
-                    info("SMS sent to {$phone_number}");
-                    // After processing, update the SMS inbox status to 'sent'
-                    $sms_inbox->status = 'sent';
-                    $sms_inbox->save();
-                    info("SMS inbox with ID {$sms_inbox->id} marked as sent.");
-                } else {
-                    $this->error("Failed to send SMS to {$phone_number}");
-                }
-            }
-
-            return; // Exit if no groups are found
+        if ($pendingSms->isEmpty()) {
+            $this->info("No pending SMSInbox records to dispatch.");
+            return;
         }
 
-        // Log::info($sms_inboxes);
-        foreach ($sms_inboxes as $sms_inbox) {
-            $group_ids = $sms_inbox->group_ids; // This should be an array of group IDs
-            // dd($group_ids);
-            $message = $sms_inbox->message;
-
-            // Loop through each group and send the SMS
-            foreach ($group_ids as $group_id) {
-                $group = Group::find($group_id);
-                // dd($group, $group->members);
-                if ($group) {
-                    $members = $group->members;
-                    if ($members->isEmpty()) {
-                        info("No members found in group {$group->name}");
-                        continue; // Skip to the next group if no members
-                    }
-                    foreach ($group->members as $member) {
-
-                        info(">>>>>>>>>>Sending SMS to {$member->phone} in group {$group->name}");
-                        $placeholders = [
-                            '{member}' => $member?->name  ?? "Not recorded",
-                            '{group}' => $member?->group?->name  ?? "Not recorded",
-                            '{id}' => $member?->national_id   ?? "Not recorded",
-                            '{gender}'=>$member?->gender   ?? "Not recorded",
-                            '{dob}'=> \Carbon\Carbon::parse($member?->dob)->format('Y')   ?? "Not recorded",
-                            '{LIP}' => $member?->group?->localImplementingPartner?->name  ?? "Not recorded" ,
-                            '{month}' => \Carbon\Carbon::now()->monthName  ?? "Not recorded",
-                            '{loan_received_month}' => $loanMonth   ?? "Not recorded",
-                            '{loan_amount_received}' => $loanAmount  ?? "Not recorded", // Use 'N/A' or 0 if no response found
-                            '{survey}' => $survey?->title   ?? "Not recorded",
-
-                        ];
-                        
-                        
-                        $message = str_replace(
-                            array_keys($placeholders),
-                            array_values($placeholders),
-                            $message
-                        );
-
-                        $response = $this->sendSMS($member->phone, $message);
-                        // dd($response);
-                        if (($response['status'] ?? null) == 222) {
-                            info("SMS sent to {$member->phone}");
-                        } else {
-                            $this->error("Failed to send SMS to {$member->phone}");
-                        }
-                    }
-                }
-            }
-            // After processing, update the SMS inbox status to 'sent'
-            $sms_inbox->status = 'sent';
-            $sms_inbox->save();
-            info("SMS inbox with ID {$sms_inbox->id} marked as sent.");
+        foreach ($pendingSms as $smsInbox) {
+            SendGroupSMSJob::dispatch($smsInbox->id)->onQueue('sms');
+            Log::info("Dispatched SMSInbox ID {$smsInbox->id} to queue.");
         }
-    }
 
-    protected function sendSMS(string $phoneNumber, string $message)
-    {
-        // Use the UjumbeSMS service to send the SMS
-        try {
-            $res = $this->bonga_sms->send($phoneNumber, $message);
-            // info("SMS sent to {$phoneNumber}");
-
-            // dd($res); // Debugging line to check the response
-            return $res; // Return the response from the SMS service
-        } catch (\Exception $e) {
-            $this->error("Failed to send SMS to {$phoneNumber}: " . $e->getMessage());
-            return false; // Return false on failure
-        }
+        $this->info("Dispatched {$pendingSms->count()} SMSInbox records to the SMS queue.");
+    
     }
 }
+
+
+

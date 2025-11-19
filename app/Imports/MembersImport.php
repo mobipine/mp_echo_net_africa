@@ -11,9 +11,16 @@ use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
+use Maatwebsite\Excel\Concerns\WithChunkReading;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
-class MembersImport implements ToCollection, WithHeadingRow
+class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, ShouldQueue
 {
+    public function chunkSize(): int
+    {
+        return 1000; // change to suit memory/throughput
+    }
+
     public function collection(Collection $rows)
     {
         $importedCount = 0;
@@ -27,7 +34,10 @@ class MembersImport implements ToCollection, WithHeadingRow
                 $phone = trim($row['phone_no'] ?? '');
                 $nationalId = trim($row['national_id'] ?? '');
                 $gender = trim($row['gender'] ?? '');
-                $dob = $row['year_birth'] ?? $row['year'] ?? null;
+                // $dob = $row['year_birth'] ?? $row['year'] ?? null;
+                // Handle DOB (year only)
+                $dobYear = trim($row['year'] ?? null);
+               
 
                 // Skip invalid rows
                 if (empty($name) || empty($nationalId)) {
@@ -39,6 +49,12 @@ class MembersImport implements ToCollection, WithHeadingRow
                 if (!empty($phone) && !Str::startsWith($phone, '0')) {
                     $phone = '0' . $phone;
                 }
+                if (strlen($phone) !== 10) {
+                    Log::warning("Invalid phone number skipped: {$phone}");
+
+                    $skippedCount++;
+                    continue; // skip this row
+                }
 
                 // Create or get group
                 $group = Group::firstOrCreate(
@@ -47,19 +63,24 @@ class MembersImport implements ToCollection, WithHeadingRow
                 );
 
                 // Handle DOB
+                // $dobCarbon = null;
+                // if (!empty($dob)) {
+                //     try {
+                //         if (is_numeric($dob)) {
+                //             $dobCarbon = Carbon::instance(\PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($dob));
+                //         } elseif (preg_match('/^\d{4}$/', trim($dob))) {
+                //             $dobCarbon = Carbon::createFromDate((int)$dob, 1, 1);
+                //         } else {
+                //             $dobCarbon = Carbon::parse($dob);
+                //         }
+                //     } catch (\Exception $e) {
+                //         $dobCarbon = null;
+                //     }
+                // }
+
                 $dobCarbon = null;
-                if (!empty($dob)) {
-                    try {
-                        if (is_numeric($dob)) {
-                            $dobCarbon = Carbon::instance(\PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($dob));
-                        } elseif (preg_match('/^\d{4}$/', trim($dob))) {
-                            $dobCarbon = Carbon::createFromDate((int)$dob, 1, 1);
-                        } else {
-                            $dobCarbon = Carbon::parse($dob);
-                        }
-                    } catch (\Exception $e) {
-                        $dobCarbon = null;
-                    }
+                if (!empty($dobYear) && preg_match('/^\d{4}$/', $dobYear)) {
+                    $dobCarbon = Carbon::createFromDate((int)$dobYear, 1, 1);
                 }
 
                 // Use a transaction to ensure safe updates

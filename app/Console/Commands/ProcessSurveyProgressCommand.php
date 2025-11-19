@@ -148,6 +148,8 @@ class ProcessSurveyProgressCommand extends Command
                         'current_question_id' => $nextQuestion->id,
                         'last_dispatched_at' => now(),
                         'has_responded' => false,
+                        // Reset reminders count
+                        'number_of_reminders' => 0,
                     ]);
                     Log::info("Next question sent to {$member->phone} for survey {$survey->title}.");
                    
@@ -155,7 +157,8 @@ class ProcessSurveyProgressCommand extends Command
                     // All questions answered, mark as complete
                     $progress->update([
                         'completed_at' => now(),
-                        'status' => 'COMPLETED'
+                        'status' => 'COMPLETED',
+                        'number_of_reminders' => 0,
                     ]);
                     $stage=str_replace(' ', '', ucfirst($survey->title)) . 'Completed';
                     $member->update([
@@ -166,7 +169,11 @@ class ProcessSurveyProgressCommand extends Command
 
             } elseif($isconfirmationDue) {
                     //reminder
-                    
+                // Check if user has already received 3 reminders
+                if ($progress->number_of_reminders >= 3) {
+                    Log::info("Max reminders reached for {$member->phone} on survey {$survey->title}. No further reminders will be sent.");
+                    continue; // Skip sending
+                }
                 $message=formartQuestion($currentQuestion,$member,$survey,true);
                 Log::info("This is the formated message $message");
                 Log::info("No response from member. Sending the reminder message {$message}...");
@@ -178,6 +185,7 @@ class ProcessSurveyProgressCommand extends Command
                         'last_dispatched_at' => now(),
                         
                     ]); // Update timestamp and status
+                    $progress->increment('number_of_reminders');
                     Log::info("Confirmation sent to {$member->phone} for survey {$survey->title}.");
                 } catch (\Exception $e) {
                     Log::error("Failed to send confirmation to {$member->phone}: " . $e->getMessage());
