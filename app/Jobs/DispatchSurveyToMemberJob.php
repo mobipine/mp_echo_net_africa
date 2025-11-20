@@ -9,12 +9,13 @@ use App\Models\SurveyProgress;
 use App\Models\SMSInbox;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class DispatchSurveyToMemberJob implements ShouldQueue
+class DispatchSurveyToMemberJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -24,10 +25,23 @@ class DispatchSurveyToMemberJob implements ShouldQueue
     public $tries = 3;
     public $timeout = 60;
 
+    /**
+     * The number of seconds the job's unique lock will be maintained.
+     */
+    public int $uniqueFor = 300;
+
     public function __construct($memberId, $groupSurveyId)
     {
         $this->memberId = $memberId;
         $this->groupSurveyId = $groupSurveyId;
+    }
+
+    /**
+     * Get the unique ID for the job.
+     */
+    public function uniqueId(): string
+    {
+        return "dispatch-survey-member-{$this->memberId}-assignment-{$this->groupSurveyId}";
     }
 
     public function handle()

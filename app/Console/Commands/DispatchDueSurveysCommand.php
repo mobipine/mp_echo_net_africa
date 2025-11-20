@@ -15,32 +15,46 @@ class DispatchDueSurveysCommand extends Command
 
     public function handle()
     {
-        $dueAssignments = GroupSurvey::where('automated', true)
-            ->where('was_dispatched', false)
-            ->where('starts_at', '<=', now())
-            ->get();
+        // Acquire lock to prevent concurrent executions
+        $lock = \Illuminate\Support\Facades\Cache::lock('surveys-due-dispatch-command', 60);
 
-        if ($dueAssignments->isEmpty()) {
-            $this->info('No automated survey assignments due.');
+        if (!$lock->get()) {
+            $this->info('Command already running. Skipping...');
             return;
         }
 
-        foreach ($dueAssignments as $assignment) {
-            $group = Group::find($assignment->group_id);
-            if (!$group) continue;
+        try {
+            $dueAssignments = GroupSurvey::where('automated', true)
+                ->where('was_dispatched', false)
+                ->where('starts_at', '<=', now())
+                ->lockForUpdate() // Lock rows to prevent concurrent access
+                ->get();
 
-            $this->info("Dispatching survey '{$assignment->survey->title}' to group '{$group->name}'");
+            if ($dueAssignments->isEmpty()) {
+                $this->info('No automated survey assignments due.');
+                return;
+            }
 
-            // ===== Chunk members to avoid memory issues =====
-            $group->members()->where('is_active', true)->chunk(500, function ($members) use ($assignment) {
-                foreach ($members as $member) {
-                    DispatchSurveyToMemberJob::dispatch($member->id, $assignment->id)->onQueue('surveys');
-                }
-            });
+            foreach ($dueAssignments as $assignment) {
+                $group = Group::find($assignment->group_id);
+                if (!$group) continue;
 
-            $assignment->update(['was_dispatched' => true]);
+                $this->info("Dispatching survey '{$assignment->survey->title}' to group '{$group->name}'");
+
+                // CRITICAL: Mark as dispatched BEFORE dispatching jobs
+                $assignment->update(['was_dispatched' => true]);
+
+                // ===== Chunk members to avoid memory issues =====
+                $group->members()->where('is_active', true)->chunk(500, function ($members) use ($assignment) {
+                    foreach ($members as $member) {
+                        DispatchSurveyToMemberJob::dispatch($member->id, $assignment->id)->onQueue('surveys');
+                    }
+                });
+            }
+
+            $this->info("All due survey assignments have been queued.");
+        } finally {
+            $lock->release();
         }
-
-        $this->info("All due survey assignments have been queued.");
     }
 }

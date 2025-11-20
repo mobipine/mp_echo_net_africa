@@ -9,20 +9,35 @@ use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class SendSurveyToGroupJob implements ShouldQueue
+class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    /**
+     * The number of seconds the job's unique lock will be maintained.
+     */
+    public int $uniqueFor = 300;
 
     public function __construct(
         public array $groupIds,
         public Survey $survey,
         public $channel
     ) {}
+
+    /**
+     * Get the unique ID for the job.
+     */
+    public function uniqueId(): string
+    {
+        $groupIdsStr = implode('-', $this->groupIds);
+        return "send-survey-{$this->survey->id}-groups-{$groupIdsStr}-{$this->channel}";
+    }
 
     public function handle(): void
     {
@@ -69,10 +84,11 @@ class SendSurveyToGroupJob implements ShouldQueue
                     }
                 }
 
-                // --- Participant uniqueness check ---
+                // --- Participant uniqueness check with row locking ---
                 $progress = SurveyProgress::where('member_id', $member->id)
                     ->where('survey_id', $this->survey->id)
                     ->whereNull('completed_at')
+                    ->lockForUpdate() // Prevent race conditions
                     ->first();
 
                 if ($progress && $this->survey->participant_uniqueness) {
@@ -87,6 +103,18 @@ class SendSurveyToGroupJob implements ShouldQueue
                         ->whereNull('completed_at')
                         ->update(['status' => 'CANCELLED']);
                     Log::info("Cancelled previous incomplete progress for {$member->name}.");
+                }
+
+                // --- Double-check one more time before creating (defensive) ---
+                $doubleCheck = SurveyProgress::where('member_id', $member->id)
+                    ->where('survey_id', $this->survey->id)
+                    ->whereNull('completed_at')
+                    ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
+                    ->exists();
+
+                if ($doubleCheck) {
+                    Log::info("Double-check: SurveyProgress already exists for member {$member->id}. Skipping.");
+                    continue;
                 }
 
                 // --- Create new progress record ---
