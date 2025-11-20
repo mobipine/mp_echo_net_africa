@@ -20,181 +20,191 @@ class ProcessSurveyProgressCommand extends Command
 
     public function handle()
     {
-        Log::info("in the command");
+        // Acquire lock to prevent concurrent executions
+        $lock = \Illuminate\Support\Facades\Cache::lock('process-surveys-progress-command', 60);
 
-        $progressRecords = SurveyProgress::with(['survey', 'currentQuestion', 'member'])
-            ->whereNull('completed_at')
-            ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
-            ->get();
-
-        if($progressRecords->isEmpty()){
-            Log::info("No acive progress record");
+        if (!$lock->get()) {
+            Log::info('ProcessSurveyProgressCommand already running. Skipping...');
             return;
         }
 
-        Log::info("looping through active progress records");
+        try {
+            Log::info("in the command");
 
-        foreach ($progressRecords as $progress) {
-            $member = $progress->member;
-            $survey = $progress->survey;
-            $currentQuestion = $progress->currentQuestion;
+            $progressRecords = SurveyProgress::with(['survey', 'currentQuestion', 'member'])
+                ->whereNull('completed_at')
+                ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
+                ->get();
 
-            if (!$currentQuestion) {
-                Log::warning("No current question found for survey progress ID: {$progress->id}.");
-                continue;
+            if ($progressRecords->isEmpty()) {
+                Log::info("No acive progress record");
+                return;
             }
 
-            // Get the pivot data for the group-survey relationship
-            // $groupSurvey = DB::table('group_survey')
-            //     ->where('survey_id', $survey->id)
-            //     ->first();
-            $source = $progress->source ?? 'manual'; // Default to 'MANUAL' if source is null
+            Log::info("looping through active progress records");
 
-            if($source != "shortcode") {
-                $groupSurvey = GroupSurvey::where('survey_id', $survey->id)->first();
-    
-                // If no pivot data exists, skip this record to prevent errors
-                if (!$groupSurvey ) {
-                    Log::warning("Group-survey relationship not found for survey ID: {$survey->id}.");
+            foreach ($progressRecords as $progress) {
+                $member = $progress->member;
+                $survey = $progress->survey;
+                $currentQuestion = $progress->currentQuestion;
+
+                if (!$currentQuestion) {
+                    Log::warning("No current question found for survey progress ID: {$progress->id}.");
                     continue;
                 }
-                Log::info("the progress was initiated from a group survey");
-    
-                $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
-                $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
 
-                // $endDate = GroupSurvey::where('group_id', $member->group_id)
-                //         ->where('survey_id',$survey->id)
-                //         ->value('ends_at');
-                
+                // Get the pivot data for the group-survey relationship
+                // $groupSurvey = DB::table('group_survey')
+                //     ->where('survey_id', $survey->id)
+                //     ->first();
+                $source = $progress->source ?? 'manual'; // Default to 'MANUAL' if source is null
 
-            } else {
-                //for shortcode surveys, use 1 minute interval
-                //TODO: Josphat: Create a global config for on the survey resource
-                $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
-                $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
+                if ($source != "shortcode") {
+                    $groupSurvey = GroupSurvey::where('survey_id', $survey->id)->first();
 
-                // $endDate = null;
-            }
+                    // If no pivot data exists, skip this record to prevent errors
+                    if (!$groupSurvey) {
+                        Log::warning("Group-survey relationship not found for survey ID: {$survey->id}.");
+                        continue;
+                    }
+                    Log::info("the progress was initiated from a group survey");
 
-            // Log::info("The survey ends on $endDate");
-            //check if endDate has passed. If it has, continue to the next record
-            
+                    $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
+                    $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
 
-            // Check if the time since the last dispatch has exceeded the defined interval
-            $lastDispatched = Carbon::parse($progress->last_dispatched_at);
-            Log::info("Last Dispatched $lastDispatched");
+                    // $endDate = GroupSurvey::where('group_id', $member->group_id)
+                    //         ->where('survey_id',$survey->id)
+                    //         ->value('ends_at');
 
-            $nextDue = $lastDispatched->add($interval, $unit);
-            Log::info("The interval should be $interval $unit");
-            Log::info("Next Due Date $nextDue");
 
-            $isDue = $nextDue->lessThanOrEqualTo(now()); 
-            Log::info("is Due is: ".$isDue);
+                } else {
+                    //for shortcode surveys, use 1 minute interval
+                    //TODO: Josphat: Create a global config for on the survey resource
+                    $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
+                    $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
 
-            if (!$isDue) {
-                Log::info("Survey progress ID: {$progress->id} is not yet due for processing.");
-                continue;
-            }
+                    // $endDate = null;
+                }
 
-            $reminder_interval=$survey->continue_confirmation_interval;
-            $reminder_interval_unit=$survey->continue_confirmation_interval_unit;
+                // Log::info("The survey ends on $endDate");
+                //check if endDate has passed. If it has, continue to the next record
 
-            $confirmationDue=$lastDispatched->add($reminder_interval, $reminder_interval_unit);
-            $isconfirmationDue=$confirmationDue->lessThanOrEqualTo(now());
 
-            Log::info("If the user has not yet responded to the previous question sent in {$survey->title} and the time for to dispatch the confirmation question {$confirmationDue} has reached a confirmation message will be sent, if he has responded, the next question will be sent.");
+                // Check if the time since the last dispatch has exceeded the defined interval
+                $lastDispatched = Carbon::parse($progress->last_dispatched_at);
+                Log::info("Last Dispatched $lastDispatched");
 
-            // Check if the user has responded since the last dispatch
-            $hasResponded = SurveyProgress::where('member_id', $member->id)
-                ->where('survey_id', $survey->id)
-                ->where('has_responded', true)
-                ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
-                ->exists();
-                
-        
-            if ($hasResponded) {
-                Log::info("The member {$member->name} has responded to the survey and next dispatch is due. Sending the next question...");
-                $progress = SurveyProgress::where('member_id', $member->id)
+                $nextDue = $lastDispatched->add($interval, $unit);
+                Log::info("The interval should be $interval $unit");
+                Log::info("Next Due Date $nextDue");
+
+                $isDue = $nextDue->lessThanOrEqualTo(now());
+                Log::info("is Due is: " . $isDue);
+
+                if (!$isDue) {
+                    Log::info("Survey progress ID: {$progress->id} is not yet due for processing.");
+                    continue;
+                }
+
+                $reminder_interval = $survey->continue_confirmation_interval;
+                $reminder_interval_unit = $survey->continue_confirmation_interval_unit;
+
+                $confirmationDue = $lastDispatched->add($reminder_interval, $reminder_interval_unit);
+                $isconfirmationDue = $confirmationDue->lessThanOrEqualTo(now());
+
+                Log::info("If the user has not yet responded to the previous question sent in {$survey->title} and the time for to dispatch the confirmation question {$confirmationDue} has reached a confirmation message will be sent, if he has responded, the next question will be sent.");
+
+                // Check if the user has responded since the last dispatch
+                $hasResponded = SurveyProgress::where('member_id', $member->id)
                     ->where('survey_id', $survey->id)
                     ->where('has_responded', true)
                     ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
-                    ->latest()
-                    ->first();
+                    ->exists();
 
-                $channel = $progress?->channel ?? 'sms'; // default to sms if null
-                
-                //get the response
-                $latestResponse = SurveyResponse::where('session_id', $progress->id)
-                    ->where('survey_id', $survey->id)
-                    ->where('question_id', $currentQuestion->id)
-                    ->latest()
-                    ->first();
-                $response = $latestResponse ? $latestResponse->survey_response : null;
 
-                // User has responded, send the next question
-                //TODO: MODIFY FUNCTION TO GET THE NEXT QUESTION FROM THE FLOW BUILDER
-                $nextQuestion = getNextQuestion($survey->id, $response, $currentQuestion->id);
+                if ($hasResponded) {
+                    Log::info("The member {$member->name} has responded to the survey and next dispatch is due. Sending the next question...");
+                    $progress = SurveyProgress::where('member_id', $member->id)
+                        ->where('survey_id', $survey->id)
+                        ->where('has_responded', true)
+                        ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
+                        ->latest()
+                        ->first();
 
-                if ($nextQuestion) {
-                    Log::info("The member responded to previous question. Sending the next question");
+                    $channel = $progress?->channel ?? 'sms'; // default to sms if null
 
-                    //Formatting the question 
-                    $message=formartQuestion($nextQuestion,$member,$survey);
-                    Log::info("This is the message ".$message);
+                    //get the response
+                    $latestResponse = SurveyResponse::where('session_id', $progress->id)
+                        ->where('survey_id', $survey->id)
+                        ->where('question_id', $currentQuestion->id)
+                        ->latest()
+                        ->first();
+                    $response = $latestResponse ? $latestResponse->survey_response : null;
 
-                    $this->sendSMS($member->phone, $message,$channel,false,$member);
-                    $progress->update([
-                        'current_question_id' => $nextQuestion->id,
-                        'last_dispatched_at' => now(),
-                        'has_responded' => false,
-                        // Reset reminders count
-                        'number_of_reminders' => 0,
-                    ]);
-                    Log::info("Next question sent to {$member->phone} for survey {$survey->title}.");
-                   
-                } else {
-                    // All questions answered, mark as complete
-                    $progress->update([
-                        'completed_at' => now(),
-                        'status' => 'COMPLETED',
-                        'number_of_reminders' => 0,
-                    ]);
-                    $stage=str_replace(' ', '', ucfirst($survey->title)) . 'Completed';
-                    $member->update([
-                        'stage' => $stage
-                    ]);
-                    Log::info("Survey {$survey->title} completed by {$member->phone}. Updated his stage to $stage");
-                }
+                    // User has responded, send the next question
+                    //TODO: MODIFY FUNCTION TO GET THE NEXT QUESTION FROM THE FLOW BUILDER
+                    $nextQuestion = getNextQuestion($survey->id, $response, $currentQuestion->id);
 
-            } elseif($isconfirmationDue) {
+                    if ($nextQuestion) {
+                        Log::info("The member responded to previous question. Sending the next question");
+
+                        //Formatting the question
+                        $message = formartQuestion($nextQuestion, $member, $survey);
+                        Log::info("This is the message " . $message);
+
+                        $this->sendSMS($member->phone, $message, $channel, false, $member);
+                        $progress->update([
+                            'current_question_id' => $nextQuestion->id,
+                            'last_dispatched_at' => now(),
+                            'has_responded' => false,
+                            // Reset reminders count
+                            'number_of_reminders' => 0,
+                        ]);
+                        Log::info("Next question sent to {$member->phone} for survey {$survey->title}.");
+                    } else {
+                        // All questions answered, mark as complete
+                        $progress->update([
+                            'completed_at' => now(),
+                            'status' => 'COMPLETED',
+                            'number_of_reminders' => 0,
+                        ]);
+                        $stage = str_replace(' ', '', ucfirst($survey->title)) . 'Completed';
+                        $member->update([
+                            'stage' => $stage
+                        ]);
+                        Log::info("Survey {$survey->title} completed by {$member->phone}. Updated his stage to $stage");
+                    }
+                } elseif ($isconfirmationDue) {
                     //reminder
-                // Check if user has already received 3 reminders
-                if ($progress->number_of_reminders >= 3) {
-                    Log::info("Max reminders reached for {$member->phone} on survey {$survey->title}. No further reminders will be sent.");
-                    continue; // Skip sending
-                }
-                $message=formartQuestion($currentQuestion,$member,$survey,true);
-                Log::info("This is the formated message $message");
-                Log::info("No response from member. Sending the reminder message {$message}...");
-                 
-                try {
-                    // $smsService->send($member->phone, $message);
-                    $this->sendSMS($member->phone, $message, $progress?->channel ?? 'sms',true,$member);
-                    $progress->update([
-                        'last_dispatched_at' => now(),
-                        
-                    ]); // Update timestamp and status
-                    $progress->increment('number_of_reminders');
-                    Log::info("Confirmation sent to {$member->phone} for survey {$survey->title}.");
-                } catch (\Exception $e) {
-                    Log::error("Failed to send confirmation to {$member->phone}: " . $e->getMessage());
+                    // Check if user has already received 3 reminders
+                    if ($progress->number_of_reminders >= 3) {
+                        Log::info("Max reminders reached for {$member->phone} on survey {$survey->title}. No further reminders will be sent.");
+                        continue; // Skip sending
+                    }
+                    $message = formartQuestion($currentQuestion, $member, $survey, true);
+                    Log::info("This is the formated message $message");
+                    Log::info("No response from member. Sending the reminder message {$message}...");
+
+                    try {
+                        // $smsService->send($member->phone, $message);
+                        $this->sendSMS($member->phone, $message, $progress?->channel ?? 'sms', true, $member);
+                        $progress->update([
+                            'last_dispatched_at' => now(),
+
+                        ]); // Update timestamp and status
+                        $progress->increment('number_of_reminders');
+                        Log::info("Confirmation sent to {$member->phone} for survey {$survey->title}.");
+                    } catch (\Exception $e) {
+                        Log::error("Failed to send confirmation to {$member->phone}: " . $e->getMessage());
+                    }
                 }
             }
+        } finally {
+            $lock->release();
         }
     }
 
-   public function sendSMS($msisdn, $message, $channel, $is_reminder,$member)
+    public function sendSMS($msisdn, $message, $channel, $is_reminder, $member)
     {
         try {
             SMSInbox::create([

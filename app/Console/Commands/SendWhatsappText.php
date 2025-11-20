@@ -40,15 +40,27 @@ class SendWhatsappText extends Command
      */
     public function handle()
     {
-        $this->info('Starting WhatsApp message processing...');
-        
-        // Process group messages first
-        $this->processGroupMessages();
-        
-        // Process individual messages
-        $this->processIndividualMessages();
-        
-        $this->info('WhatsApp message processing completed.');
+        // Acquire lock to prevent concurrent executions
+        $lock = \Illuminate\Support\Facades\Cache::lock('send-whatsapp-text-command', 60);
+
+        if (!$lock->get()) {
+            $this->info('Command already running. Skipping...');
+            return;
+        }
+
+        try {
+            $this->info('Starting WhatsApp message processing...');
+
+            // Process group messages first
+            $this->processGroupMessages();
+
+            // Process individual messages
+            $this->processIndividualMessages();
+
+            $this->info('WhatsApp message processing completed.');
+        } finally {
+            $lock->release();
+        }
     }
 
     /**
@@ -63,6 +75,7 @@ class SendWhatsappText extends Command
                       ->where('group_ids', '!=', '[]');
             })
             ->take(10)
+            ->lockForUpdate() // Lock rows to prevent concurrent access
             ->get();
 
         if ($smsInboxes->isEmpty()) {
@@ -73,6 +86,9 @@ class SendWhatsappText extends Command
         $this->info("Processing {$smsInboxes->count()} group messages...");
 
         foreach ($smsInboxes as $smsInbox) {
+            // CRITICAL: Mark as 'processing' BEFORE sending to prevent duplicates
+            $smsInbox->update(['status' => 'processing']);
+
             try {
                 $this->processSingleGroupMessage($smsInbox);
                 $smsInbox->update(['status' => 'sent']);
@@ -98,6 +114,7 @@ class SendWhatsappText extends Command
             })
             ->whereNotNull('phone_number')
             ->take(10)
+            ->lockForUpdate() // Lock rows to prevent concurrent access
             ->get();
 
         if ($smsInboxes->isEmpty()) {
@@ -108,6 +125,9 @@ class SendWhatsappText extends Command
         $this->info("Processing {$smsInboxes->count()} individual messages...");
 
         foreach ($smsInboxes as $smsInbox) {
+            // CRITICAL: Mark as 'processing' BEFORE sending to prevent duplicates
+            $smsInbox->update(['status' => 'processing']);
+
             try {
                 $this->processSingleIndividualMessage($smsInbox);
                 $smsInbox->update(['status' => 'sent']);
@@ -132,7 +152,7 @@ class SendWhatsappText extends Command
 
         foreach ($groupIds as $groupId) {
             $group = Group::with('members')->find($groupId);
-            
+
             if (!$group) {
                 $this->warn("Group with ID {$groupId} not found.");
                 continue;
@@ -153,7 +173,7 @@ class SendWhatsappText extends Command
                     $totalFailed++;
                     $this->error("✗ Failed to send to {$member->phone}");
                 }
-                
+
                 // Add delay to avoid rate limiting (WhatsApp allows ~80 messages/second)
                 usleep(100000); // 100ms delay between messages
             }
@@ -186,12 +206,12 @@ class SendWhatsappText extends Command
     {
         // Remove any non-digit characters
         $phoneNumber = preg_replace('/\D/', '', $phoneNumber);
-        
+
         // Handle Kenyan numbers (starting with 0)
         if (substr($phoneNumber, 0, 1) === "0") {
             $phoneNumber = "254" . substr($phoneNumber, 1);
         }
-        
+
         // Ensure it has country code
         if (substr($phoneNumber, 0, 3) !== "254") {
             $phoneNumber = "254" . ltrim($phoneNumber, '0');
@@ -208,23 +228,23 @@ class SendWhatsappText extends Command
     {
         try {
             $formattedNumber = $this->formatPhoneNumber($phoneNumber);
-            
+
             $response = $this->whatsappService->sendTextMessage($formattedNumber, $message);
-            
+
             // Log successful send
             Log::info('WhatsApp message sent successfully', [
                 'to' => $formattedNumber,
                 'message' => $message
             ]);
-            
+
             return true;
-            
+
         } catch (\Exception $e) {
             Log::error('WhatsApp message sending failed', [
                 'to' => $phoneNumber,
                 'error' => $e->getMessage()
             ]);
-            
+
             return false;
         }
     }

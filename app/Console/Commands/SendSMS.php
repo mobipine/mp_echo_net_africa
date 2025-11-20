@@ -41,24 +41,39 @@ class SendSMS extends Command
 
     public function handle()
     {
-        // Fetch pending SMSInbox records, limit to avoid memory issues
-        $pendingSms = SMSInbox::where('status', 'pending')
-            ->where('channel', 'sms')
-            ->take(100) // dispatch in batches of 100, adjust as needed
-            ->get();
+        // Acquire lock to prevent concurrent executions
+        $lock = \Illuminate\Support\Facades\Cache::lock('dispatch-sms-command', 60);
 
-        if ($pendingSms->isEmpty()) {
-            $this->info("No pending SMSInbox records to dispatch.");
+        if (!$lock->get()) {
+            $this->info('Command already running. Skipping...');
             return;
         }
 
-        foreach ($pendingSms as $smsInbox) {
-            SendGroupSMSJob::dispatch($smsInbox->id)->onQueue('sms');
-            Log::info("Dispatched SMSInbox ID {$smsInbox->id} to queue.");
-        }
+        try {
+            // Fetch pending SMSInbox records with row locking
+            $pendingSms = SMSInbox::where('status', 'pending')
+                ->where('channel', 'sms')
+                ->take(100) // dispatch in batches of 100, adjust as needed
+                ->lockForUpdate() // Lock rows to prevent concurrent access
+                ->get();
 
-        $this->info("Dispatched {$pendingSms->count()} SMSInbox records to the SMS queue.");
-    
+            if ($pendingSms->isEmpty()) {
+                $this->info("No pending SMSInbox records to dispatch.");
+                return;
+            }
+
+            foreach ($pendingSms as $smsInbox) {
+                // CRITICAL: Mark as 'processing' BEFORE dispatching job to prevent duplicates
+                $smsInbox->update(['status' => 'processing']);
+
+                SendGroupSMSJob::dispatch($smsInbox->id)->onQueue('sms');
+                Log::info("Dispatched SMSInbox ID {$smsInbox->id} to queue.");
+            }
+
+            $this->info("Dispatched {$pendingSms->count()} SMSInbox records to the SMS queue.");
+        } finally {
+            $lock->release();
+        }
     }
 }
 

@@ -56,8 +56,8 @@ class SurveysRelationManager extends RelationManager
                 Tables\Columns\IconColumn::make('was_dispatched')
                     ->label('Dispatched')
                     ->boolean()
-                    
-                    
+
+
             ])
             ->filters([
                 //
@@ -76,7 +76,7 @@ class SurveysRelationManager extends RelationManager
                     ->form([
                         Forms\Components\Select::make('survey_id')
                             ->label('Select Survey')
-                            ->options(fn() => \App\Models\Survey::whereDoesntHave('groups', 
+                            ->options(fn() => \App\Models\Survey::whereDoesntHave('groups',
                             function ($query) {
                                 $query->where('group_id', $this->ownerRecord->id);
                             })->pluck('title', 'id'))
@@ -165,7 +165,7 @@ class SurveysRelationManager extends RelationManager
                 Tables\Actions\DeleteAction::make()
                     ->label('Detach')
                     ->action(fn ($record) => $this->getRelationship()->detach($record->id)),
-                
+
 
                 Tables\Actions\Action::make('dispatchManually')
                     ->label('Send Now')
@@ -178,15 +178,22 @@ class SurveysRelationManager extends RelationManager
                         // The action is for a single group, so we get its ID.
                         // The `ownerRecord` is the single Group instance this action belongs to.
                         $groupIds = [$this->ownerRecord->id];
-                        
+
+                        // Get channel from the pivot table or default to SMS
+                        $channel = $this->getRelationship()
+                            ->where('survey_id', $record->id)
+                            ->first()
+                            ->pivot
+                            ->channel ?? 'sms';
+
                         // The job now expects an array of group IDs, so we dispatch it with our single-item array.
-                        \App\Jobs\SendSurveyToGroupJob::dispatch($groupIds, $record);
-                        
+                        \App\Jobs\SendSurveyToGroupJob::dispatch($groupIds, $record, $channel);
+
                         // This is still a valid pivot relationship update for a single group.
                         $this->getRelationship()->updateExistingPivot($record->id, [
                             'was_dispatched' => true,
                         ]);
-                        
+
                         \Filament\Notifications\Notification::make()
                             ->title('Survey Dispatched')
                             ->body("The survey '{$record->title}' is being sent to the group in the background.")
