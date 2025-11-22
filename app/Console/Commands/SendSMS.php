@@ -53,7 +53,7 @@ class SendSMS extends Command
 
         try {
             // Fetch pending SMSInbox records with row locking
-            $pendingSms = SMSInbox::where('status', 'pending')
+            $pendingSms = SMSInbox::where('status', 'testing')
                 ->where('channel', 'sms')
                 ->take(100) // dispatch in batches of 100, adjust as needed
                 ->lockForUpdate() // Lock rows to prevent concurrent access
