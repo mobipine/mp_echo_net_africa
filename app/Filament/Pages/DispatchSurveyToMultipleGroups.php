@@ -69,7 +69,7 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
                         ->searchable()
                         ->native(false),
                 ]),
-               
+
                 Forms\Components\Group::make()->schema([
                     Forms\Components\Toggle::make('automated')
                         ->label('Automated')
@@ -105,10 +105,10 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
     {
         return SMSInbox::class;
     }
-    
+
     // The previous getForm() method is removed
     // The state path is handled implicitly by the trait and the public $data property
-    
+
     public function submit(): void
 {
     $validated = $this->form->getState();
@@ -133,7 +133,7 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
 
         Notification::make()
             ->title('Success!')
-            ->body($isAutomated ? 
+            ->body($isAutomated ?
                 "Survey scheduled for ALL groups." :
                 "Survey dispatch to ALL groups has started in the background."
             )
@@ -146,16 +146,20 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
 
     // ---- HANDLE SPECIFIC GROUPS ----
     if ($isAutomated) {
-        // Save scheduling
+        // Save scheduling - use firstOrCreate to prevent duplicates
         foreach ($selectedGroups as $groupId) {
-            GroupSurvey::create([
-                'group_id'   => $groupId,
-                'survey_id'  => $survey->id,
-                'automated'  => true,
-                'starts_at'  => $validated['starts_at'],
-                'ends_at'    => $validated['ends_at'],
-                'channel'    => $channel,
-            ]);
+            GroupSurvey::firstOrCreate(
+                [
+                    'group_id'   => $groupId,
+                    'survey_id'  => $survey->id,
+                    'starts_at'  => $validated['starts_at'],
+                ],
+                [
+                    'automated'  => true,
+                    'ends_at'    => $validated['ends_at'],
+                    'channel'    => $channel,
+                ]
+            );
         }
 
         Log::info("{$survey->title} scheduled for specific groups.");
@@ -167,17 +171,22 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
             ->send();
 
     } else {
-        // Manual dispatch  
+        // Manual dispatch - use firstOrCreate to prevent duplicates
         Log::info("{$survey->title} manual dispatch started for specific groups.");
 
         foreach ($selectedGroups as $groupId) {
-            GroupSurvey::create([
-                'group_id'       => $groupId,
-                'survey_id'      => $survey->id,
-                'automated'      => false,
-                'was_dispatched' => true,
-                'channel'        => $channel,
-            ]);
+            GroupSurvey::firstOrCreate(
+                [
+                    'group_id'       => $groupId,
+                    'survey_id'      => $survey->id,
+                    'starts_at'      => now(), // Use current time as unique key for manual dispatch
+                ],
+                [
+                    'automated'      => false,
+                    'was_dispatched' => true,
+                    'channel'        => $channel,
+                ]
+            );
         }
 
         // Send to groups

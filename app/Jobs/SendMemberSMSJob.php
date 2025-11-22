@@ -39,8 +39,17 @@ class SendMemberSMSJob implements ShouldQueue
 
     public function handle(BongaSMS $bonga)
     {
+        $smsInbox = SMSInbox::find($this->inboxId);
+
+        // Defensive check: already sent or not found
+        if (!$smsInbox || $smsInbox->status === 'sent') {
+            Log::info("SMSInbox ID {$this->inboxId} already sent or not found. Skipping.");
+            return;
+        }
+
         if (!$this->phoneNumber) {
             Log::warning("No phone number for inbox {$this->inboxId}");
+            $smsInbox->update(['status' => 'failed']);
             return;
         }
 
@@ -51,20 +60,20 @@ class SendMemberSMSJob implements ShouldQueue
                 Log::info("SMS sent to {$this->phoneNumber}");
 
                 // Update SMSInbox with status and unique_id
-                $smsInbox = SMSInbox::find($this->inboxId);
-                if ($smsInbox) {
-                    $smsInbox->update([
-                        'status'    => 'sent',
-                        'unique_id' => $response['unique_id'] ?? null,
-                    ]);
-                    Log::info("SMSInbox ID {$smsInbox->id} marked as sent with unique_id {$response['unique_id']}");
-                }
+                $smsInbox->update([
+                    'status'    => 'sent',
+                    'unique_id' => $response['unique_id'] ?? null,
+                ]);
+                Log::info("SMSInbox ID {$smsInbox->id} marked as sent with unique_id {$response['unique_id']}");
 
             } else {
                 Log::warning("Failed to send SMS to {$this->phoneNumber}");
+                $smsInbox->update(['status' => 'failed']);
             }
         } catch (\Exception $e) {
             Log::error("Exception sending SMS to {$this->phoneNumber}: {$e->getMessage()}");
+            // Reset to pending for retry
+            $smsInbox->update(['status' => 'pending']);
             throw $e; // allows retry
         }
     }

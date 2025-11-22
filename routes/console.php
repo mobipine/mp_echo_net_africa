@@ -9,16 +9,27 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 
-//create a schedule to run the SendSMS command every 5 seconds
-// Artisan::command('schedule:send-sms', function () {
-//     $this->call('send:sms');
-// })->purpose('Schedule to send SMS every 5 seconds');
+// SMS and Survey Processing Commands
+// These run every 5 seconds with overlap protection to prevent duplicate message sends
+Schedule::command('dispatch:sms')
+    ->everyFiveSeconds()
+    ->withoutOverlapping()
+    ->runInBackground();
 
-// Schedule::command('dispatch:sms')->everyFiveSeconds()->withoutOverlapping();
-// Schedule::command('process:surveys-progress')->everyFiveSeconds()->withoutOverlapping();
-// Schedule::command('surveys:due-dispatch')->everyFiveSeconds()->withoutOverlapping();
-// Schedule::command('send:whatsapp-text')->everyFiveSeconds()->withoutOverlapping();
+Schedule::command('process:surveys-progress')
+    ->everyFiveSeconds()
+    ->withoutOverlapping()
+    ->runInBackground();
 
+Schedule::command('surveys:due-dispatch')
+    ->everyFiveSeconds()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+Schedule::command('send:whatsapp-text')
+    ->everyFiveSeconds()
+    ->withoutOverlapping()
+    ->runInBackground();
 
 // Loan interest accrual - run daily at 9 AM
 Schedule::command('loans:accrue-interest')->dailyAt('09:00');
