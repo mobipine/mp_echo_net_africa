@@ -41,8 +41,8 @@ class SendSMS extends Command
 
     public function handle()
     {
-        Log::info("Sending SMS...returning early for testing");
-        return;
+        // Log::info("Sending SMS...returning early for testing");
+        // return;
         // Acquire lock to prevent concurrent executions
         $lock = \Illuminate\Support\Facades\Cache::lock('dispatch-sms-command', 60);
 
