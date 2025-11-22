@@ -136,6 +136,9 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
 
                 // --- Format and create SMSInbox record ---
                 $message = formartQuestion($firstQuestion, $member, $this->survey);
+                $length = mb_strlen($message);
+
+                $credits = $length > 0 ? (int) ceil($length / 160) : 0;
                 try {
                     SMSInbox::create([
                         'message' => $message,
@@ -143,6 +146,7 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                         'member_id' => $member->id,
                         'survey_progress_id' => $newProgress->id,
                         'channel' => $this->channel,
+                        'credits_used' => $credits,
                     ]);
                     Log::info("SMS queued for {$member->name}: '{$message}'");
                     $sentCount++;

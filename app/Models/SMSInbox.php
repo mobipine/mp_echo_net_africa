@@ -21,7 +21,8 @@ class SMSInbox extends Model
         'is_reminder',
         'delivery_status_desc',
         'delivery_status',
-        'unique_id'
+        'unique_id',
+        'credits_used'
     ];
 
     protected $casts = [

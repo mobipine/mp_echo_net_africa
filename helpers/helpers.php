@@ -819,12 +819,16 @@ function normalizePhoneNumber(string $phoneNumber): string
 function sendSMS($msisdn, $message,$channel,$member)
 {
     Log::info($member->id);
+    $length = mb_strlen($message);
+
+    $credits = $length > 0 ? (int) ceil($length / 160) : 0;
     try {
         SMSInbox::create([
             'phone_number' => $msisdn, // Store the phone number in group_ids for tracking
             'message' => $message,
             'channel' => $channel,
             'member_id' => $member->id,
+            'credits_used' => $credits
         ]);
     } catch (\Exception $e) {
         Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());
