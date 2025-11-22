@@ -445,6 +445,10 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
                 ->latest()
                 ->first()
                 ->id;
+
+    $length = mb_strlen($response);
+
+    $credits = $length > 0 ? (int) ceil($length / 160) : 0;
     // Store the response
     SurveyResponse::create([
         'survey_id' => $survey->id,
@@ -453,6 +457,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
         'survey_response' => $actualAnswer,
         'inbox_id' => $inbox_id,
         'session_id' => $progress->id,//this is a foreign key to the survey_progress table
+        'credits_used' => $credits
     ]);
     // Mark the question as responded to in the progress table
     $progress->update(['has_responded' => true]);
