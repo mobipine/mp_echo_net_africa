@@ -75,6 +75,9 @@ class MemberResource extends Resource
                     ->reactive()
                     ->inline(false),
 
+                Toggle::make('consent')
+                    ->label("Consent"),
+
                 \Filament\Forms\Components\TextInput::make('disability')
                     ->label('Type of Disability')
                     ->placeholder('e.g. Visual impairment')
