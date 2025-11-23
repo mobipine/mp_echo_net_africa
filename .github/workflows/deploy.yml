@@ -1,12 +1,12 @@
-name: Build, Push, and Deploy Echo Net Africa to Docker Hub and CapRover
+name: Deploy Echo Net Africa to Server
 
 on:
   push:
     branches:
       - main  # Trigger this action when you push to the main branch
-      
+
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest  # Runs on an Ubuntu machine
 
     steps:
@@ -14,37 +14,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Set up Docker
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      # Step 3: Log in to Docker Hub
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      # Step 4: Build Docker image
-      - name: Build Docker image
+      # Step 2: Install sshpass
+      - name: Install sshpass
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/mp_echo_net_africa:${{ github.sha }} .
+          sudo apt-get update
+          sudo apt-get install -y sshpass
 
-      # Step 5: Push Docker image to Docker Hub
-      - name: Push Docker image to Docker Hub
+      # Step 3: Deploy to server via SSH
+      - name: Deploy to server
         run: |
-          docker push ${{ secrets.DOCKER_USERNAME }}/mp_echo_net_africa:${{ github.sha }}
-
-      # Step 6: Install CapRover CLI
-      - name: Install CapRover CLI
-        run: npm install -g caprover
-
-      # Step 8: Auto Deploy the Docker image to CapRover
-      - name: Deploy to CapRover Using GitHub Actions
-        uses: dankore/github-to-caprover@v1.0.9
-        with:
-          server: '${{ secrets.CAPROVER_SERVER }}'
-          password: '${{ secrets.CAPROVER_PASSWORD }}'
-          appName: '${{ secrets.APP_NAME }}'
-          # image: 'username/my-docker-image-name:latest'
-          image: '${{ secrets.DOCKER_USERNAME }}/mp_echo_net_africa:${{ github.sha }}'
+          sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@213.199.58.213 << 'EOF'
+            cd /var/www/enaf
+            git pull
+            composer install --no-interaction --prefer-dist --optimize-autoloader
+            npm install
+            php artisan migrate --force
+          EOF
