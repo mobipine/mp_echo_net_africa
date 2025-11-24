@@ -53,11 +53,15 @@ class SendSMS extends Command
 
         try {
             // Fetch pending SMSInbox records with row locking
-            $pendingSms = SMSInbox::where('status', 'testing')
-                ->where('channel', 'sms')
-                ->take(100) // dispatch in batches of 100, adjust as needed
-                ->lockForUpdate() // Lock rows to prevent concurrent access
-                ->get();
+            $pendingSms = SMSInbox::whereIn('status', [
+                'pending',
+                'failed',
+                'failed(insufficient credit)',
+            ])
+            ->where('channel', 'sms')
+            ->take(100)// dispatch in batches of 100, adjust as needed
+            ->lockForUpdate()// Lock rows to prevent concurrent access
+            ->get();
 
             if ($pendingSms->isEmpty()) {
                 $this->info("No pending SMSInbox records to dispatch.");
