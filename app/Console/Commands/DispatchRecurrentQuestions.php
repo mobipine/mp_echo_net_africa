@@ -37,12 +37,17 @@ class DispatchRecurrentQuestions extends Command
             }
 
             $message = formartQuestion($question, $member, $survey = null); // survey is optional for recurrent
+            $length = mb_strlen($message);
+
+            $credits = $length > 0 ? (int) ceil($length / 160) : 0;
+
             try {
                 SMSInbox::create([
                     'message' => $message,
                     'phone_number' => $member->phone,
                     'member_id' => $member->id,
                     'channel' => 'sms', // adjust if you track channels
+                    'credits_used ' => $credits
                 ]);
 
                 Log::info("Dispatched recurrent question ID {$question->id} to member {$member->phone}");

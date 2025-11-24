@@ -57,3 +57,12 @@ class UpdateCreditsUsed extends Command
         $this->info("survey_responses updated.");
     }
 }
+
+
+// We can use this command or use an SQL query instead that would be super fast
+
+// UPDATE sms_inboxes 
+// SET credits_used = CEIL(CHAR_LENGTH(message) / 160);
+
+// UPDATE survey_responses
+// SET credits_used = CEIL(CHAR_LENGTH(survey_response)) / 160);
