@@ -15,6 +15,17 @@ use Illuminate\Support\Facades\Log;
 
 class ProcessSurveyProgressCommand extends Command
 {
+    /**
+     * SURVEY PROGRESS PROCESSOR - THE CORE ENGINE
+     *
+     * 1. Runs every 5 seconds, finds active survey_progress records (not completed)
+     * 2. Checks if question_interval time has passed since last_dispatched_at
+     * 3. IF member has_responded=true: Gets next question via getNextQuestion(), queues it, updates progress
+     * 4. IF member has_responded=false: Checks reminder interval, sends reminder (max 3)
+     * 5. When survey complete: Marks progress completed, updates member stage to '{Survey}Completed'
+     * 6. This is THE CORE - handles question flow, branching, reminders, completion
+     */
+
     protected $signature = 'process:surveys-progress';
     protected $description = 'Sends next survey questions or reminders based on participant progress.';
 
