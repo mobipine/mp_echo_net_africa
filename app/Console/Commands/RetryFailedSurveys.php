@@ -108,11 +108,17 @@ class RetryFailedSurveys extends Command
                 // return $firstFailed && $secondFailed;
 
                 //if all messages are failed, return true
-                return $messages->every(function ($message) {
-                    return $message->status === 'failed';
-                });
+                // return $messages->every(function ($message) {
+                //     return $message->status === 'failed';
+                // });
 
-
+                //make sure none of the messages is "sent"
+                foreach ($messages as $message) {
+                    if ($message->status === 'sent') {
+                        return false;
+                    }
+                }
+                return true;
             });
     }
 
