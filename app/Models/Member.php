@@ -12,7 +12,7 @@ class Member extends Model
     protected $fillable = [
         'group_id', 'name', 'email', 'phone', 'national_id',
         'gender', 'dob', 'marital_status', 'profile_picture','is_active',
-        'member_since', 'membership_status','stage','is_disabled','disability'
+        'member_since', 'membership_status','stage','is_disabled','disability','consent'
     ];
 
     protected $casts = [
