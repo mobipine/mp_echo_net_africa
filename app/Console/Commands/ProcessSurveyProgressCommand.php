@@ -112,8 +112,8 @@ class ProcessSurveyProgressCommand extends Command
                 }
 
                 // Message is due - start logging
-                Log::info("Processing survey progress for member {$member->name} (ID: {$member->id})");
-                Log::info("Survey: {$survey->title}, Last Dispatched: $lastDispatched, Next Due: $nextDue");
+                // Log::info("Processing survey progress for member {$member->name} (ID: {$member->id})");
+                // Log::info("Survey: {$survey->title}, Last Dispatched: $lastDispatched, Next Due: $nextDue");
 
                 $reminder_interval = $survey->continue_confirmation_interval;
                 $reminder_interval_unit = $survey->continue_confirmation_interval_unit;
