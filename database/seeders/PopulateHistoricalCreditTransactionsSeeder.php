@@ -19,6 +19,7 @@ class PopulateHistoricalCreditTransactionsSeeder extends Seeder
      * 1. CLEARS all existing 'sms_sent' and 'sms_received' transactions (preserves 'load' transactions)
      * 2. Creates transactions for all sent SMS messages (sms_inboxes where status='sent')
      * 3. Creates transactions for all received survey responses (survey_responses table)
+     * 4. RECALCULATES and updates SMS credit balance (Total Added - Total Subtracted)
      *
      * Safe to run multiple times - will clear and repopulate SMS transactions each time.
      */
@@ -53,10 +54,60 @@ class PopulateHistoricalCreditTransactionsSeeder extends Seeder
         $stats = array_merge($stats, $this->processReceivedResponses());
         $this->command->newLine();
 
-        // Display summary
-        $this->displaySummary($stats, $currentBalance);
+        // Recalculate and update SMS credit balance
+        $newBalance = $this->recalculateCreditBalance();
 
-        Log::info("PopulateHistoricalCreditTransactionsSeeder completed", $stats);
+        // Display summary
+        $this->displaySummary($stats, $currentBalance, $newBalance);
+
+        Log::info("PopulateHistoricalCreditTransactionsSeeder completed", array_merge($stats, [
+            'old_balance' => $currentBalance,
+            'new_balance' => $newBalance,
+        ]));
+    }
+
+    /**
+     * Recalculate SMS credit balance based on all transactions
+     * Formula: Balance = Total Added - Total Subtracted
+     */
+    protected function recalculateCreditBalance(): int
+    {
+        $this->command->newLine();
+        $this->command->info('💰 Recalculating SMS credit balance...');
+
+        DB::beginTransaction();
+        try {
+            // Get total added (load transactions)
+            $totalAdded = CreditTransaction::where('type', 'add')->sum('amount');
+
+            // Get total subtracted (sms_sent and sms_received)
+            $totalSubtracted = CreditTransaction::where('type', 'subtract')->sum('amount');
+
+            // Calculate new balance
+            $newBalance = $totalAdded - $totalSubtracted;
+
+            $this->command->info("   • Total credits loaded: " . number_format($totalAdded));
+            $this->command->info("   • Total credits used: " . number_format($totalSubtracted));
+            $this->command->info("   • Calculated balance: " . number_format($newBalance));
+
+            // Update sms_credits table
+            $credit = SmsCredit::firstOrCreate([], ['balance' => 0]);
+            $oldBalance = $credit->balance;
+            $credit->update(['balance' => $newBalance]);
+
+            $this->command->info("   ✅ Updated SMS credit balance from " . number_format($oldBalance) . " to " . number_format($newBalance));
+
+            DB::commit();
+
+            Log::info("Recalculated SMS credit balance: {$oldBalance} → {$newBalance}");
+
+            return $newBalance;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $this->command->error("   ❌ Failed to recalculate balance: " . $e->getMessage());
+            Log::error("Failed to recalculate SMS credit balance: " . $e->getMessage());
+            throw $e;
+        }
     }
 
     /**
@@ -235,8 +286,9 @@ class PopulateHistoricalCreditTransactionsSeeder extends Seeder
     /**
      * Display summary of operations
      */
-    protected function displaySummary(array $stats, int $initialBalance): void
+    protected function displaySummary(array $stats, int $initialBalance, int $newBalance): void
     {
+        $this->command->newLine();
         $this->command->info('═══════════════════════════════════════════════════════');
         $this->command->info('📊 SUMMARY');
         $this->command->info('═══════════════════════════════════════════════════════');
@@ -271,12 +323,21 @@ class PopulateHistoricalCreditTransactionsSeeder extends Seeder
         }
         $this->command->newLine();
 
-        $this->command->info("💰 Current SMS Credit Balance: " . number_format($initialBalance));
+        $this->command->info('💰 SMS Credit Balance:');
+        $this->command->info("   • Before: " . number_format($initialBalance));
+        $this->command->info("   • After: " . number_format($newBalance));
+
+        $difference = $newBalance - $initialBalance;
+        if ($difference != 0) {
+            $sign = $difference > 0 ? '+' : '';
+            $color = $difference > 0 ? 'info' : 'warn';
+            $this->command->{$color}("   • Change: {$sign}" . number_format($difference));
+        }
         $this->command->newLine();
 
         $this->command->comment('⚠️  NOTE: Balance values in historical transactions are simulated.');
         $this->command->comment('    They represent a running tally starting from 0, not actual balances at the time.');
-        $this->command->comment('    Your actual current balance remains: ' . number_format($initialBalance));
+        $this->command->comment('    The NEW balance shown above is calculated from all credit transactions.');
         $this->command->newLine();
 
         $this->command->info('✅ Historical credit transactions populated successfully!');
