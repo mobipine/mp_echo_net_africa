@@ -66,9 +66,13 @@ class SendMemberSMSJob implements ShouldQueue
                 ]);
                 Log::info("SMSInbox ID {$smsInbox->id} marked as sent with unique_id {$response['unique_id']}");
 
-            } else {
+            }elseif(($response['status_message'] ?? null) == "insufficient credit"){
+                 Log::warning("Insufficient credit cannot send this sms");
+                $smsInbox->update(['status' => 'failed(insufficient credit)']);
+
+            }else {
                 Log::warning("Failed to send SMS to {$this->phoneNumber}");
-                $smsInbox->update(['status' => 'failed']);
+                $smsInbox->update(['status' => "failed({$response['status_message']})"]);
             }
         } catch (\Exception $e) {
             Log::error("Exception sending SMS to {$this->phoneNumber}: {$e->getMessage()}");

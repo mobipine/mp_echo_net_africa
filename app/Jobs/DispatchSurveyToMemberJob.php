@@ -95,12 +95,16 @@ class DispatchSurveyToMemberJob implements ShouldQueue, ShouldBeUnique
 
         // ===== Send SMS =====
         $message = formartQuestion($firstQuestion, $member, $survey);
+        $length = mb_strlen($message);
+
+        $credits = $length > 0 ? (int) ceil($length / 160) : 0;
         try {
             SMSInbox::create([
                 'message' => $message,
                 'phone_number' => $member->phone,
                 'member_id' => $member->id,
                 'channel' => $assignment->channel,
+                'credits_used' => $credits
             ]);
         } catch (\Exception $e) {
             Log::error("Failed to send SMS to {$member->name}: {$e->getMessage()}");

@@ -206,6 +206,9 @@ class ProcessSurveyProgressCommand extends Command
 
     public function sendSMS($msisdn, $message, $channel, $is_reminder, $member)
     {
+        $length = mb_strlen($message);
+
+            $credits = $length > 0 ? (int) ceil($length / 160) : 0;
         try {
             SMSInbox::create([
                 'phone_number' => $msisdn,
@@ -213,6 +216,7 @@ class ProcessSurveyProgressCommand extends Command
                 'channel' => $channel,
                 'is_reminder' => $is_reminder,
                 "member_id" => $member->id,
+                'credits_used' => $credits
             ]);
         } catch (\Exception $e) {
             // Log and rethrow the exception so the caller can handle it
