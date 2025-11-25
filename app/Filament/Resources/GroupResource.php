@@ -197,6 +197,7 @@ class GroupResource extends Resource
             RelationManagers\TransactionsRelationManager::class,
             RelationManagers\CapitalTransfersRelationManager::class,
             RelationManagers\OfficialsRelationManager::class,
+            RelationManagers\KycDocumentsRelationManager::class,
         ];
     }
 
