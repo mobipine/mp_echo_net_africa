@@ -94,7 +94,7 @@ class RetryFailedSurveys extends Command
                 // Verify that both first and second messages failed
                 $messages = SMSInbox::where('member_id', $item->member_id)
                     ->orderBy('id', 'asc')
-                    ->take(2)
+                    // ->take(2)
                     ->get();
 
                 if ($messages->count() < 2) {
@@ -102,10 +102,17 @@ class RetryFailedSurveys extends Command
                 }
 
                 // Both first and second (reminder) must be failed
-                $firstFailed = $messages[0]->status === 'failed';
-                $secondFailed = $messages[1]->status === 'failed';
+                // $firstFailed = $messages[0]->status === 'failed';
+                // $secondFailed = $messages[1]->status === 'failed';
 
-                return $firstFailed && $secondFailed;
+                // return $firstFailed && $secondFailed;
+
+                //if all messages are failed, return true
+                return $messages->every(function ($message) {
+                    return $message->status === 'failed';
+                });
+
+
             });
     }
 
