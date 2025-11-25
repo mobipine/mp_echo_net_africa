@@ -86,7 +86,6 @@ class RetryFailedSurveys extends Command
         return DB::table('sms_inboxes')
             ->select('member_id', DB::raw('MIN(id) as first_sms_id'))
             ->whereNotNull('member_id')
-            ->whereNotNull('survey_progress_id')
             ->where('status', 'failed')
             ->groupBy('member_id')
             ->havingRaw('COUNT(*) >= 2')
@@ -94,7 +93,6 @@ class RetryFailedSurveys extends Command
             ->filter(function ($item) {
                 // Verify that both first and second messages failed
                 $messages = SMSInbox::where('member_id', $item->member_id)
-                    ->whereNotNull('survey_progress_id')
                     ->orderBy('id', 'asc')
                     ->take(2)
                     ->get();
