@@ -24,9 +24,7 @@ class UpdateSmsInboxCreditsSeeder extends Seeder
         $bar->start();
 
         // Process in chunks to avoid memory issues
-        SMSInbox::whereNull('credits_count')
-            ->orWhere('credits_count', 0)
-            ->chunk(1000, function ($records) use (&$updated, $bar) {
+        SMSInbox::chunk(1000, function ($records) use (&$updated, $bar) {
                 foreach ($records as $record) {
                     if ($record->message) {
                         $creditsCount = SMSInbox::calculateCredits($record->message);
