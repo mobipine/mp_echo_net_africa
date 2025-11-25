@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Group;
+use App\Models\GroupSurvey;
 use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
@@ -20,14 +21,28 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
+     * SURVEY DISPATCH JOB - OVERVIEW
+     *
+     * 1. Triggered from Filament UI (manual survey dispatch)
+     * 2. Handles 'all' groups OR specific group IDs
+     * 3. For ALL groups: Creates group_survey assignments, dispatches if not automated
+     * 4. Fetches first question, checks member eligibility (stage + uniqueness)
+     * 5. Creates survey_progress records and queues SMS messages
+     * 6. Does NOT send SMS directly - creates records for dispatch:sms command
+     */
+
+    /**
      * The number of seconds the job's unique lock will be maintained.
      */
     public int $uniqueFor = 300;
 
     public function __construct(
-        public array $groupIds,
+        public array|string $groupIds, // Can be array of IDs or 'all'
         public Survey $survey,
-        public $channel
+        public $channel,
+        public $automated = false,
+        public $startsAt = null,
+        public $endsAt = null
     ) {}
 
     /**
@@ -35,6 +50,11 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
      */
     public function uniqueId(): string
     {
+        if ($this->groupIds === 'all') {
+            $startsAtStr = $this->startsAt ? date('Y-m-d-H-i', strtotime($this->startsAt)) : 'now';
+            return "send-survey-all-groups-{$this->survey->id}-{$startsAtStr}-{$this->channel}";
+        }
+
         $groupIdsStr = implode('-', $this->groupIds);
         return "send-survey-{$this->survey->id}-groups-{$groupIdsStr}-{$this->channel}";
     }
@@ -43,16 +63,86 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
     {
         Log::info("Starting SendSurveyToGroupJob for survey '{$this->survey->title}'");
 
+        // Handle "ALL GROUPS" case
+        if ($this->groupIds === 'all') {
+            $this->processAllGroups();
+            return;
+        }
+
+        // Handle specific groups case
+        $this->processSpecificGroups();
+    }
+
+    /**
+     * Process ALL groups in the system
+     */
+    protected function processAllGroups(): void
+    {
+        Log::info("Processing ALL groups for survey '{$this->survey->title}'");
+
+        // First, create group_survey assignments for all groups
+        Group::chunk(300, function ($groups) {
+            foreach ($groups as $group) {
+                GroupSurvey::firstOrCreate(
+                    [
+                        'group_id'   => $group->id,
+                        'survey_id'  => $this->survey->id,
+                        'starts_at'  => $this->startsAt ?? now(),
+                    ],
+                    [
+                        'automated'       => $this->automated,
+                        'ends_at'         => $this->endsAt,
+                        'channel'         => $this->channel,
+                        'was_dispatched'  => !$this->automated,
+                    ]
+                );
+            }
+        });
+
+        Log::info("Finished creating group_survey assignments for ALL groups");
+
+        // If automated, stop here - the scheduler will handle dispatch
+        if ($this->automated) {
+            Log::info("Survey is automated - scheduler will dispatch at scheduled time");
+            return;
+        }
+
+        // If not automated, process all groups now
+        $groupIds = Group::pluck('id')->toArray();
+        $this->processGroupIds($groupIds);
+    }
+
+    /**
+     * Process specific groups
+     */
+    protected function processSpecificGroups(): void
+    {
+        $this->processGroupIds($this->groupIds);
+    }
+
+    /**
+     * Process array of group IDs and send survey to members
+     */
+    protected function processGroupIds(array $groupIds): void
+    {
         // Fetch the first question
         $firstQuestion = getNextQuestion($this->survey->id, null, null);
-        if (!$firstQuestion) {
+
+        // Check if getNextQuestion returned an error array
+        if (is_array($firstQuestion)) {
+            Log::error("Error getting first question for survey '{$this->survey->title}': " . ($firstQuestion['message'] ?? 'Unknown error'));
+            return;
+        }
+
+        if (!$firstQuestion || !$firstQuestion instanceof \App\Models\SurveyQuestion) {
             Log::info("Survey '{$this->survey->title}' has no questions. No SMS sent.");
             return;
         }
 
         $surveyOrder = $this->survey->order;
+        $totalSent = 0;
 
-        foreach ($this->groupIds as $groupId) {
+        foreach ($groupIds as $groupId) {
             $group = Group::find($groupId);
             if (!$group) {
                 Log::warning("Group with ID {$groupId} not found. Skipping.");
@@ -61,6 +151,7 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
 
             $members = $group->members()->where('is_active', true)->get();
             $sentCount = 0;
+            Log::info("Processing {$members->count()} members in group '{$group->name}'");
 
             foreach ($members as $member) {
                 // --- Stage check and sequencing ---
@@ -152,8 +243,9 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
             }
 
             Log::info("Survey '{$this->survey->title}' dispatched to {$sentCount} members in group '{$group->name}'.");
+            $totalSent += $sentCount;
         }
 
-        Log::info("SendSurveyToGroupJob completed for survey '{$this->survey->title}'.");
+        Log::info("SendSurveyToGroupJob completed for survey '{$this->survey->title}': {$totalSent} total messages queued.");
     }
 }

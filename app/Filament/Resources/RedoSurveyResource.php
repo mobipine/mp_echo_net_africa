@@ -59,7 +59,7 @@ class RedoSurveyResource extends Resource
                     ->visible(fn (RedoSurvey $record) => $record->action === 'pending')
                     ->action(function (RedoSurvey $record) {
                         try {
-                            
+
                             $survey = $record->surveyToRedo;
                             $member = $record->member;
                             $msisdn = $record->phone_number;
@@ -76,7 +76,18 @@ class RedoSurveyResource extends Resource
 
                             // Get first question of the survey
                             $firstQuestion = getNextQuestion($survey->id);
-                            if (!$firstQuestion) {
+
+                            // Check if getNextQuestion returned an error array
+                            if (is_array($firstQuestion)) {
+                                Notification::make()
+                                    ->title('Error')
+                                    ->body('Error getting first question: ' . ($firstQuestion['message'] ?? 'Unknown error'))
+                                    ->danger()
+                                    ->send();
+                                return;
+                            }
+
+                            if (!$firstQuestion || !$firstQuestion instanceof \App\Models\SurveyQuestion) {
                                 Notification::make()
                                     ->title('No Questions')
                                     ->body('The selected survey has no questions.')
@@ -109,7 +120,7 @@ class RedoSurveyResource extends Resource
                                 ->body('Member has been approved and the first question has been sent.')
                                 ->success()
                                 ->send();
-                                
+
                             // Update the redo request
                             $record->update(['action' => 'approved']);
 

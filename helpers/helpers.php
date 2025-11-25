@@ -164,7 +164,7 @@ function getNextQuestion($survey_id, $response = null, $current_question_id = nu
             }
         }
     }
-    
+
     // dd($next_question_id, $next_question, $next_question->question );
     if ($next_question_id) {
         $next_question = \App\Models\SurveyQuestion::find($next_question_id);
@@ -176,8 +176,8 @@ function getNextQuestion($survey_id, $response = null, $current_question_id = nu
 function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
 
     if ($firstQuestion->answer_strictness == "Multiple Choice") {
-        $message = "{$firstQuestion->question}\n\n"; 
-        
+        $message = "{$firstQuestion->question}\n\n";
+
         $numbers = [];
         $index = 1;
 
@@ -209,7 +209,7 @@ function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
         }
     }
     if ($reminder) {
-        
+
         $message = "$survey->continue_confirmation_question\n$message";
         $message = str_replace('\n', "\n", $message);
         Log::info("The formarted message to be sent is {$survey->continue_confirmation_question}");
@@ -223,7 +223,7 @@ function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
         // Retrieve the latest valid response for this question from the member
         $latestDateResponse = \App\Models\SurveyResponse::where('msisdn', $member->phone)
             ->where('question_id', $loanReceivedMonthId)
-            ->latest('id') 
+            ->latest('id')
             ->first();
 
         if ($latestDateResponse) {
@@ -240,7 +240,7 @@ function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
         // Retrieve the latest valid response for this question from the member
         $latestAmountResponse = \App\Models\SurveyResponse::where('msisdn', $member->phone)
             ->where('question_id', $loanAmountQuestionId)
-            ->latest('id') 
+            ->latest('id')
             ->first();
 
         if ($latestAmountResponse) {
@@ -284,7 +284,7 @@ function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
 
     ];
     }
-    
+
     $message = str_replace(
         array_keys($placeholders),
         array_values($placeholders),
@@ -382,7 +382,7 @@ function startSurvey($msisdn, Survey $survey,$channel)
 
 function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $channel)
 {
-    
+
     //THIS FUNCTION SHOULD VALIDATE THE RESPONSE BASED ON THE QUESTION'S DATA TYPE AND STORE IT IF VALID
     $currentQuestion = $progress->currentQuestion;
     $survey = $progress->survey;
@@ -391,7 +391,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
         return response()->json(['status' => 'error', 'message' => 'Invalid question or session state.']);
     }
     Log::info("The survey progress status is $progress->status");
-    $userResponse = trim($response);  
+    $userResponse = trim($response);
     Log::info("The user responded with ".$userResponse);
     $actualAnswer = getActualAnswer($currentQuestion,$userResponse,$msisdn);
 
@@ -412,7 +412,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
         if ($actualAnswer instanceof Carbon) {
 
             Log::info("Successfully parsed and saved loan_date: " . $actualAnswer->toDateString());
-            
+
         } else {
             // Log failure or send a correction SMS back to the user (depending on your service flow)
             Log::warning("Failed to parse loan date answer: " . $actualAnswer);
@@ -432,7 +432,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
             return;
         }
     }
- 
+
     Log::info("The actual answer to be stored is  $actualAnswer");
     $member = $progress->member;
 
@@ -440,7 +440,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
         Log::info("This is not  regular question ");
         processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$survey,$channel);
     }
-         
+
     $inbox_id = SMSInbox::where('phone_number', $msisdn)
                 ->latest()
                 ->first()
@@ -492,7 +492,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
 
         Log::info("Created recurrent question record for member {$progress->member_id} for question {$currentQuestion->id}, next dispatch at {$nextDispatch}");
     }
-    
+
     Log::info("Response recorded for question ID: {$currentQuestion->id}. Waiting for next scheduled dispatch.");
     // Check if this was the last question in the survey.
     $nextQuestion = getNextQuestion($survey->id,  $actualAnswer, $currentQuestion->id);
@@ -565,7 +565,7 @@ function parse_member_date_response(string $answer): ?Carbon
 
     // 1. Clean and Normalize Input
     $cleanedAnswer = trim(strtolower($answer));
-    
+
     try {
         // 2. Check for Relative Keywords (e.g., Today, Yesterday)
         if ($cleanedAnswer === 'today') {
@@ -574,14 +574,14 @@ function parse_member_date_response(string $answer): ?Carbon
         if ($cleanedAnswer === 'yesterday') {
             return Carbon::yesterday();
         }
-        
+
         // The parse() method is smart and often handles many common formats.
         $date = Carbon::parse($answer);
-        
+
         if ($date->isFuture()) {
             Log::warning("Date Parsing failed for answer '{$answer}': Date is in the future.");
             // Throw a specific exception or return null to signal failure/error
-            return null; 
+            return null;
         }
 
         // 5. Success
@@ -596,7 +596,7 @@ function parse_member_date_response(string $answer): ?Carbon
 
 function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$survey,$channel){
     if ($currentQuestion->purpose=="edit_id") {
-       
+
         $memberEditRequest=MemberEditRequest::updateOrCreate(
             [
                 'phone_number'=>$msisdn,
@@ -607,10 +607,10 @@ function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$
                 'national_id' =>$actualAnswer,
             ]);
     } elseif ($currentQuestion->purpose=="edit_year_of_birth") {
-        
+
         $dob = \Carbon\Carbon::parse($member->dob);
         $dob->year = (int)$actualAnswer;
-        
+
         $memberEditRequest=MemberEditRequest::updateOrCreate(
             [
                 'phone_number'=>$msisdn,
@@ -621,7 +621,7 @@ function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$
                 'year_of_birth' =>$actualAnswer,
             ]);
     } elseif ($currentQuestion->purpose=="edit_gender") {
-        
+
         Log::info("Updating member gender...");
         $memberEditRequest=MemberEditRequest::updateOrCreate(
             [
@@ -660,7 +660,7 @@ function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$
             // sendSMS($msisdn, "Your redo request has been submitted for review. You will be notified once approved.");
         } else {
             Log::warning("No pending redo request found for member {$member->id} when updating reason.");
-           
+
         }
     }
     elseif ($currentQuestion->purpose=="redo_request"){
@@ -681,7 +681,7 @@ function processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$
                 'action' => 'pending',
                 'channel' => $channel,
             ]);
-        }  
+        }
     }
 
 }
@@ -780,7 +780,7 @@ function validateResponse($currentQuestion,$msisdn,$response){
         }
     }
     if ($currentQuestion->answer_data_type === 'Alphanumeric' && !ctype_alnum(str_replace(' ', '', $response))) {
-        
+
         Log::info("the response violates the questions strictness");
         return false;
     }
@@ -790,7 +790,7 @@ function validateResponse($currentQuestion,$msisdn,$response){
 function formatPhoneForWhatsApp(string $phoneNumber): string
 {
     $cleanNumber = preg_replace('/\D/', '', $phoneNumber);
-    
+
     // Convert 0... to 254...
     if (substr($cleanNumber, 0, 1) === "0") {
         $cleanNumber = "254" . substr($cleanNumber, 1);

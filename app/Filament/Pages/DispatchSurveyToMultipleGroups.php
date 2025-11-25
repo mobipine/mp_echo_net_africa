@@ -3,7 +3,6 @@
 namespace App\Filament\Pages;
 
 use App\Enums\ChannelType;
-use App\Jobs\ProcessAllGroupsForSurveyJob;
 use App\Jobs\SendSurveyToGroupJob;
 use App\Models\Group;
 use App\Models\SMSInbox;
@@ -89,13 +88,13 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
                         ->label('Start Date')
                         ->native(false)
                         ->required(false)
-                        ->hidden(fn ($get) => !$get('automated')),
+                        ->hidden(fn($get) => !$get('automated')),
 
                     Forms\Components\DateTimePicker::make('ends_at')
                         ->label('End Date')
                         ->native(false)
                         ->required(false)
-                        ->hidden(fn ($get) => !$get('automated')),
+                        ->hidden(fn($get) => !$get('automated')),
                 ]),
             ])
         ];
@@ -110,98 +109,98 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
     // The state path is handled implicitly by the trait and the public $data property
 
     public function submit(): void
-{
-    $validated = $this->form->getState();
-    $survey = Survey::findOrFail($validated['survey_id']);
+    {
+        $validated = $this->form->getState();
+        $survey = Survey::findOrFail($validated['survey_id']);
 
-    $selectedGroups = $validated['group_ids'];
-    $isAutomated = $validated['automated'];
-    $channel = $validated['channel'];
+        $selectedGroups = $validated['group_ids'];
+        $isAutomated = $validated['automated'];
+        $channel = $validated['channel'];
 
-    // ---- HANDLE "ALL GROUPS" OPTION ----
-    if (in_array('all', $selectedGroups)) {
+        // ---- HANDLE "ALL GROUPS" OPTION ----
+        if (in_array('all', $selectedGroups)) {
 
-        Log::info("{$survey->title} → ALL GROUPS selected. Pushing job to process all groups one-by-one.");
+            Log::info("{$survey->title} → ALL GROUPS selected. Dispatching consolidated job.");
 
-        dispatch(new ProcessAllGroupsForSurveyJob(
-            $survey->id,
-            $isAutomated,
-            $validated['starts_at'] ?? null,
-            $validated['ends_at'] ?? null,
-            $channel
-        ));
+            SendSurveyToGroupJob::dispatch(
+                'all', // Special flag for ALL GROUPS
+                $survey,
+                $channel,
+                $isAutomated,
+                $validated['starts_at'] ?? null,
+                $validated['ends_at'] ?? null
+            );
 
-        Notification::make()
-            ->title('Success!')
-            ->body($isAutomated ?
-                "Survey scheduled for ALL groups." :
-                "Survey dispatch to ALL groups has started in the background."
-            )
-            ->success()
-            ->send();
+            Notification::make()
+                ->title('Success!')
+                ->body(
+                    $isAutomated ?
+                        "Survey scheduled for ALL groups." :
+                        "Survey dispatch to ALL groups has started in the background."
+                )
+                ->success()
+                ->send();
+
+            $this->form->fill();
+            return;
+        }
+
+        // ---- HANDLE SPECIFIC GROUPS ----
+        if ($isAutomated) {
+            // Save scheduling - use firstOrCreate to prevent duplicates
+            foreach ($selectedGroups as $groupId) {
+                GroupSurvey::firstOrCreate(
+                    [
+                        'group_id'   => $groupId,
+                        'survey_id'  => $survey->id,
+                        'starts_at'  => $validated['starts_at'],
+                    ],
+                    [
+                        'automated'  => true,
+                        'ends_at'    => $validated['ends_at'],
+                        'channel'    => $channel,
+                    ]
+                );
+            }
+
+            Log::info("{$survey->title} scheduled for specific groups.");
+
+            Notification::make()
+                ->title('Success!')
+                ->body('Your survey has been scheduled.')
+                ->success()
+                ->send();
+        } else {
+            // Manual dispatch - use firstOrCreate to prevent duplicates
+            Log::info("{$survey->title} manual dispatch started for specific groups.");
+
+            foreach ($selectedGroups as $groupId) {
+                GroupSurvey::firstOrCreate(
+                    [
+                        'group_id'       => $groupId,
+                        'survey_id'      => $survey->id,
+                        'starts_at'      => now(), // Use current time as unique key for manual dispatch
+                    ],
+                    [
+                        'automated'      => false,
+                        'was_dispatched' => true,
+                        'channel'        => $channel,
+                    ]
+                );
+            }
+
+            // Send to groups
+            SendSurveyToGroupJob::dispatch($selectedGroups, $survey, $channel);
+
+            Log::info("{$survey->title} dispatch job queued for selected groups.");
+
+            Notification::make()
+                ->title('Success!')
+                ->body('Your survey is being sent now.')
+                ->success()
+                ->send();
+        }
 
         $this->form->fill();
-        return;
     }
-
-    // ---- HANDLE SPECIFIC GROUPS ----
-    if ($isAutomated) {
-        // Save scheduling - use firstOrCreate to prevent duplicates
-        foreach ($selectedGroups as $groupId) {
-            GroupSurvey::firstOrCreate(
-                [
-                    'group_id'   => $groupId,
-                    'survey_id'  => $survey->id,
-                    'starts_at'  => $validated['starts_at'],
-                ],
-                [
-                    'automated'  => true,
-                    'ends_at'    => $validated['ends_at'],
-                    'channel'    => $channel,
-                ]
-            );
-        }
-
-        Log::info("{$survey->title} scheduled for specific groups.");
-
-        Notification::make()
-            ->title('Success!')
-            ->body('Your survey has been scheduled.')
-            ->success()
-            ->send();
-
-    } else {
-        // Manual dispatch - use firstOrCreate to prevent duplicates
-        Log::info("{$survey->title} manual dispatch started for specific groups.");
-
-        foreach ($selectedGroups as $groupId) {
-            GroupSurvey::firstOrCreate(
-                [
-                    'group_id'       => $groupId,
-                    'survey_id'      => $survey->id,
-                    'starts_at'      => now(), // Use current time as unique key for manual dispatch
-                ],
-                [
-                    'automated'      => false,
-                    'was_dispatched' => true,
-                    'channel'        => $channel,
-                ]
-            );
-        }
-
-        // Send to groups
-        SendSurveyToGroupJob::dispatch($selectedGroups, $survey, $channel);
-
-        Log::info("{$survey->title} dispatch job queued for selected groups.");
-
-        Notification::make()
-            ->title('Success!')
-            ->body('Your survey is being sent now.')
-            ->success()
-            ->send();
-    }
-
-    $this->form->fill();
-}
-
 }

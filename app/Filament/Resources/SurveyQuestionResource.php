@@ -116,7 +116,7 @@ class SurveyQuestionResource extends Resource
                     ->required(fn ($get) => $get('is_recurrent')),
 
 
-                
+
                 //do a repeater for possible_answers that only shows if answer_strictness is Multiple Choice with  afield for the letter and the answer
                 Forms\Components\Repeater::make('possible_answers')
                     ->schema([
@@ -129,7 +129,7 @@ class SurveyQuestionResource extends Resource
                     ->maxItems(26)
                     ->required(fn ($get) => $get('answer_strictness') === 'Multiple Choice'),
 
-                
+
             ]);
     }
 
@@ -137,7 +137,7 @@ class SurveyQuestionResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('id')->sortable(),
+                Tables\Columns\TextColumn::make('id')->sortable()->searchable(),
                 Tables\Columns\TextColumn::make('question')->sortable()->searchable(),
                 Tables\Columns\TextColumn::make('answer_data_type')->sortable(),
             ])
