@@ -52,7 +52,8 @@ class SmsCredit extends Model
         int $amount,
         string $transactionType,
         string $description = null,
-        $smsInboxId = null
+        $smsInboxId = null,
+        $surveyResponseId = null
     ): void {
         $credit = static::firstOrCreate([], ['balance' => 0]);
         $balanceBefore = $credit->balance;
@@ -67,6 +68,7 @@ class SmsCredit extends Model
             'transaction_type' => $transactionType,
             'description' => $description,
             'sms_inbox_id' => $smsInboxId,
+            'survey_response_id' => $surveyResponseId,
         ]);
     }
 }

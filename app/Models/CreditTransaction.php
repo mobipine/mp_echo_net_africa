@@ -14,6 +14,7 @@ class CreditTransaction extends Model
         'transaction_type',
         'description',
         'sms_inbox_id',
+        'survey_response_id',
         'user_id',
     ];
 
@@ -23,6 +24,14 @@ class CreditTransaction extends Model
     public function smsInbox()
     {
         return $this->belongsTo(SMSInbox::class);
+    }
+
+    /**
+     * Get the survey response associated with this transaction
+     */
+    public function surveyResponse()
+    {
+        return $this->belongsTo(SurveyResponse::class);
     }
 
     /**

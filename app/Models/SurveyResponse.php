@@ -31,4 +31,9 @@ class SurveyResponse extends Model
         return $this->belongsTo(SMSInbox::class, 'inbox_id');
     }
 
+    public function creditTransaction()
+    {
+        return $this->hasOne(CreditTransaction::class);
+    }
+
 }

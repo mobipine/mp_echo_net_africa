@@ -7,6 +7,7 @@ use App\Models\MemberEditRequest;
 use App\Models\MemberRecurrentQuestion;
 use App\Models\RedoSurvey;
 use App\Models\SMSInbox;
+use App\Models\SmsCredit;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
@@ -446,7 +447,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
                 ->first()
                 ->id;
     // Store the response
-    SurveyResponse::create([
+    $surveyResponse = SurveyResponse::create([
         'survey_id' => $survey->id,
         'msisdn' => $msisdn,
         'question_id' => $currentQuestion->id,
@@ -454,6 +455,25 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
         'inbox_id' => $inbox_id,
         'session_id' => $progress->id,//this is a foreign key to the survey_progress table
     ]);
+
+    // Deduct credits for received survey response (1 credit per 160 characters)
+    $creditsRequired = SMSInbox::calculateCredits($response);
+    $member = Member::where("phone", $msisdn)->first();
+    $memberName = $member ? $member->name : 'Unknown';
+    $preview = mb_substr($response, 0, 50);
+    if (mb_strlen($response) > 50) {
+        $preview .= '...';
+    }
+
+    SmsCredit::subtractCredits(
+        $creditsRequired,
+        'sms_received',
+        "Survey response from {$memberName}: {$preview}",
+        null, // sms_inbox_id
+        $surveyResponse->id // survey_response_id
+    );
+    Log::info("Credits deducted for survey response: {$creditsRequired} (from {$msisdn}, response ID: {$surveyResponse->id})");
+
     // Mark the question as responded to in the progress table
     $progress->update(['has_responded' => true]);
 

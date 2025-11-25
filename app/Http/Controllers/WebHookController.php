@@ -82,22 +82,21 @@ class WebHookController extends Controller
             }
         }
 
-        // Deduct credits for received message (1 credit per 160 characters)
-        if ($message) {
-            $creditsRequired = SMSInbox::calculateCredits($message);
-            SmsCredit::subtractCredits(
-                $creditsRequired,
-                'sms_received',
-                "SMS received from {$msisdn}: " . mb_substr($message, 0, 50) . (mb_strlen($message) > 50 ? '...' : '')
-            );
-            Log::info("Credits deducted for received SMS: {$creditsRequired} (from {$msisdn})");
-        }
-
         // Check if the message is a trigger word for any survey
         $survey = Survey::where('trigger_word', $message)->first();
 
         //TODO: CHECK IF THE member has an active survey
         if ($survey) {
+            // Deduct credits for trigger word message
+            if ($message) {
+                $creditsRequired = SMSInbox::calculateCredits($message);
+                SmsCredit::subtractCredits(
+                    $creditsRequired,
+                    'sms_received',
+                    "SMS received from {$msisdn}: " . mb_substr($message, 0, 50) . (mb_strlen($message) > 50 ? '...' : '')
+                );
+                Log::info("Credits deducted for received SMS (trigger): {$creditsRequired} (from {$msisdn})");
+            }
             return startSurvey($msisdn, $survey, "sms");
         }
 
@@ -111,10 +110,20 @@ class WebHookController extends Controller
             ->latest('last_dispatched_at')
             ->first();
 
-        // Process the user's response
+        // Process the user's response (credit deduction happens inside)
         if ($progress) {
-
             return processSurveyResponse($msisdn, $progress, $message, "sms");
+        }
+
+        // If not a survey-related message, deduct credits for generic SMS
+        if ($message) {
+            $creditsRequired = SMSInbox::calculateCredits($message);
+            SmsCredit::subtractCredits(
+                $creditsRequired,
+                'sms_received',
+                "SMS received from {$msisdn}: " . mb_substr($message, 0, 50) . (mb_strlen($message) > 50 ? '...' : '')
+            );
+            Log::info("Credits deducted for received SMS (non-survey): {$creditsRequired} (from {$msisdn})");
         }
 
 

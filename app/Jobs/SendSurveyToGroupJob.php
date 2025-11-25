@@ -117,6 +117,40 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
      */
     protected function processSpecificGroups(): void
     {
+        Log::info("Processing specific groups for survey '{$this->survey->title}'");
+
+        // First, create group_survey assignments for the selected groups
+        foreach ($this->groupIds as $groupId) {
+            $group = Group::find($groupId);
+            if (!$group) {
+                Log::warning("Group with ID {$groupId} not found. Skipping group_survey creation.");
+                continue;
+            }
+
+            GroupSurvey::firstOrCreate(
+                [
+                    'group_id'   => $groupId,
+                    'survey_id'  => $this->survey->id,
+                    'starts_at'  => $this->startsAt ?? now(),
+                ],
+                [
+                    'automated'       => $this->automated,
+                    'ends_at'         => $this->endsAt,
+                    'channel'         => $this->channel,
+                    'was_dispatched'  => !$this->automated,
+                ]
+            );
+        }
+
+        Log::info("Finished creating group_survey assignments for " . count($this->groupIds) . " groups");
+
+        // If automated, stop here - the scheduler will handle dispatch
+        if ($this->automated) {
+            Log::info("Survey is automated - scheduler will dispatch at scheduled time");
+            return;
+        }
+
+        // If not automated, process the groups now
         $this->processGroupIds($this->groupIds);
     }
 
