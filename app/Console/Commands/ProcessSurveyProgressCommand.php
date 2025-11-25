@@ -46,21 +46,14 @@ class ProcessSurveyProgressCommand extends Command
         }
 
         try {
-            Log::info("in the command");
-
             $progressRecords = SurveyProgress::with(['survey', 'currentQuestion', 'member'])
                 ->whereNull('completed_at')
                 ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
                 ->get();
 
-            // dd($progressRecords, "progressRecords");
-
             if ($progressRecords->isEmpty()) {
-                Log::info("No acive progress record");
                 return;
             }
-
-            Log::info("looping through active progress records");
 
             foreach ($progressRecords as $progress) {
                 $member = $progress->member;
@@ -86,7 +79,6 @@ class ProcessSurveyProgressCommand extends Command
                         Log::warning("Group-survey relationship not found for survey ID: {$survey->id}.");
                         continue;
                     }
-                    Log::info("the progress was initiated from a group survey");
 
                     $interval = $currentQuestion->question_interval ?? 1; // Use the pivot value, or default to 3 days
                     $unit = $currentQuestion->question_interval_unit ?? 'seconds'; // Use the pivot value, or default to 'days'
@@ -110,32 +102,24 @@ class ProcessSurveyProgressCommand extends Command
                 // Log::info("The survey ends on $endDate");
                 //check if endDate has passed. If it has, continue to the next record
 
-// dd($progress->last_dispatched_at, "last dispatched");
                 // Check if the time since the last dispatch has exceeded the defined interval
                 $lastDispatched = Carbon::parse($progress->last_dispatched_at);
-                Log::info("Last Dispatched $lastDispatched");
-
-                $nextDue = $lastDispatched->add($interval, $unit);
-                Log::info("The interval should be $interval $unit");
-                Log::info("Next Due Date $nextDue");
-
+                $nextDue = $lastDispatched->copy()->add($interval, $unit);
                 $isDue = $nextDue->lessThanOrEqualTo(now());
-                Log::info("is Due is: " . $isDue);
-
-                // dd($isDue, "is due");
 
                 if (!$isDue) {
-                    Log::info("Survey progress ID: {$progress->id} is not yet due for processing.");
                     continue;
                 }
+
+                // Message is due - start logging
+                Log::info("Processing survey progress for member {$member->name} (ID: {$member->id})");
+                Log::info("Survey: {$survey->title}, Last Dispatched: $lastDispatched, Next Due: $nextDue");
 
                 $reminder_interval = $survey->continue_confirmation_interval;
                 $reminder_interval_unit = $survey->continue_confirmation_interval_unit;
 
-                $confirmationDue = $lastDispatched->add($reminder_interval, $reminder_interval_unit);
+                $confirmationDue = $lastDispatched->copy()->add($reminder_interval, $reminder_interval_unit);
                 $isconfirmationDue = $confirmationDue->lessThanOrEqualTo(now());
-
-                Log::info("If the user has not yet responded to the previous question sent in {$survey->title} and the time for to dispatch the confirmation question {$confirmationDue} has reached a confirmation message will be sent, if he has responded, the next question will be sent.");
 
                 // Check if the user has responded since the last dispatch
                 $hasResponded = SurveyProgress::where('member_id', $member->id)
@@ -143,13 +127,9 @@ class ProcessSurveyProgressCommand extends Command
                     ->where('has_responded', true)
                     ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
                     ->exists();
-// dd($hasResponded, "has responded", $isconfirmationDue, "is confirmation due");
 
                 if ($hasResponded) {
-                    /**
-                     * The member has responded to the survey and next dispatch is due. Sending the next question...
-                     */
-                    Log::info("The member {$member->name} has responded to the survey and next dispatch is due. Sending the next question...");
+                    Log::info("Member has responded - sending next question");
                     $progress = SurveyProgress::where('member_id', $member->id)
                         ->where('survey_id', $survey->id)
                         ->where('has_responded', true)
@@ -197,11 +177,8 @@ class ProcessSurveyProgressCommand extends Command
                     }
 
                     if ($nextQuestion && $nextQuestion instanceof \App\Models\SurveyQuestion) {
-                        Log::info("The member responded to previous question. Sending the next question");
-
                         //Formatting the question
                         $message = formartQuestion($nextQuestion, $member, $survey);
-                        Log::info("This is the message " . $message);
 
                         $this->sendSMS($member->phone, $message, $channel, false, $member);
                         $progress->update([
@@ -211,7 +188,7 @@ class ProcessSurveyProgressCommand extends Command
                             // Reset reminders count
                             'number_of_reminders' => 0,
                         ]);
-                        Log::info("Next question sent to {$member->phone} for survey {$survey->title}.");
+                        Log::info("Next question sent to {$member->phone}");
                     } else {
                         // All questions answered, mark as complete
                         $progress->update([
@@ -223,34 +200,27 @@ class ProcessSurveyProgressCommand extends Command
                         $member->update([
                             'stage' => $stage
                         ]);
-                        Log::info("Survey {$survey->title} completed by {$member->phone}. Updated his stage to $stage");
+                        Log::info("Survey completed by {$member->phone}, stage updated to {$stage}");
                     }
                 } elseif ($isconfirmationDue) {
-                    // dd($isconfirmationDue, "is confirmation due", $progress, "progress");
-                    /**
-                     * The member has not responded to the survey and the confirmation due time has reached. Sending the confirmation question...
-                     */
-                    //reminder
                     // Check if user has already received 3 reminders
                     if ($progress->number_of_reminders >= 3) {
-                        Log::info("Max reminders reached for {$member->phone} on survey {$survey->title}. No further reminders will be sent.");
+                        Log::info("Max reminders (3) reached for {$member->phone}");
                         continue; // Skip sending
                     }
+
+                    Log::info("No response from member - sending reminder #{$progress->number_of_reminders}");
                     $message = formartQuestion($currentQuestion, $member, $survey, true);
-                    Log::info("This is the formated message $message");
-                    Log::info("No response from member. Sending the reminder message {$message}...");
 
                     try {
-                        // $smsService->send($member->phone, $message);
                         $this->sendSMS($member->phone, $message, $progress?->channel ?? 'sms', true, $member);
                         $progress->update([
                             'last_dispatched_at' => now(),
-
-                        ]); // Update timestamp and status
+                        ]);
                         $progress->increment('number_of_reminders');
-                        Log::info("Confirmation sent to {$member->phone} for survey {$survey->title}.");
+                        Log::info("Reminder sent to {$member->phone}");
                     } catch (\Exception $e) {
-                        Log::error("Failed to send confirmation to {$member->phone}: " . $e->getMessage());
+                        Log::error("Failed to send reminder to {$member->phone}: " . $e->getMessage());
                     }
                 }
             }
