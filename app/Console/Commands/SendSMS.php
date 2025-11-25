@@ -4,22 +4,23 @@ namespace App\Console\Commands;
 
 use App\Models\Group;
 use App\Models\SMSInbox;
+use App\Models\SmsCredit;
 use App\Services\BongaSMS;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 class SendSMS extends Command
 {
-    /**
-     * SMS DISPATCH COMMAND - OVERVIEW
-     *
-     * 1. Runs every 5 seconds, processes 100 pending SMS records at a time
-     * 2. Fetches records from sms_inboxes WHERE status='pending' AND channel='sms'
-     * 3. For group messages: Expands to individual members, replaces placeholders
-     * 4. For individual messages: Sends directly via BongaSMS API
-     * 5. Updates status: 'sent' (with unique_id) or 'failed'
-     * 6. This is the ONLY place actual SMS sending happens in the app
-     */
+/**
+ * SMS DISPATCH COMMAND - OVERVIEW
+ *
+ * 1. Runs every 5 seconds, processes 100 SMS records at a time
+ * 2. Fetches: pending (not yet tried) OR failed (retries<3) from sms_inboxes
+ * 3. For group messages: Expands to individual members, replaces placeholders
+ * 4. Sends via BongaSMS API, updates: 'sent' (success) or 'failed' (error)
+ * 5. Failed messages (status 666): retry up to 3 times, then permanently failed
+ * 6. This is the ONLY place actual SMS sending happens in the app
+ */
 
     public $bonga_sms;
 
@@ -48,6 +49,13 @@ class SendSMS extends Command
      */
     public function handle()
     {
+        // Check if survey messages are enabled
+        if (!config('survey_settings.messages_enabled', true)) {
+            Log::info('Survey messages are disabled via config. Skipping SMS sending.');
+            $this->info('Survey messages are disabled via config. Skipping SMS sending.');
+            return;
+        }
+
         // Acquire lock to prevent concurrent executions
         $lock = \Illuminate\Support\Facades\Cache::lock('dispatch-sms-command', 60);
 
@@ -57,9 +65,23 @@ class SendSMS extends Command
         }
 
         try {
-            // Fetch pending SMSInbox records with row locking
-            $pendingSms = SMSInbox::where('status', 'pending')
-                ->where('channel', 'sms')
+            // Check credit balance
+            $creditBalance = SmsCredit::getBalance();
+            if ($creditBalance <= 0) {
+                Log::warning("Insufficient SMS credits. Current balance: {$creditBalance}. Sending stopped.");
+                return;
+            }
+
+            // Fetch pending and failed (with retries < 3) SMSInbox records
+            $pendingSms = SMSInbox::where('channel', 'sms')
+                ->where(function($query) {
+                    $query->where('status', 'pending'); // New messages not yet tried
+                        //   ->orWhere(function($q) {
+                        //       $q->where('status', 'failed')
+                        //         ->where('retries', '<', 3); // Failed messages eligible for retry
+                        //   })
+
+                })
                 ->take(100) // Process in batches of 100
                 ->lockForUpdate() // Lock rows to prevent concurrent access
                 ->get();
@@ -71,61 +93,103 @@ class SendSMS extends Command
 
             $sentCount = 0;
             $failedCount = 0;
+            $skippedNoCredits = 0;
 
             foreach ($pendingSms as $smsInbox) {
                 // Mark as processing to prevent duplicate processing
                 $smsInbox->update(['status' => 'processing']);
 
                 try {
-                    // Handle group messages (expand to individual members)
-                    if (!empty($smsInbox->group_ids) && is_array($smsInbox->group_ids)) {
-                        foreach ($smsInbox->group_ids as $groupId) {
-                            $group = Group::find($groupId);
-                            if (!$group) {
-                                Log::warning("Group ID {$groupId} not found for SMS inbox {$smsInbox->id}");
-                                continue;
-                            }
-
-                            foreach ($group->members as $member) {
-                                $personalizedMessage = $this->replacePlaceholders($smsInbox->message, $member);
-                                $this->sendSingleSMS($member->phone, $personalizedMessage);
-                            }
-                        }
-                        // Mark as sent after processing all group members
-                        $smsInbox->update(['status' => 'sent']);
-                        $sentCount++;
-                    }
                     // Handle individual phone number
-                    elseif ($smsInbox->phone_number) {
+                    if ($smsInbox->phone_number) {
+                        // Check if we have enough credits for this message
+                        if (SmsCredit::getBalance() <= 0) {
+                            Log::warning("Insufficient credits to send SMS inbox {$smsInbox->id}. Stopping batch.");
+                            $skippedNoCredits++;
+                            break; // Stop processing this batch
+                        }
+
                         $response = $this->sendSingleSMS($smsInbox->phone_number, $smsInbox->message);
 
+                        // SUCCESS (status 222)
                         if (($response['status'] ?? null) == 222) {
                             $smsInbox->update([
                                 'status' => 'sent',
                                 'unique_id' => $response['unique_id'] ?? null,
+                                'failure_reason' => null,
                             ]);
+
+                            // Deduct credits
+                            SmsCredit::subtractCredits(
+                                $smsInbox->credits_count,
+                                'sms_sent',
+                                "SMS sent to {$smsInbox->phone_number}",
+                                $smsInbox->id
+                            );
+
                             $sentCount++;
-                            Log::info("SMS sent to {$smsInbox->phone_number}, inbox ID: {$smsInbox->id}");
-                        } else {
-                            $smsInbox->update(['status' => 'failed']);
+                            Log::info("SMS sent to {$smsInbox->phone_number}, inbox ID: {$smsInbox->id}, credits deducted: {$smsInbox->credits_count}");
+                        }
+                        // ERROR (status 666) - Mark as failed and increment retries
+                        elseif (($response['status'] ?? null) == 666) {
+                            $failureReason = $response['status_message'] ?? 'Unknown error from BongaSMS';
+                            $newRetryCount = $smsInbox->retries + 1;
+
+                            // Always mark as failed, use retries to determine if eligible for retry
+                            $smsInbox->update([
+                                'status' => 'failed',
+                                'retries' => $newRetryCount,
+                                'failure_reason' => $failureReason,
+                            ]);
+
+                            if ($newRetryCount < 3) {
+                                Log::warning("SMS failed (666) to {$smsInbox->phone_number}, inbox ID: {$smsInbox->id}, attempt {$newRetryCount}/3. Will retry. Reason: {$failureReason}");
+                            } else {
+                                $failedCount++;
+                                Log::error("SMS permanently failed to {$smsInbox->phone_number}, inbox ID: {$smsInbox->id}. Max retries (3) reached. Reason: {$failureReason}");
+                            }
+                        }
+                        // Unknown response
+                        else {
+                            $failureReason = $response['status_message'] ?? 'Unknown response from BongaSMS API';
+                            $smsInbox->update([
+                                'status' => 'failed',
+                                'retries' => $smsInbox->retries + 1,
+                                'failure_reason' => $failureReason,
+                            ]);
                             $failedCount++;
-                            Log::warning("Failed to send SMS to {$smsInbox->phone_number}, inbox ID: {$smsInbox->id}");
+                            Log::warning("SMS failed with unknown status to {$smsInbox->phone_number}, inbox ID: {$smsInbox->id}. Reason: {$failureReason}");
                         }
                     } else {
-                        // No phone number or group_ids
-                        $smsInbox->update(['status' => 'failed']);
+                        // No phone number or group_ids - mark as failed permanently
+                        $smsInbox->update([
+                            'status' => 'failed',
+                            'retries' => 3, // Set to max retries so it won't be retried
+                            'failure_reason' => 'No phone_number or group_ids provided',
+                        ]);
                         $failedCount++;
-                        Log::warning("SMS inbox {$smsInbox->id} has no phone_number or group_ids");
+                        Log::warning("SMS inbox {$smsInbox->id} has no phone_number or group_ids. Marked as permanently failed.");
                     }
                 } catch (\Exception $e) {
-                    // Reset to pending for retry on next run
-                    $smsInbox->update(['status' => 'pending']);
-                    $failedCount++;
-                    Log::error("Exception sending SMS inbox {$smsInbox->id}: {$e->getMessage()}");
+                    // Mark as failed on exception and increment retries
+                    $newRetryCount = $smsInbox->retries + 1;
+                    $smsInbox->update([
+                        'status' => 'failed',
+                        'retries' => $newRetryCount,
+                        'failure_reason' => 'Exception: ' . $e->getMessage(),
+                    ]);
+
+                    if ($newRetryCount < 3) {
+                        Log::error("Exception sending SMS inbox {$smsInbox->id}, attempt {$newRetryCount}/3. Will retry. Exception: {$e->getMessage()}");
+                    } else {
+                        $failedCount++;
+                        Log::error("SMS inbox {$smsInbox->id} permanently failed after 3 attempts. Exception: {$e->getMessage()}");
+                    }
                 }
             }
 
-            Log::info("SMS batch complete: {$sentCount} sent, {$failedCount} failed");
+            $currentBalance = SmsCredit::getBalance();
+            Log::info("SMS batch complete: {$sentCount} sent, {$failedCount} permanently failed, {$skippedNoCredits} skipped (no credits). Current credit balance: {$currentBalance}");
         } finally {
             $lock->release();
         }

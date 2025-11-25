@@ -29,6 +29,12 @@ class DispatchDueSurveysCommand extends Command
 
     public function handle()
     {
+        // Check if survey messages are enabled
+        if (!config('survey_settings.messages_enabled', true)) {
+            Log::info('Survey messages are disabled via config. Skipping automated survey dispatch.');
+            return;
+        }
+
         // Acquire lock to prevent concurrent executions
         $lock = \Illuminate\Support\Facades\Cache::lock('surveys-due-dispatch-command', 60);
 
@@ -71,7 +77,14 @@ class DispatchDueSurveysCommand extends Command
 
                 // Get first question
                 $firstQuestion = getNextQuestion($survey->id, null, null);
-                if (!$firstQuestion) {
+
+                // Check if getNextQuestion returned an error array
+                if (is_array($firstQuestion)) {
+                    Log::error("Error getting first question for survey '{$survey->title}': " . ($firstQuestion['message'] ?? 'Unknown error'));
+                    continue;
+                }
+
+                if (!$firstQuestion || !$firstQuestion instanceof \App\Models\SurveyQuestion) {
                     Log::warning("Survey '{$survey->title}' has no questions. Skipping.");
                     continue;
                 }

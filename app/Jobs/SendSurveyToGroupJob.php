@@ -127,7 +127,14 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
     {
         // Fetch the first question
         $firstQuestion = getNextQuestion($this->survey->id, null, null);
-        if (!$firstQuestion) {
+
+        // Check if getNextQuestion returned an error array
+        if (is_array($firstQuestion)) {
+            Log::error("Error getting first question for survey '{$this->survey->title}': " . ($firstQuestion['message'] ?? 'Unknown error'));
+            return;
+        }
+
+        if (!$firstQuestion || !$firstQuestion instanceof \App\Models\SurveyQuestion) {
             Log::info("Survey '{$this->survey->title}' has no questions. No SMS sent.");
             return;
         }

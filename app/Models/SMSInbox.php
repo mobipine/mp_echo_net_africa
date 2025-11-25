@@ -13,7 +13,7 @@ class SMSInbox extends Model
 
     protected $fillable = [
         'message',
-        'group_ids', // Add this to the fillable array
+        'group_ids',
         'status',
         'phone_number',
         'member_id',
@@ -21,22 +21,66 @@ class SMSInbox extends Model
         'is_reminder',
         'delivery_status_desc',
         'delivery_status',
-        'unique_id'
+        'unique_id',
+        'failure_reason',
+        'retries',
+        'credits_count',
+        'amended',
+        'survey_progress_id',
     ];
 
     protected $casts = [
-        'group_ids' => 'array', // Cast group_ids as an array
-        'is_reminder' => 'boolean'
+        'group_ids' => 'array',
+        'is_reminder' => 'boolean',
+        'retries' => 'integer',
+        'credits_count' => 'integer',
     ];
 
+    /**
+     * Boot method to automatically calculate credits on creation
+     */
+    protected static function boot()
+    {
+        parent::boot();
 
-    // public function groups()
-    // {
-    //     return $this->belongsToMany(Group::class, 'sms_inbox_group', 'sms_inbox_id', 'group_id');
-    // }
+        static::creating(function ($smsInbox) {
+            if (!isset($smsInbox->credits_count)) {
+                $smsInbox->credits_count = static::calculateCredits($smsInbox->message);
+            }
+        });
+    }
+
+    /**
+     * Calculate credits required for a message
+     * 1 credit = 160 characters
+     */
+    public static function calculateCredits(string $message): int
+    {
+        $length = mb_strlen($message);
+        return (int) ceil($length / 160);
+    }
+
+    /**
+     * Get the member associated with this SMS
+     */
     public function member()
     {
         return $this->belongsTo(Member::class);
     }
 
+    /**
+     * Get the survey progress associated with this SMS
+     */
+    public function surveyProgress()
+    {
+        return $this->belongsTo(SurveyProgress::class, 'survey_progress_id');
+    }
+
+    /**
+     * Get credit transaction for this SMS (if exists)
+     */
+    public function creditTransaction()
+    {
+        return $this->hasOne(CreditTransaction::class);
+    }
 }

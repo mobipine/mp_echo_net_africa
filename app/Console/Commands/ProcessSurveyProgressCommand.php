@@ -31,6 +31,12 @@ class ProcessSurveyProgressCommand extends Command
 
     public function handle()
     {
+        // Check if survey messages are enabled
+        if (!config('survey_settings.messages_enabled', true)) {
+            Log::info('Survey messages are disabled via config. Skipping survey progress processing.');
+            return;
+        }
+
         // Acquire lock to prevent concurrent executions
         $lock = \Illuminate\Support\Facades\Cache::lock('process-surveys-progress-command', 60);
 
@@ -46,6 +52,8 @@ class ProcessSurveyProgressCommand extends Command
                 ->whereNull('completed_at')
                 ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
                 ->get();
+
+            // dd($progressRecords, "progressRecords");
 
             if ($progressRecords->isEmpty()) {
                 Log::info("No acive progress record");
@@ -87,6 +95,8 @@ class ProcessSurveyProgressCommand extends Command
                     //         ->where('survey_id',$survey->id)
                     //         ->value('ends_at');
 
+                    // dd($interval, $unit, "interval and unit", $currentQuestion, "current question");
+
 
                 } else {
                     //for shortcode surveys, use 1 minute interval
@@ -100,7 +110,7 @@ class ProcessSurveyProgressCommand extends Command
                 // Log::info("The survey ends on $endDate");
                 //check if endDate has passed. If it has, continue to the next record
 
-
+// dd($progress->last_dispatched_at, "last dispatched");
                 // Check if the time since the last dispatch has exceeded the defined interval
                 $lastDispatched = Carbon::parse($progress->last_dispatched_at);
                 Log::info("Last Dispatched $lastDispatched");
@@ -111,6 +121,8 @@ class ProcessSurveyProgressCommand extends Command
 
                 $isDue = $nextDue->lessThanOrEqualTo(now());
                 Log::info("is Due is: " . $isDue);
+
+                // dd($isDue, "is due");
 
                 if (!$isDue) {
                     Log::info("Survey progress ID: {$progress->id} is not yet due for processing.");
@@ -131,9 +143,12 @@ class ProcessSurveyProgressCommand extends Command
                     ->where('has_responded', true)
                     ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
                     ->exists();
-
+// dd($hasResponded, "has responded", $isconfirmationDue, "is confirmation due");
 
                 if ($hasResponded) {
+                    /**
+                     * The member has responded to the survey and next dispatch is due. Sending the next question...
+                     */
                     Log::info("The member {$member->name} has responded to the survey and next dispatch is due. Sending the next question...");
                     $progress = SurveyProgress::where('member_id', $member->id)
                         ->where('survey_id', $survey->id)
@@ -153,10 +168,35 @@ class ProcessSurveyProgressCommand extends Command
                     $response = $latestResponse ? $latestResponse->survey_response : null;
 
                     // User has responded, send the next question
-                    //TODO: MODIFY FUNCTION TO GET THE NEXT QUESTION FROM THE FLOW BUILDER
                     $nextQuestion = getNextQuestion($survey->id, $response, $currentQuestion->id);
 
-                    if ($nextQuestion) {
+                    // Check if nextQuestion is an error/violation array or a valid question object
+                    if (is_array($nextQuestion)) {
+                        // Handle error or violation response
+                        Log::error("Error getting next question for member {$member->id}: " . ($nextQuestion['message'] ?? 'Unknown error'));
+
+                        if (($nextQuestion['status'] ?? null) === 'violation') {
+                            // Send violation message to member
+                            $violationMessage = $nextQuestion['message'];
+                            $this->sendSMS($member->phone, $violationMessage, $channel, false, $member);
+                            Log::info("Sent violation message to member {$member->id}: {$violationMessage}");
+
+                            // Update progress to indicate we sent violation message (don't mark as responded)
+                            $progress->update([
+                                'last_dispatched_at' => now(),
+                            ]);
+                        } else {
+                            // Error - mark survey as completed with error status
+                            Log::error("Survey flow error for member {$member->id}, survey {$survey->id}. Marking as completed.");
+                            $progress->update([
+                                'completed_at' => now(),
+                                'status' => 'error',
+                            ]);
+                        }
+                        continue; // Skip to next progress record
+                    }
+
+                    if ($nextQuestion && $nextQuestion instanceof \App\Models\SurveyQuestion) {
                         Log::info("The member responded to previous question. Sending the next question");
 
                         //Formatting the question
@@ -186,6 +226,10 @@ class ProcessSurveyProgressCommand extends Command
                         Log::info("Survey {$survey->title} completed by {$member->phone}. Updated his stage to $stage");
                     }
                 } elseif ($isconfirmationDue) {
+                    // dd($isconfirmationDue, "is confirmation due", $progress, "progress");
+                    /**
+                     * The member has not responded to the survey and the confirmation due time has reached. Sending the confirmation question...
+                     */
                     //reminder
                     // Check if user has already received 3 reminders
                     if ($progress->number_of_reminders >= 3) {
