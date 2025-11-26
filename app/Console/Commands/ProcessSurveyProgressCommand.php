@@ -161,9 +161,11 @@ class ProcessSurveyProgressCommand extends Command
                             $this->sendSMS($member->phone, $violationMessage, $channel, false, $member);
                             Log::info("Sent violation message to member {$member->id}: {$violationMessage}");
 
-                            // Update progress to indicate we sent violation message (don't mark as responded)
+                            // CRITICAL: Reset has_responded to prevent loop
+                            // Member must respond again before we process further
                             $progress->update([
                                 'last_dispatched_at' => now(),
+                                'has_responded' => false, // Require new response
                             ]);
                         } else {
                             // Error - mark survey as completed with error status
