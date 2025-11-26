@@ -37,6 +37,18 @@ class MemberResource extends Resource
         return static::getModel()::count();
     }
 
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+
+        // Only apply restriction for staff, not admins
+        if (auth()->user()->hasRole('county_staff')) {
+            $query->where('county_id', auth()->user()->county_id);
+        }
+
+        return $query;
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -74,12 +86,21 @@ class MemberResource extends Resource
                     ->label('Is Disabled')
                     ->reactive()
                     ->inline(false),
-                \Filament\Forms\Components\Select::make('county_id')
+                Forms\Components\Select::make('county_id')
                     ->label('County')
-                    ->relationship('county', 'name')
+                    ->relationship(
+                        name: 'county',
+                        titleAttribute: 'name',
+                        modifyQueryUsing: function ($query) {
+                            if (auth()->user()->hasRole('county_staff')) {
+                                $query->where('id', auth()->user()->county_id);
+                            }
+                        }
+                    )
                     ->searchable()
                     ->native(false)
                     ->required(),
+
 
                 Toggle::make('consent')
                     ->label("Consent"),
