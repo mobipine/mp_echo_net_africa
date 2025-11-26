@@ -12,7 +12,7 @@ class Member extends Model
     protected $fillable = [
         'group_id', 'name', 'email', 'phone', 'national_id',
         'gender', 'dob', 'marital_status', 'profile_picture','is_active',
-        'member_since', 'membership_status','stage','is_disabled','disability'
+        'member_since', 'membership_status','stage','is_disabled','disability','consent','county_id'
     ];
 
     protected $casts = [
@@ -20,6 +20,11 @@ class Member extends Model
         'is_active' => 'boolean',
         'member_since' => 'date',
     ];
+
+    public function county()
+    {
+        return $this->belongsTo(\App\Models\County::class);
+    }
 
     public function group()
     {

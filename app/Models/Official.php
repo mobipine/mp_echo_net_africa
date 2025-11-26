@@ -11,6 +11,13 @@ class Official extends Model
         'group_id',
         'member_id',
         'official_position_id',
+        'left_at',
+        'is_active'
+    ];
+
+    protected $casts = [
+        'created_at' => 'date',
+        'left_at' => 'date',
     ];
 
     /**

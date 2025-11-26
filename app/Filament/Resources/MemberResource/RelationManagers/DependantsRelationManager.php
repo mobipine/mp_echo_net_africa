@@ -18,7 +18,8 @@ class DependantsRelationManager extends RelationManager
         return $form->schema([
             Forms\Components\TextInput::make('name')->required(),
             Forms\Components\TextInput::make('relationship')->required(),
-            Forms\Components\DatePicker::make('date_of_birth')->label('Date of Birth')->native(false),
+            Forms\Components\TextInput::make('phone_number')->required()->maxLength(10)->minLength(10),
+            Forms\Components\DatePicker::make('date_of_birth')->label('Date of Birth')->native(false)->required(),
             Forms\Components\Select::make('gender')->native(false)->options([
                 'male' => 'Male',
                 'female' => 'Female',
@@ -33,6 +34,7 @@ class DependantsRelationManager extends RelationManager
             Tables\Columns\TextColumn::make('relationship')->sortable(),
             Tables\Columns\TextColumn::make('dob')->date(),
             Tables\Columns\TextColumn::make('gender'),
+            Tables\Columns\TextColumn::make('phone_number'),
         ])->headerActions([
             Tables\Actions\CreateAction::make(),
         ])->actions([

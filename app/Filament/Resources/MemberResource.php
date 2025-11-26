@@ -74,6 +74,15 @@ class MemberResource extends Resource
                     ->label('Is Disabled')
                     ->reactive()
                     ->inline(false),
+                \Filament\Forms\Components\Select::make('county_id')
+                    ->label('County')
+                    ->relationship('county', 'name')
+                    ->searchable()
+                    ->native(false)
+                    ->required(),
+
+                Toggle::make('consent')
+                    ->label("Consent"),
 
                 \Filament\Forms\Components\TextInput::make('disability')
                     ->label('Type of Disability')
@@ -193,6 +202,11 @@ class MemberResource extends Resource
                 \Filament\Tables\Columns\TextColumn::make('dob')->date()->sortable()->toggleable(isToggledHiddenByDefault:true),
                 \Filament\Tables\Columns\TextColumn::make('marital_status')->sortable()->toggleable(isToggledHiddenByDefault:true),
                 \Filament\Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault:true),
+                Tables\Columns\TextColumn::make('county.name')
+                    ->label('County')
+                    ->searchable()
+                    ->sortable(),
+
             ])
             ->filters([
                 //

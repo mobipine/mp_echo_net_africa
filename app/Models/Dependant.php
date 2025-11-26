@@ -12,5 +12,6 @@ class Dependant extends Model
         'relationship',
         'date_of_birth',
         'gender',
+        'phone_number'
     ];
 }

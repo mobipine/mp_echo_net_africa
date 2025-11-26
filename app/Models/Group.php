@@ -20,6 +20,10 @@ class Group extends Model
         'max_loan_amount' => 'decimal:2',
     ];
 
+    public function kycDocuments()
+    {
+        return $this->hasMany(KycDocument::class);
+    }
     public function members()
     {
         return $this->hasMany(\App\Models\Member::class);

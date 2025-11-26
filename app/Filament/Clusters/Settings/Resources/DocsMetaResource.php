@@ -34,6 +34,7 @@ class DocsMetaResource extends Resource
                 Forms\Components\Select::make('tags')
                     ->label('Tags')
                     ->options([
+                        'group_kyc' => "Group KYC",
                         'member_kyc' => 'Member KYC',
                         'loan_application' => 'Loan Application',
                         'collaterals' => 'Collaterals',
@@ -73,6 +74,7 @@ class DocsMetaResource extends Resource
                             return new \Illuminate\Support\HtmlString('<span class="text-gray-400">—</span>');
                         }
                         $tagLabels = [
+                            'group_kyc' => "Group KYC",
                             'member_kyc' => 'Member KYC',
                             'loan_application' => 'Loan Application',
                             'collaterals' => 'Collaterals',
