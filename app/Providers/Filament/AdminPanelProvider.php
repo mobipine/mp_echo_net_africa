@@ -21,12 +21,13 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
-
+use App\Filament\Auth\RequestPasswordResetPage;
 class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
         return $panel
+            ->passwordReset(RequestPasswordResetPage::class)
             ->default()
             ->id('admin')
             ->path('admin')
