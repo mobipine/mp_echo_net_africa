@@ -115,7 +115,8 @@ function getNextQuestion($survey_id, $response = null, $current_question_id = nu
             //check if the response matches any of the possible answers
             $matchedFlow = null;
             foreach ($possibleAnswers as $answer) {
-                if (strcasecmp($answer['answer'], $response) == 0) {
+                // Flexible text matching: normalize spaces, case-insensitive, trim
+                if (normalizeAnswerText($answer['answer']) === normalizeAnswerText($response)) {
                     $matchedFlow = $answer['linkedFlow'];
                     break;
                 }
@@ -198,7 +199,8 @@ function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
             $numberText = implode(', ', $numbers) . " or " . $lastNumber;
         }
 
-        $message .= "\nPlease reply with the number {$numberText}.";
+        // Bilingual instruction (English and Swahili) - accepts both number and answer text
+        $message .= "\n\nTafadhali jibu kwa nambari {$numberText} au chaguo husika.\nPlease reply with the number {$numberText} or the corresponding option.";
         Log::info("The message to be sent is {$message}");
     }
     else {
@@ -730,8 +732,8 @@ function getActualAnswer($currentQuestion, $userResponse, $msisdn)
                     break;
                 }
 
-                // Match by actual text (case-insensitive)
-                if (strcasecmp($answer['answer'], $response) === 0) {
+                // Flexible text matching: normalize spaces, case-insensitive
+                if (normalizeAnswerText($answer['answer']) === normalizeAnswerText($response)) {
                     $answers[] = $answer['answer'];
                     $matched = true;
                     break;
@@ -760,12 +762,14 @@ function getActualAnswer($currentQuestion, $userResponse, $msisdn)
             // Check if user typed the number
             if ((string)$index === trim($userResponse)) {
                 $actualAnswer = $answer['answer']; // select answer based on number
+                Log::info("Matched by number: User typed '{$userResponse}' matched option {$index}");
                 break;
             }
 
-            // Also allow typing the full answer text
-            if (strcasecmp($answer['answer'], $userResponse) === 0) {
+            // Flexible text matching: normalize spaces, case-insensitive, trim
+            if (normalizeAnswerText($answer['answer']) === normalizeAnswerText($userResponse)) {
                 $actualAnswer = $answer['answer'];
+                Log::info("Matched by text: User typed '{$userResponse}' matched '{$answer['answer']}'");
                 break;
             }
 
@@ -774,6 +778,7 @@ function getActualAnswer($currentQuestion, $userResponse, $msisdn)
 
         if ($actualAnswer === null) {
             // User gave something invalid (neither number nor valid answer)
+            Log::warning("No match found for response: '{$userResponse}'. Available options: " . json_encode(array_column($currentQuestion->possible_answers, 'answer')));
             return $actualAnswer; // stop further processing
         }
     } else {
@@ -782,6 +787,30 @@ function getActualAnswer($currentQuestion, $userResponse, $msisdn)
     }
 
     return $actualAnswer;
+}
+
+/**
+ * Normalize answer text for flexible matching
+ * - Converts to lowercase
+ * - Trims whitespace
+ * - Replaces multiple spaces with single space
+ * - Removes common punctuation
+ */
+function normalizeAnswerText($text)
+{
+    // Convert to lowercase
+    $text = mb_strtolower($text, 'UTF-8');
+
+    // Trim whitespace
+    $text = trim($text);
+
+    // Replace multiple spaces with single space
+    $text = preg_replace('/\s+/', ' ', $text);
+
+    // Remove common punctuation that users might add/omit
+    $text = str_replace(['.', ',', '!', '?', ':', ';'], '', $text);
+
+    return $text;
 }
 
 

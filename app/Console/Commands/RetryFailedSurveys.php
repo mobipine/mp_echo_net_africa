@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Log;
  * 2. Has 2 modes: --dry-run (preview only) and normal (actual execution)
  * 3. Dry-run: Shows count and list of what would be updated
  * 4. Normal: Updates first record status to 'pending', sets amended='sysAdmin'
- * 5. Normal mode: Max 500 records per run to prevent overload
+ * 5. Optional --limit flag to restrict number of records (no limit if omitted)
  * 6. Useful for manually retrying surveys after system issues
  */
 class RetryFailedSurveys extends Command
@@ -27,7 +27,7 @@ class RetryFailedSurveys extends Command
      */
     protected $signature = 'surveys:retry-failed
                             {--dry-run : Preview what would be updated without making changes}
-                            {--limit=500 : Maximum number of records to update in normal mode}';
+                            {--limit= : Optional maximum number of records to update (no limit if omitted)}';
 
     /**
      * The console command description.
@@ -42,14 +42,14 @@ class RetryFailedSurveys extends Command
     public function handle()
     {
         $isDryRun = $this->option('dry-run');
-        $limit = (int) $this->option('limit');
-
-        if ($limit > 500) {
-            $this->error('Limit cannot exceed 500 records for safety reasons.');
-            return Command::FAILURE;
-        }
+        $limit = $this->option('limit') ? (int) $this->option('limit') : null;
 
         $this->info($isDryRun ? '🔍 DRY RUN MODE - No changes will be made' : '⚙️  NORMAL MODE - Changes will be applied');
+        if ($limit) {
+            $this->info("📌 Limit set to: {$limit} records");
+        } else {
+            $this->info("📌 No limit - will process all found records");
+        }
         $this->newLine();
 
         // Find members with failed survey attempts
@@ -64,7 +64,7 @@ class RetryFailedSurveys extends Command
         $this->newLine();
 
         if ($isDryRun) {
-            $this->runDryMode($failedMembers);
+            $this->runDryMode($failedMembers, $limit);
         } else {
             $this->runNormalMode($failedMembers, $limit);
         }
@@ -125,11 +125,19 @@ class RetryFailedSurveys extends Command
     /**
      * Run in dry-run mode - show what would be updated
      */
-    protected function runDryMode($failedMembers)
+    protected function runDryMode($failedMembers, $limit = null)
     {
+        $membersToShow = $limit ? $failedMembers->take($limit) : $failedMembers;
+        $totalFound = $failedMembers->count();
+
+        if ($limit && $totalFound > $limit) {
+            $this->warn("⚠️  Found {$totalFound} records but showing only {$limit} (due to --limit flag)");
+            $this->newLine();
+        }
+
         $this->table(
             ['Member ID', 'Member Name', 'Phone', 'First SMS ID', 'Status', 'Failure Reason'],
-            $failedMembers->map(function ($item) {
+            $membersToShow->map(function ($item) {
                 $member = Member::find($item->member_id);
                 $firstSms = SMSInbox::find($item->first_sms_id);
 
@@ -146,8 +154,8 @@ class RetryFailedSurveys extends Command
 
         $this->newLine();
         $this->info("📊 Summary:");
-        $this->info("   • Total members affected: {$failedMembers->count()}");
-        $this->info("   • SMS records that would be updated: {$failedMembers->count()}");
+        $this->info("   • Total members found: {$totalFound}");
+        $this->info("   • SMS records that would be updated: " . ($limit && $totalFound > $limit ? $limit : $totalFound));
         $this->info("   • Changes: status → 'pending', amended → 'sysAdmin', retries → 0");
         $this->newLine();
         $this->comment('💡 Run without --dry-run to apply these changes');
@@ -156,19 +164,21 @@ class RetryFailedSurveys extends Command
     /**
      * Run in normal mode - actually update the records
      */
-    protected function runNormalMode($failedMembers, $limit)
+    protected function runNormalMode($failedMembers, $limit = null)
     {
-        $membersToProcess = $failedMembers->take($limit);
-        $actualLimit = $membersToProcess->count();
+        $membersToProcess = $limit ? $failedMembers->take($limit) : $failedMembers;
+        $totalCount = $membersToProcess->count();
+        $totalFound = $failedMembers->count();
 
-        if ($failedMembers->count() > $limit) {
-            $this->warn("⚠️  Found {$failedMembers->count()} records but limiting to {$limit} for safety");
+        if ($limit && $totalFound > $limit) {
+            $this->warn("⚠️  Found {$totalFound} records but processing only {$limit} (due to --limit flag)");
+            $this->newLine();
         }
 
-        $this->info("Processing {$actualLimit} members...");
+        $this->info("Processing {$totalCount} members...");
         $this->newLine();
 
-        $bar = $this->output->createProgressBar($actualLimit);
+        $bar = $this->output->createProgressBar($totalCount);
         $bar->start();
 
         $updated = 0;
