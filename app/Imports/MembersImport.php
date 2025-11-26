@@ -13,6 +13,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use App\Models\County;
 
 class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, ShouldQueue
 {
@@ -37,6 +38,8 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                 // $dob = $row['year_birth'] ?? $row['year'] ?? null;
                 // Handle DOB (year only)
                 $dobYear = trim($row['year'] ?? null);
+                $countyName = trim($row['county_name'] ?? '');
+
                
 
                 // Skip invalid rows
@@ -83,6 +86,18 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                     $dobCarbon = Carbon::createFromDate((int)$dobYear, 1, 1);
                 }
 
+                $countyId = null;
+
+                if (!empty($countyName)) {
+                    $county = County::whereRaw('LOWER(name) = ?', [strtolower($countyName)])->first();
+
+                    if ($county) {
+                        $countyId = $county->id;
+                    } else {
+                        Log::warning("County not found: {$countyName}");
+                    }
+                }
+
                 // Use a transaction to ensure safe updates
                 DB::transaction(function () use (
                     $group,
@@ -91,6 +106,7 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                     $nationalId,
                     $gender,
                     $dobCarbon,
+                    $countyId,
                     &$importedCount,
                     &$updatedCount
                 ) {
@@ -105,6 +121,7 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                             'phone' => $phone ?: $existing->phone,
                             'gender' => $this->normalizeGender($gender) ?: $existing->gender,
                             'dob' => $dobCarbon ?: $existing->dob,
+                            'county_id' => $countyId ?: $existing->county_id,
                             'is_active' => true,
                         ]);
 
@@ -117,6 +134,7 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                             'phone' => $phone ?: null,
                             'national_id' => $nationalId,
                             'gender' => $this->normalizeGender($gender),
+                            'county_id' => $countyId,
                             'dob' => $dobCarbon,
                             'is_active' => true,
                         ]);
