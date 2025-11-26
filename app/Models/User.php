@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-// use App\Notifications\CustomResetPasswordNotification;
+use App\Notifications\CustomResetPasswordNotification;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -82,6 +82,9 @@ class User extends Authenticatable implements FilamentUser
     {
         return !is_null($this->member_id);
     }
- 
+    public function sendPasswordResetNotification($token)
+    {
+        $this->notify(new CustomResetPasswordNotification($token));
+    }
 
 }
