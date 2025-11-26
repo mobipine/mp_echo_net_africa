@@ -15,8 +15,8 @@ use Illuminate\Support\Facades\Log;
  *
  * 1. Finds members who have NEVER started any survey (no survey_progress)
  * 2. Has 2 modes: --dry-run (preview only) and normal (actual execution)
- * 3. Updates member stage to 'New'
- * 4. Creates survey_progress for recruitment survey (ID: 5)
+ * 3. Creates survey_progress for recruitment survey (default ID: 5)
+ * 4. Updates member stage to '{SurveyTitle}InProgress' (e.g., 'RecruitmentInProgress')
  * 5. Sends first question via SMS (queues in sms_inboxes)
  * 6. Useful for onboarding new members who haven't been initialized
  */
@@ -135,16 +135,19 @@ class InitializeNewMembersCommand extends Command
         // Show sample of members (first 20)
         $sampleMembers = $members->take(20);
 
+        // Calculate the target stage
+        $targetStage = str_replace(' ', '', ucfirst($survey->title)) . 'InProgress';
+
         $this->table(
             ['Member ID', 'Name', 'Phone', 'Current Stage', 'Group', 'Would Update To'],
-            $sampleMembers->map(function ($member) {
+            $sampleMembers->map(function ($member) use ($targetStage) {
                 return [
                     $member->id,
                     $member->name,
                     $member->phone,
                     $member->stage ?? 'null',
                     $member->group?->name ?? 'No Group',
-                    'New',
+                    $targetStage,
                 ];
             })->toArray()
         );
@@ -159,7 +162,7 @@ class InitializeNewMembersCommand extends Command
         $this->info("   • Total members to initialize: {$members->count()}");
         $this->info("   • Survey to send: {$survey->title} (ID: {$survey->id})");
         $this->info("   • Changes per member:");
-        $this->info("      - Stage → 'New'");
+        $this->info("      - Stage → '{$targetStage}'");
         $this->info("      - Create survey_progress record");
         $this->info("      - Queue first question SMS");
         $this->newLine();
@@ -184,9 +187,6 @@ class InitializeNewMembersCommand extends Command
             try {
                 DB::beginTransaction();
 
-                // Update member stage to 'New'
-                $member->update(['stage' => 'New']);
-
                 // Create survey progress
                 $newProgress = SurveyProgress::create([
                     'survey_id' => $survey->id,
@@ -197,6 +197,10 @@ class InitializeNewMembersCommand extends Command
                     'source' => 'command',
                     'channel' => 'sms',
                 ]);
+
+                // Update member stage to '{SurveyTitle}InProgress'
+                $memberStage = str_replace(' ', '', ucfirst($survey->title)) . 'InProgress';
+                $member->update(['stage' => $memberStage]);
 
                 // Format and queue first question
                 $message = formartQuestion($firstQuestion, $member, $survey);
@@ -212,7 +216,7 @@ class InitializeNewMembersCommand extends Command
 
                 $initialized++;
 
-                Log::info("Initialize new member: Member {$member->id} ({$member->name}) initialized with survey {$survey->id}");
+                Log::info("Initialize new member: Member {$member->id} ({$member->name}) initialized with survey {$survey->id}, stage updated to {$memberStage}");
 
                 DB::commit();
             } catch (\Exception $e) {
@@ -229,6 +233,8 @@ class InitializeNewMembersCommand extends Command
         $bar->finish();
         $this->newLine(2);
 
+        $targetStage = str_replace(' ', '', ucfirst($survey->title)) . 'InProgress';
+
         $this->info("✅ Initialization Complete!");
         $this->newLine();
         $this->info("📊 Summary:");
@@ -237,7 +243,7 @@ class InitializeNewMembersCommand extends Command
             $this->warn("   • Failed to initialize: {$failed} members");
         }
         $this->info("   • Survey sent: {$survey->title}");
-        $this->info("   • Stage updated to: 'New'");
+        $this->info("   • Stage updated to: '{$targetStage}'");
         $this->info("   • Survey progress created");
         $this->info("   • First question queued in SMS inbox");
         $this->newLine();
