@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+// use App\Notifications\CustomResetPasswordNotification;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -27,7 +28,13 @@ class User extends Authenticatable implements FilamentUser
         'password',
         'profile_picture',
         'member_id',
+        'county_id'
     ];
+
+    public function county()
+    {
+        return $this->belongsTo(\App\Models\County::class);
+    }
 
     /**
      * The attributes that should be hidden for serialization.
@@ -75,4 +82,6 @@ class User extends Authenticatable implements FilamentUser
     {
         return !is_null($this->member_id);
     }
+ 
+
 }

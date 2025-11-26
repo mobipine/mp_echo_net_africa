@@ -59,6 +59,12 @@ class UserResource extends Resource
                     ->preload()
                     ->required()
                     ->searchable(),
+                \Filament\Forms\Components\Select::make('county_id')
+                    ->label('County')
+                    ->helperText("Mandatory if County staff")
+                    ->relationship('county', 'name')
+                    ->searchable()
+                    ->native(false),
 
                 FileUpload::make('profile_picture')
                     ->image()
@@ -85,6 +91,11 @@ class UserResource extends Resource
                 \Filament\Tables\Columns\TextColumn::make('id')->sortable(),
                 \Filament\Tables\Columns\TextColumn::make('name')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('email')->sortable()->searchable(),
+                Tables\Columns\TextColumn::make('county.name')
+                    ->label('County')
+                    ->searchable()
+                    ->sortable(),
+
                 \Filament\Tables\Columns\TextColumn::make('member.name')
                     ->label('Member')
                     ->sortable()
