@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Widgets\CountySurveySummaryWidget;
 use App\Filament\Widgets\GroupSurveySummaryTable;
 use App\Models\Group;
 use App\Models\Survey;
@@ -66,6 +67,7 @@ class SurveyReports extends Page
             SurveyDropoutTable::make(['filters' => $this->filters]), 
             GroupSurveySummaryTable::make(['filters' => $this->filters]),
             SurveyDropoutAnalysis::make(['filters' => $this->filters]),
+            CountySurveySummaryWidget::make(['filters' => $this->filters]),
         ];
     }
 }
