@@ -26,6 +26,7 @@ class SurveyDropoutAnalysis extends ChartWidget
     {
         $groupIds = $this->filters['group_id'] ?? null;
         $surveyId = $this->filters['survey_id'] ?? null;
+        $countyId = $this->filters['county_id'] ?? null;
 
         $query = SurveyProgress::query()
             ->select('current_question_id', DB::raw('COUNT(*) as total_stoppages'))
@@ -42,6 +43,11 @@ class SurveyDropoutAnalysis extends ChartWidget
             $groupIds = is_array($groupIds) ? $groupIds : [$groupIds];
             $query->whereHas('member', function ($q) use ($groupIds) {
                 $q->whereIn('group_id', $groupIds);
+            });
+        }
+        if (!empty($countyId)) {
+            $query->whereHas('member', function ($q) use ($countyId) {
+                $q->where('county_id', $countyId);
             });
         }
 
