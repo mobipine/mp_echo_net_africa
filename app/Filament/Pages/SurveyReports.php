@@ -42,8 +42,14 @@ class SurveyReports extends Page
                             ->options(Survey::pluck('title', 'id'))
                             ->placeholder('All Surveys')
                             ->nullable(),
+                        Select::make('county_id')
+                            ->label('Filter by County')
+                            ->options(\App\Models\County::pluck('name', 'id'))
+                            ->placeholder('All Counties')
+                            ->nullable(),
+
                     ])
-                    ->columns(2),
+                    ->columns(3),
             ]);
     }
 

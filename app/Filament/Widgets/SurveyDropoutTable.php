@@ -1,14 +1,18 @@
 <?php
 
 namespace App\Filament\Widgets;
-
+use Illuminate\Support\Collection;
+use App\Exports\SurveyDropoutExport;
 use App\Models\SurveyProgress;
 use App\Filament\Pages\SurveyReports;
 use Filament\Tables;
 use Filament\Widgets\TableWidget;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
-
+use Illuminate\Support\Facades\Log;
+use Maatwebsite\Excel\Facades\Excel;
+use pxlrbt\FilamentExcel\Actions\Tables\ExportBulkAction;
+use pxlrbt\FilamentExcel\Exports\ExcelExport;
 class SurveyDropoutTable extends TableWidget
 {
     protected static ?string $heading = 'Survey Dropout Table (Incomplete)';
@@ -26,6 +30,7 @@ class SurveyDropoutTable extends TableWidget
     {
         $groupIds = $this->filters['group_id'] ?? null;
         $surveyId = $this->filters['survey_id'] ?? null;
+        $countyId = $this->filters['county_id'] ?? null;
 
         $query = SurveyProgress::query()
             ->select(
@@ -35,8 +40,8 @@ class SurveyDropoutTable extends TableWidget
             )
             ->whereNull('completed_at')
             ->whereIn('status', ['ACTIVE', 'PENDING', 'UPDATING_DETAILS'])
-            ->groupBy('current_question_id')
-            ->orderByDesc('total_stoppages');
+            ->groupBy('current_question_id');
+            
 
         if (!empty($surveyId)) {
             $query->where('survey_id', $surveyId);
@@ -48,6 +53,13 @@ class SurveyDropoutTable extends TableWidget
                 $q->whereIn('group_id', $groupIds);
             });
         }
+        if (!empty($countyId)) {
+            $query->whereHas('member', function ($q) use ($countyId) {
+                $q->where('county_id', $countyId);
+            });
+        }
+   
+        Log::info($query->get());
 
         return $query;
     }
@@ -65,4 +77,24 @@ class SurveyDropoutTable extends TableWidget
                 ->sortable(),
         ];
     }
+
+protected function getTableBulkActions(): array
+    {
+        return [
+            // Option A: download selected rows (preferred when user selects rows)
+           ExportBulkAction::make('export_selected')
+                ->label('Export Selected to Excel')
+                ->icon('heroicon-o-document-arrow-down')
+                ->action(function (array $data, Collection $records) {
+                    // $records are the selected group models
+                    $selectedIds = $records->pluck('id')->toArray();
+                    $export = new SurveyDropoutExport($this->filters ?? [], $selectedIds);
+                    return Excel::download($export, 'group_survey_summary_' . now()->format('Y_m_d_H_i_s') . '.xlsx');
+                })
+                ->requiresConfirmation()
+                ->color('success'),
+
+        ];
+    }
+
 }

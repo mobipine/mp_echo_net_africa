@@ -14,6 +14,7 @@ use Illuminate\Support\Collection;
 use App\Exports\GroupSummaryExport;
 use pxlrbt\FilamentExcel\Actions\Tables\ExportBulkAction;
 use pxlrbt\FilamentExcel\Exports\ExcelExport;
+use App\Exports\GroupSurveySummaryExport;
 class GroupSurveySummaryTable extends TableWidget
 {
     public ?array $filters = [];
@@ -94,15 +95,19 @@ class GroupSurveySummaryTable extends TableWidget
     protected function getTableBulkActions(): array
     {
         return [
-            ExportBulkAction::make('export_selected')
+            // Option A: download selected rows (preferred when user selects rows)
+           ExportBulkAction::make('export_selected')
                 ->label('Export Selected to Excel')
                 ->icon('heroicon-o-document-arrow-down')
-                ->exports([
-                    ExcelExport::make('Group Survey Summary')
-                        ->fromTable() // ✅ Exports visible/selected rows from the table
-                        ->withFilename('group_survey_summary_' . now()->format('Y_m_d_H_i_s'))
-                        ->withWriterType(\Maatwebsite\Excel\Excel::XLSX),
-                ])
+                ->action(function (array $data, Collection $records) {
+                    // $records are the selected group models
+                    $selectedIds = $records->pluck('id')->toArray();
+                    $export = new GroupSurveySummaryExport($this->filters ?? [], $selectedIds);
+                    return Excel::download($export, 'group_survey_summary_' . now()->format('Y_m_d_H_i_s') . '.xlsx');
+                })
+                ->requiresConfirmation()
+                ->color('success'),
+
         ];
     }
 

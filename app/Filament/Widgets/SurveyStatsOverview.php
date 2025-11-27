@@ -30,6 +30,8 @@ class SurveyStatsOverview extends BaseWidget
         // Get the filters
         $groupIds = $this->filters['group_id'] ?? null;
         $surveyId = $this->filters['survey_id'] ?? null; // ✅ Added survey filter
+        $countyId = $this->filters['county_id'] ?? null;
+
 
         // Start the base query
         $baseQuery = SurveyProgress::query();
@@ -45,6 +47,12 @@ class SurveyStatsOverview extends BaseWidget
 
             $baseQuery->whereHas('member', function ($query) use ($groupIds) {
                 $query->whereIn('group_id', $groupIds);
+            });
+        }
+
+        if (!empty($countyId)) {
+            $baseQuery->whereHas('member', function ($query) use ($countyId) {
+                $query->where('county_id', $countyId);
             });
         }
         
