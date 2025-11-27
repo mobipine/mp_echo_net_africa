@@ -28,7 +28,6 @@ class SentSmsStatsOverview extends BaseWidget
             DB::raw("COUNT(CASE WHEN status = 'Failed' THEN 1 END) AS FailedCount"),
             DB::raw("COUNT(CASE WHEN status = 'pending' THEN 1 END) AS PendingCount"),
             DB::raw("COUNT(CASE WHEN delivery_status = 'pending' AND status = 'sent' THEN 1 END) AS PendingDeliveryWhileSentCount"),
-            DB::raw("SUM(credits_used) AS TotalCreditsUsed")
         )->first();
 
         $stats = [

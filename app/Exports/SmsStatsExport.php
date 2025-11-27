@@ -28,7 +28,6 @@ class SmsStatsExport implements FromCollection, ShouldAutoSize, WithEvents
             DB::raw("COUNT(CASE WHEN status = 'sent' THEN 1 END) AS SuccessfullySent"),
             DB::raw("COUNT(CASE WHEN status = 'Failed' THEN 1 END) AS SendingFailed"),
             DB::raw("COUNT(CASE WHEN status = 'pending' THEN 1 END) AS PendingQueue"),
-            DB::raw("SUM(credits_used) AS TotalCreditsUsed")
         )->first();
 
         $rows = collect();
@@ -40,7 +39,6 @@ class SmsStatsExport implements FromCollection, ShouldAutoSize, WithEvents
         $rows->push(['Successfully Sent', $results->SuccessfullySent ?? 0]);
         $rows->push(['Sending Failed', $results->SendingFailed ?? 0]);
         $rows->push(['On Sending Queue (Pending)', $results->PendingQueue ?? 0]);
-        $rows->push(['Total Credits Used', $results->TotalCreditsUsed ?? 0]);
         $rows->push([]); // Empty line
 
         // --- Section 2: Delivery Failure Reasons ---
