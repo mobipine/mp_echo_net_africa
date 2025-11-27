@@ -63,9 +63,9 @@ class SurveyReports extends Page
     {
         return [
             SurveyStatsOverview::make(['filters' => $this->filters]),
-            SurveyDropoutAnalysis::make(['filters' => $this->filters]),
             SurveyDropoutTable::make(['filters' => $this->filters]), 
             GroupSurveySummaryTable::make(['filters' => $this->filters]),
+            SurveyDropoutAnalysis::make(['filters' => $this->filters]),
         ];
     }
 }
