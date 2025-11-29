@@ -9,7 +9,9 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
-
+use Filament\Pages\Actions\Action;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\CreditsReportExport;
 class CreditReports extends Page implements HasTable
 {
     use InteractsWithTable;
@@ -113,6 +115,20 @@ class CreditReports extends Page implements HasTable
             ])
             ->defaultSort('created_at', 'desc')
             ->poll('30s');
+    }
+
+    protected function getActions(): array
+    {
+        return [
+            Action::make('export_stats')
+                ->label('Export Stats')
+                ->icon('heroicon-o-document-arrow-down')
+                ->color('success')
+                ->action(function () {
+                    $filters = $this->filters ?? [];
+                    return Excel::download(new CreditsReportExport($filters), 'credits_stats_' . now()->format('Y_m_d_H_i_s') . '.xlsx');
+                }),
+        ];
     }
 
     protected function getHeaderWidgets(): array
