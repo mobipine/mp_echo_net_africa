@@ -110,7 +110,7 @@ class CountySurveySummaryExport implements
         $export->push([
             'TOTALS',
             $totalTotals != null ? $totalTotals : '0',
-            $totalCompleted != null ? $totalTotals : '0',
+            $totalCompleted != null ? $totalCompleted : '0',
             $totalOngoing != null ? $totalOngoing : '0',
             $totalCancelled != null ? $totalCancelled : '0',
         ]);
