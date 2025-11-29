@@ -9,16 +9,6 @@ use Illuminate\Support\Facades\Log;
 
 class FetchDeliveryStatuses extends Command
 {
-    /**
-     * SMS DELIVERY STATUS FETCHER - OVERVIEW
-     *
-     * 1. Runs every 5 seconds, checks 100 SMS records with unique_id but no delivery status
-     * 2. Queries BongaSMS API for each message: fetch-delivery endpoint
-     * 3. Updates delivery_status: 'Delivered' (if DeliveredToTerminal) or 'failed'
-     * 4. Rate limiting: 50ms delay between API calls to prevent throttling
-     * 5. Graceful error handling: continues on failure, retries next run
-     */
-
     protected $signature = 'sms:fetch-delivery';
     protected $description = 'Fetch SMS delivery statuses for pending messages from BongaSMS';
 
@@ -34,8 +24,14 @@ class FetchDeliveryStatuses extends Command
                 $q->whereNull('delivery_status')
                   ->orWhere('delivery_status', 'pending');
             })
-            ->take(100) // Process in batches to avoid overwhelming the API
-            ->chunk(100, function ($smsBatch) use (&$processedCount, &$updatedCount) {
+            ->take(500)
+            ->chunk(500, function ($smsBatch) use (&$processedCount, &$updatedCount) {
+
+                SMSInbox::whereIn('id', $smsBatch->pluck('id'))
+                    ->update(['delivery_status' => 'processing']);
+
+                Log::info("Marked " . count($smsBatch) . " SMS as processing.");
+
                 foreach ($smsBatch as $sms) {
                     $processedCount++;
 
@@ -47,7 +43,7 @@ class FetchDeliveryStatuses extends Command
                         ]);
 
                         if (!$response->successful()) {
-                            Log::error("Failed to fetch delivery for SMS ID {$sms->id}, unique_id: {$sms->unique_id}");
+                            Log::error("Failed API call for SMS {$sms->id}");
                             continue;
                         }
 
@@ -56,33 +52,29 @@ class FetchDeliveryStatuses extends Command
                         if (($data['status'] ?? null) == 222) {
                             $desc = $data['delivery_status_desc'] ?? null;
 
-                            // If NULL, status is still pending - skip update
                             if ($desc === null) {
-                                continue;
+                                continue; // still pending on provider
                             }
 
-                            // Normalize delivery status
                             if ($desc === 'DeliveredToTerminal') {
                                 $sms->delivery_status = 'Delivered';
                             } else {
                                 $sms->delivery_status = 'failed';
                             }
 
-                            // Store provider description
                             $sms->delivery_status_desc = $desc;
                             $sms->save();
 
                             $updatedCount++;
-                            Log::info("Delivery status updated for SMS ID {$sms->id}: {$sms->delivery_status} ({$desc})");
+                            Log::info("Updated SMS {$sms->id} to {$sms->delivery_status}");
                         } else {
-                            Log::warning("API error fetching status for SMS ID {$sms->id}: " . ($data['status_message'] ?? 'Unknown error'));
+                            Log::warning("API error for SMS {$sms->id} : " . ($data['status_message'] ?? 'Unknown error'));
                         }
                     } catch (\Exception $e) {
-                        Log::error("Exception fetching delivery for SMS ID {$sms->id}: {$e->getMessage()}");
+                        Log::error("Exception for SMS {$sms->id}: " . $e->getMessage());
                     }
 
-                    // Small delay to avoid rate limiting
-                    usleep(50000); // 50ms delay
+                    usleep(50000); // 50ms
                 }
             });
 

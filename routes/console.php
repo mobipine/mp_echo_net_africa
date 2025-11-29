@@ -31,6 +31,11 @@ Schedule::command('send:whatsapp-text')
     ->withoutOverlapping()
     ->runInBackground();
 
+Schedule::command('sms:fetch-delivery')
+    ->everyFiveSeconds()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Loan interest accrual - run daily at 9 AM
 Schedule::command('loans:accrue-interest')->dailyAt('09:00');
 
