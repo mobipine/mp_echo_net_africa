@@ -865,7 +865,7 @@ function normalizePhoneNumber(string $phoneNumber): string
 }
 
 
-function sendSMS($msisdn, $message,$channel,$member)
+function sendSMS($msisdn, $message,$channel,$member, $is_reminder = false)
 {
     Log::info($member->id);
     try {
@@ -874,6 +874,7 @@ function sendSMS($msisdn, $message,$channel,$member)
             'message' => $message,
             'channel' => $channel,
             'member_id' => $member->id,
+            'is_reminder' => $is_reminder, // Mark as reminder if true
         ]);
     } catch (\Exception $e) {
         Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());
