@@ -67,6 +67,7 @@ class ExportSmsRecords implements FromQuery, WithHeadings, WithMapping, ShouldAu
     {
         return [
             'Phone Number',
+            'Member Name',
             'Message',
             'Status',
             'Delivery Status',
@@ -80,6 +81,7 @@ class ExportSmsRecords implements FromQuery, WithHeadings, WithMapping, ShouldAu
     {
         return [
             $row->phone_number,
+            $row?->member?->name,
             $row->message,
             $row->status,
             $row->delivery_status,
