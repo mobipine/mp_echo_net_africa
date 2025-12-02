@@ -4,27 +4,34 @@ namespace App\Exports;
 
 use App\Models\SMSInbox;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\WithHeadings;
-use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithMapping;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
+use Maatwebsite\Excel\Concerns\WithChunkReading;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
 
-class ExportSmsRecords implements FromQuery, WithHeadings, WithMapping, ShouldAutoSize, WithEvents
+class ExportSmsRecords implements 
+    FromQuery, 
+    WithHeadings, 
+    WithMapping, 
+    ShouldAutoSize, 
+    WithChunkReading, 
+    ShouldQueue, 
+    WithEvents
 {
     protected ?string $scope;
 
     public function __construct(?string $scope = null)
     {
-        Log::info("Exporting... {$scope}");
         $this->scope = $scope;
     }
 
     public function query()
     {
-        $query = SMSInbox::query();
+        $query = SMSInbox::with('member:id,name,phone');
 
         switch ($this->scope) {
             case 'DeliveredToTerminal':
@@ -52,18 +59,20 @@ class ExportSmsRecords implements FromQuery, WithHeadings, WithMapping, ShouldAu
                 $query->where('status', 'Failed');
                 break;
             case 'unique_members_that_have_sender_blacklisted':
-                $query->where('delivery_status_desc', 'SenderName Blacklisted');
+                $subQuery = SMSInbox::select(DB::raw('MAX(id)'))
+                    ->where('delivery_status_desc', 'SenderName Blacklisted')
+                    ->groupBy('member_id');
 
-                $subQuery = SMSInbox::select(DB::raw('MAX(id) as max_id'))
-                                    ->where('delivery_status_desc', 'SenderName Blacklisted')
-                                    ->groupBy('member_id');
-                
                 $query->whereIn('id', $subQuery);
                 break;
-
         }
-        
-        return $query;
+
+        return $query->orderBy('id');
+    }
+
+    public function chunkSize(): int
+    {
+        return 1000;
     }
 
     public function headings(): array
@@ -84,13 +93,13 @@ class ExportSmsRecords implements FromQuery, WithHeadings, WithMapping, ShouldAu
     {
         return [
             $row->phone_number,
-            $row?->member?->name,
+            $row->member->name ?? 'N/A',
             $row->message,
             $row->status,
             $row->delivery_status,
             $row->delivery_status_desc,
             $row->failure_reason,
-            $row->created_at,
+            $row->created_at?->format('Y-m-d H:i:s'),
         ];
     }
 
@@ -98,11 +107,7 @@ class ExportSmsRecords implements FromQuery, WithHeadings, WithMapping, ShouldAu
     {
         return [
             AfterSheet::class => function (AfterSheet $event) {
-                // Make heading bold
-                $event->sheet->getStyle('A1:G1')->getFont()->setBold(true);
-
-                // Optional: adjust row height
-                $event->sheet->getRowDimension(1)->setRowHeight(22);
+                $event->sheet->getStyle('A1:H1')->getFont()->setBold(true);
             },
         ];
     }
