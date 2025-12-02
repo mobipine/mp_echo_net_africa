@@ -36,7 +36,7 @@ class ExportSmsRecords implements FromQuery, WithHeadings, WithMapping, ShouldAu
             case 'sent':
                 $query->where('status', 'sent');
                 break;
-            case 'SenderNameBlacklisted':
+            case 'SenderName Blacklisted':
                 $query->where('delivery_status_desc', 'SenderName Blacklisted');
                 break;
             case 'AbsentSubscriber':
@@ -44,6 +44,9 @@ class ExportSmsRecords implements FromQuery, WithHeadings, WithMapping, ShouldAu
                 break;
             case 'DeliveryImpossible':
                 $query->where('delivery_status_desc', 'DeliveryImpossible');
+                break;
+            case 'DeliveredToNetwork':
+                $query->where('delivery_status_desc', 'DeliveredToNetwork');
                 break;
             case 'SendingFailed':
                 $query->where('status', 'Failed');
@@ -67,6 +70,7 @@ class ExportSmsRecords implements FromQuery, WithHeadings, WithMapping, ShouldAu
     {
         return [
             'Phone Number',
+            'Member Name',
             'Message',
             'Status',
             'Delivery Status',
@@ -80,6 +84,7 @@ class ExportSmsRecords implements FromQuery, WithHeadings, WithMapping, ShouldAu
     {
         return [
             $row->phone_number,
+            $row?->member?->name,
             $row->message,
             $row->status,
             $row->delivery_status,

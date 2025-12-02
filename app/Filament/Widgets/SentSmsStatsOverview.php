@@ -35,13 +35,15 @@ class SentSmsStatsOverview extends BaseWidget
                 ->description('Messages fully delivered')
                 ->descriptionColor('success')
                 ->color('success')
-                ->icon('heroicon-o-check-badge'),
+                ->icon('heroicon-o-check-badge')
+                ->url(route('sms.export', ['scope' => 'DeliveredToTerminal'])),
 
             Stat::make('Delivery Failed Messages', number_format($results->FailedDeliveryCount ?? 0))
                 ->description('Messages that failed delivery')
                 ->descriptionColor('danger')
                 ->color('danger')
-                ->icon('heroicon-o-x-circle'),
+                ->icon('heroicon-o-x-circle')
+                ->url(route('sms.export', ['scope' => 'failed'])),
 
             Stat::make('Pending Delivery (Sent)', number_format($results->PendingDeliveryWhileSentCount ?? 0))
                 ->description('Sent but still awaiting delivery')
@@ -53,13 +55,15 @@ class SentSmsStatsOverview extends BaseWidget
                 ->description('Messages submitted to gateway')
                 ->descriptionColor('success')
                 ->color('success')
-                ->icon('heroicon-o-paper-airplane'),
+                ->icon('heroicon-o-paper-airplane')
+                ->url(route('sms.export', ['scope' => 'sent'])),
 
             Stat::make('Sending Failed Messages', number_format($results->FailedCount ?? 0))
                 ->description('Messages that failed at sending stage')
                 ->descriptionColor('danger')
                 ->color('danger')
-                ->icon('heroicon-o-exclamation-triangle'),
+                ->icon('heroicon-o-exclamation-triangle')
+                ->url(route('sms.export', ['scope' => 'SendingFailed'])),
 
             Stat::make('On Sending Queue (Pending)', number_format($results->PendingCount ?? 0))
                 ->description('Messages still in queue')
@@ -82,7 +86,8 @@ class SentSmsStatsOverview extends BaseWidget
                 ->description('Delivery Status Reason')
                 ->descriptionColor('danger')
                 ->color('danger')
-                ->icon('heroicon-o-exclamation-triangle');
+                ->icon('heroicon-o-exclamation-triangle')
+                ->url(route('sms.export', ['scope' => $reason->delivery_status_desc ]));
         }
 
         // --- Add Sending Failure Reasons ---
