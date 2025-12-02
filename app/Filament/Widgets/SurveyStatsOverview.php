@@ -13,16 +13,16 @@ class SurveyStatsOverview extends BaseWidget
 {
     // 1. Define the property to accept filters
     public ?array $filters = [];
-    
+
     // 2. CRITICAL: Only show on this page.
     protected static ?string $page = SurveyReports::class;
-    
+
     protected static ?int $sort = 1;
     public static function canView(): bool
     {
-        // Returning false prevents the widget from being automatically displayed 
+        // Returning false prevents the widget from being automatically displayed
         // on the dashboard or resource pages.
-        return false; 
+        return false;
     }
 
     protected function getStats(): array
@@ -55,20 +55,20 @@ class SurveyStatsOverview extends BaseWidget
                 $query->where('county_id', $countyId);
             });
         }
-        
+
         // Use the filtered base query for all statistics calculations
         $totalParticipants = (clone $baseQuery)->count();
-        
+
         $completedCount = (clone $baseQuery)
             ->whereNotNull('completed_at')
             ->where('status', 'COMPLETED')
             ->count();
-            
+
         $inProgressCount = (clone $baseQuery)
             ->whereNull('completed_at')
             ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS', 'PENDING'])
             ->count();
-        
+
         $cancelled = (clone $baseQuery)
             ->whereNull('completed_at')
             ->whereIn('status', ['CANCELLED'])
@@ -84,22 +84,34 @@ class SurveyStatsOverview extends BaseWidget
         }
 
         // Total number of reminders sent (count all)
-        $remindersSent = (clone $smsQuery)->count();
+        $remindersSent = (clone $smsQuery)->where('status', 'sent')->count();
+
 
         // Unique members who have been sent at least one reminder
-        $membersSentReminder = (clone $smsQuery)
-            ->distinct('phone_number')
-            ->count('member_id');
+        // $membersSentReminder = (clone $smsQuery)
+        //     ->distinct('phone_number')
+        //     ->count('member_id');
 
-        $repeatReminders = (clone $smsQuery)
-            ->select('phone_number', 'message')
-            ->groupBy('phone_number', 'message')
-            ->havingRaw('COUNT(*) >= 3')
-            ->get()
-            ->count();
-        
-        $completionRate = $totalParticipants > 0 
-            ? round(($completedCount / $totalParticipants) * 100, 1) 
+        $membersSentReminder = (clone $baseQuery)
+        ->distinct('member_id')
+        ->where('number_of_reminders', '>=', 1)
+        ->count();
+
+        // $repeatReminders = (clone $smsQuery)
+        //     ->select('phone_number', 'message')
+        //     ->groupBy('phone_number', 'message')
+        //     ->havingRaw('COUNT(*) >= 3')
+        //     ->get()
+        //     ->count();
+
+        $repeatReminders = (clone $baseQuery)
+        ->distinct('member_id')
+        ->where('number_of_reminders', '>=', 3)
+        ->count();
+
+
+        $completionRate = $totalParticipants > 0
+            ? round(($completedCount / $totalParticipants) * 100, 1)
             : 0;
 
         return [
@@ -115,7 +127,7 @@ class SurveyStatsOverview extends BaseWidget
                 ->description('Uncompleted Active surveys.')
                 ->descriptionIcon('heroicon-o-x-circle')
                 ->color('warning'),
-                
+
             Stat::make('Cancelled Progress', $cancelled)
                 ->description('Cancelled the survey progress.')
                 ->descriptionIcon('heroicon-o-x-circle')
