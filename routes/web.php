@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\SmsExportsController;
 use App\Http\Controllers\WebHookController;
 use App\Models\SurveyQuestion;
 use Illuminate\Support\Facades\Route;
@@ -12,7 +13,9 @@ Route::get('/', function () {
 
 Route::any('/webhook', [WebHookController::class, 'handleWebhook']);//route to receive responses from short code SMS Service
 
-
+Route::get('/export-sms/{scope}', [SmsExportsController::class, 'index'])
+    ->name('sms.export');
+    
 Route::get('/get-next-qtn', function () {
     // return view('get-next-qtn');
 
