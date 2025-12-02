@@ -84,7 +84,12 @@ class SurveyStatsOverview extends BaseWidget
         }
 
         // Total number of reminders sent (count all)
-        $remindersSent = (clone $smsQuery)->where('status', 'sent')->count();
+        // $remindersSent = (clone $smsQuery)->where('status', 'sent')->count();
+        //use base query to count the number of reminders sent -> find all records where number_of_reminders is greater than 0 and sum the number of reminders
+        $remindersSent = (clone $baseQuery)
+        ->where('number_of_reminders', '>', 0)
+        ->sum('number_of_reminders');
+
 
 
         // Unique members who have been sent at least one reminder
