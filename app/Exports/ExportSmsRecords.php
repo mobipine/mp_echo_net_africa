@@ -3,6 +3,9 @@
 namespace App\Exports;
 
 use App\Models\SMSInbox;
+use App\Models\User;
+use Filament\Notifications\Actions\Action;
+use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -10,9 +13,11 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
-
+use Maatwebsite\Excel\Concerns\Exportable;
+use Illuminate\Support\Facades\Storage;
 class ExportSmsRecords implements 
     FromQuery, 
     WithHeadings, 
@@ -22,11 +27,18 @@ class ExportSmsRecords implements
     ShouldQueue, 
     WithEvents
 {
+    use Exportable;
     protected ?string $scope;
-
-    public function __construct(?string $scope = null)
+    protected int $userId;
+    protected string $diskName; 
+    protected string $fileName; 
+    public function __construct(?string $scope = null,int $userId = null, string $diskName = 'public', string $fileName = 'export.xlsx')
     {
         $this->scope = $scope;
+        $this->userId = $userId ?? auth()->id();
+        $this->diskName = $diskName;
+        $this->fileName = $fileName;
+        Log::info("Export constructor received filename: " . $this->fileName);
     }
 
     public function query()
@@ -103,12 +115,34 @@ class ExportSmsRecords implements
         ];
     }
 
-    public function registerEvents(): array
-    {
-        return [
-            AfterSheet::class => function (AfterSheet $event) {
-                $event->sheet->getStyle('A1:H1')->getFont()->setBold(true);
-            },
-        ];
-    }
+public function registerEvents(): array
+{
+    return [
+        AfterSheet::class => function (AfterSheet $event) {
+            $fullpath="storage/{$this->fileName}";
+            $downloadUrl = asset($fullpath);
+            
+            Log::info("Export finished for scope: {$this->scope}");
+            $user = User::find($this->userId);
+            
+            if ($user) {
+                Notification::make()
+                    ->title('Export Complete! ✅')
+                    ->body('Your export is ready for download.')
+                    ->success()
+                    ->actions([
+                        Action::make('download')
+                            ->label('Download ' . strtoupper($this->scope) . ' Export')
+                            ->url($downloadUrl, shouldOpenInNewTab: true)
+                            ->button(),
+                    ])
+                    ->sendToDatabase($user);
+            }
+            
+            $event->sheet->getStyle('A1:H1')->getFont()->setBold(true);
+        },
+    ];
 }
+    
+}
+
