@@ -38,12 +38,68 @@ class SmsResponsesStatsOverview extends BaseWidget
             ];
         }
 
+        // Handle NON-Multiple Choice Questions
         if ($question->answer_strictness !== 'Multiple Choice') {
-            return [
-                Stat::make('Not Multiple Choice', '---')
-                    ->description('This question is not a multiple-choice question.'),
-            ];
+
+            // Base query
+            $baseQuery = SurveyResponse::query()
+                ->where('question_id', $questionId);
+
+            if ($surveyId) {
+                $baseQuery->where('survey_id', $surveyId);
+            }
+
+            // Total responses
+            $totalResponses = (clone $baseQuery)->count();
+
+            $stats = [];
+
+            // Total responses stat
+            $stats[] = Stat::make('Total Responses', $totalResponses)
+                ->description('All responses to this question')
+                ->color('primary')
+                ->icon('heroicon-o-chart-bar')
+                ->url(route('response.export', [
+                    'survey_id' => $surveyId,
+                    'question_id' => $questionId,
+                ]));
+
+            // Fetch unique answers + counts
+            $counts = $baseQuery->selectRaw('survey_response, COUNT(*) as total')
+                ->groupBy('survey_response')
+                ->pluck('total', 'survey_response')
+                ->toArray();
+
+            // Build one widget per unique user answer
+            foreach ($counts as $answerText => $count) {
+
+                $percentage = $totalResponses > 0
+                    ? round(($count / $totalResponses) * 100, 1)
+                    : 0;
+
+                // Color logic
+                if ($percentage >= 50) {
+                    $color = 'success';
+                } elseif ($percentage >= 25) {
+                    $color = 'warning';
+                } else {
+                    $color = 'danger';
+                }
+
+                $stats[] = Stat::make($answerText ?: '(empty answer)', $count)
+                    ->description("Given by {$count} respondents ({$percentage}%)")
+                    ->color($color)
+                    ->icon('heroicon-o-pencil-square')
+                    ->url(route('response.export', [
+                        'survey_id' => $surveyId,
+                        'question_id' => $questionId,
+                        'answer' => $answerText,
+                    ]));
+            }
+
+            return $stats;
         }
+
 
         // Already an array thanks to the model cast
         $answers = $question->possible_answers ?? [];
