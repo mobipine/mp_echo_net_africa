@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\SmsExportsController;
 use App\Http\Controllers\ResponseExportsController;
+use App\Http\Controllers\SurveyExportsController;
 use App\Http\Controllers\WebHookController;
 use App\Models\SurveyQuestion;
 use Illuminate\Support\Facades\Route;
@@ -16,6 +17,10 @@ Route::any('/webhook', [WebHookController::class, 'handleWebhook']);//route to r
 
 Route::get('/export-sms/{scope}', [SmsExportsController::class, 'index'])
     ->name('sms.export');
+
+Route::any('/export-surveys/{scope}', [SurveyExportsController::class, 'export'])
+    ->name('survey.export');
+
     
 Route::get('/export-responses', [ResponseExportsController::class, 'export'])->name('response.export');
 
