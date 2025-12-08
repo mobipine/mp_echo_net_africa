@@ -17,6 +17,7 @@ use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\Exportable;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
+use Carbon\Carbon;
 
 class ExportSurveyProgress implements 
     FromQuery,
@@ -122,8 +123,9 @@ class ExportSurveyProgress implements
             $row->currentQuestion->question ?? 'N/A',
             $row->member->county->name ?? $row->member->group->County->name ?? 'N/A',
             $row->status,
-            $row->completed_at?->format('Y-m-d H:i:s'),
-            $row->created_at?->format('Y-m-d H:i:s'),
+            $row->completed_at ? Carbon::parse($row->completed_at)->format('Y-m-d H:i:s') : null,
+            $row->created_at ? Carbon::parse($row->created_at)->format('Y-m-d H:i:s') : null,
+
         ];
     }
 
