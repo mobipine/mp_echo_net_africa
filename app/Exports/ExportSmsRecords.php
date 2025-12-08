@@ -84,7 +84,7 @@ class ExportSmsRecords implements
 
     public function chunkSize(): int
     {
-        return 1000;
+        return 10000;
     }
 
     public function headings(): array
