@@ -337,23 +337,34 @@ function startSurvey($msisdn, Survey $survey,$channel)
             return response()->json(['status' => 'error', 'message' => 'Redo Survey not found.']);
         }
 
-        // Get first question of the “Redo Survey”
+        // Get first question of the "Redo Survey"
         $redoFirstQuestion = getNextQuestion($redoSurvey->id);
         if ($redoFirstQuestion) {
+            // Create progress first to get the ID
+            $newProgress = SurveyProgress::create([
+                'survey_id' => $redoSurvey->id,
+                'member_id' => $member->id,
+                'current_question_id' => $redoFirstQuestion->id,
+                'last_dispatched_at' => now(),
+                'has_responded' => false,
+                'source' => 'shortcode'
+            ]);
+
             $message = formartQuestion($redoFirstQuestion, $member,$survey);
-            sendSMS($msisdn, $message,$channel,$member);
+            sendSMS($msisdn, $message,$channel,$member, false, $newProgress->id);
 
             // Log for clarity
             Log::info("Sent redo survey question to {$msisdn}");
+        } else {
+            $newProgress = SurveyProgress::create([
+                'survey_id' => $redoSurvey->id,
+                'member_id' => $member->id,
+                'current_question_id' => null,
+                'last_dispatched_at' => now(),
+                'has_responded' => false,
+                'source' => 'shortcode'
+            ]);
         }
-        $newProgress = SurveyProgress::create([
-        'survey_id' => $redoSurvey->id,
-        'member_id' => $member->id,
-        'current_question_id' => $redoFirstQuestion->id,
-        'last_dispatched_at' => now(),
-        'has_responded' => false,
-        'source' => 'shortcode'
-    ]);
 
         return response()->json([
             'status' => 'info',
@@ -373,7 +384,7 @@ function startSurvey($msisdn, Survey $survey,$channel)
 
     // Send first question
     $message = formartQuestion($firstQuestion, $member, $survey);
-    sendSMS($msisdn, $message,$channel,$member);
+    sendSMS($msisdn, $message,$channel,$member, false, $newProgress->id);
 
     return response()->json([
         'status' => 'success',
@@ -398,9 +409,9 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
     Log::info("The user responded with ".$userResponse);
     $actualAnswer = getActualAnswer($currentQuestion,$userResponse,$msisdn);
 
-    $member=Member::where("phone",$msisdn)->first();
+    $member = $progress->member;
     if ($actualAnswer==null){
-        sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel,$member);
+        sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel,$member, false, $progress->id);
         return;
     }
 
@@ -431,7 +442,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
         $valid=validateResponse($currentQuestion,$msisdn,$response);
 
         if(!$valid){
-            sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel,$member);
+            sendSMS($msisdn, $currentQuestion->data_type_violation_response,$channel,$member, false, $progress->id);
             return;
         }
     }
@@ -550,7 +561,7 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
         array_values($placeholders),
         $survey->final_response
     );
-        sendSMS($msisdn, $message,$channel,$member);
+        sendSMS($msisdn, $message,$channel,$member, false, $progress->id);
         return response()->json([
             'status' => 'success',
             'message' => 'Survey completed.',
@@ -865,7 +876,7 @@ function normalizePhoneNumber(string $phoneNumber): string
 }
 
 
-function sendSMS($msisdn, $message,$channel,$member, $is_reminder = false)
+function sendSMS($msisdn, $message,$channel,$member, $is_reminder = false, $survey_progress_id = null)
 {
     Log::info($member->id);
     try {
@@ -875,6 +886,7 @@ function sendSMS($msisdn, $message,$channel,$member, $is_reminder = false)
             'channel' => $channel,
             'member_id' => $member->id,
             'is_reminder' => $is_reminder, // Mark as reminder if true
+            'survey_progress_id' => $survey_progress_id,
         ]);
     } catch (\Exception $e) {
         Log::error("Failed to create SMSInbox record for $msisdn: " . $e->getMessage());

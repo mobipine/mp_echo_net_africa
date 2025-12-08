@@ -102,7 +102,7 @@ class RedoSurveyResource extends Resource
                                 ->update(['status' => 'CANCELLED']);
 
                             // Create new survey progress
-                            SurveyProgress::create([
+                            $newProgress = SurveyProgress::create([
                                 'survey_id' => $survey->id,
                                 'member_id' => $member->id,
                                 'current_question_id' => $firstQuestion->id,
@@ -113,7 +113,7 @@ class RedoSurveyResource extends Resource
 
                             // Format and send question
                             $message = formartQuestion($firstQuestion, $member,$survey);
-                            sendSMS($msisdn, $message, $channel,$member);
+                            sendSMS($msisdn, $message, $channel,$member, false, $newProgress->id);
 
                             Notification::make()
                                 ->title('Redo Approved')

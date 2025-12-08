@@ -158,7 +158,7 @@ class ProcessSurveyProgressCommand extends Command
                         if (($nextQuestion['status'] ?? null) === 'violation') {
                             // Send violation message to member
                             $violationMessage = $nextQuestion['message'];
-                            $this->sendSMS($member->phone, $violationMessage, $channel, false, $member);
+                            $this->sendSMS($member->phone, $violationMessage, $channel, false, $member, $progress->id);
                             Log::info("Sent violation message to member {$member->id}: {$violationMessage}");
 
                             // CRITICAL: Reset has_responded to prevent loop
@@ -182,7 +182,7 @@ class ProcessSurveyProgressCommand extends Command
                         //Formatting the question
                         $message = formartQuestion($nextQuestion, $member, $survey);
 
-                        $this->sendSMS($member->phone, $message, $channel, false, $member);
+                        $this->sendSMS($member->phone, $message, $channel, false, $member, $progress->id);
                         $progress->update([
                             'current_question_id' => $nextQuestion->id,
                             'last_dispatched_at' => now(),
@@ -215,7 +215,7 @@ class ProcessSurveyProgressCommand extends Command
                     $message = formartQuestion($currentQuestion, $member, $survey, true);
 
                     try {
-                        $this->sendSMS($member->phone, $message, $progress?->channel ?? 'sms', true, $member);
+                        $this->sendSMS($member->phone, $message, $progress?->channel ?? 'sms', true, $member, $progress->id);
                         $progress->update([
                             'last_dispatched_at' => now(),
                         ]);
@@ -231,7 +231,7 @@ class ProcessSurveyProgressCommand extends Command
         }
     }
 
-    public function sendSMS($msisdn, $message, $channel, $is_reminder, $member)
+    public function sendSMS($msisdn, $message, $channel, $is_reminder, $member, $survey_progress_id = null)
     {
         try {
             SMSInbox::create([
@@ -240,6 +240,7 @@ class ProcessSurveyProgressCommand extends Command
                 'channel' => $channel,
                 'is_reminder' => $is_reminder,
                 "member_id" => $member->id,
+                'survey_progress_id' => $survey_progress_id,
             ]);
         } catch (\Exception $e) {
             // Log and rethrow the exception so the caller can handle it
