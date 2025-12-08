@@ -99,8 +99,14 @@ class CountySurveySummaryWidget extends TableWidget
         $ignoreCounty = $options['ignoreCounty'] ?? false;
 
         if (!empty($this->filters['group_id'])) {
-            $sql .= " AND members.group_id = {$this->filters['group_id']}";
+            if (is_array($this->filters['group_id'])) {
+                $groupIds = implode(',', array_map('intval', $this->filters['group_id']));
+                $sql .= " AND members.group_id IN ({$groupIds})";
+            } else {
+                $sql .= " AND members.group_id = " . intval($this->filters['group_id']);
+            }
         }
+
 
         if (!empty($this->filters['survey_id'])) {
             $sql .= " AND survey_progress.survey_id = {$this->filters['survey_id']}";

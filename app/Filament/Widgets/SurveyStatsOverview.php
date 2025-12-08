@@ -121,43 +121,45 @@ class SurveyStatsOverview extends BaseWidget
 
         return [
             Stat::make('Total Survey Progresses', $totalParticipants)
-                ->description('Total number of progress records created.'),
+                ->description('Total number of progress records created.')
+                ->url(route('survey.export', array_merge(['scope' => 'total'], $this->filters ?? []))),
+
 
             Stat::make('Surveys Completed', $completedCount)
                 ->description($completionRate . '% Completion Rate')
                 ->descriptionIcon('heroicon-o-check-circle')
-                ->color('success'),
+                ->color('success')
+                ->url(route('survey.export', array_merge(['scope' => 'completed'], $this->filters ?? []))),
 
             Stat::make('Still In Progress', $inProgressCount)
                 ->description('Uncompleted Active surveys.')
                 ->descriptionIcon('heroicon-o-x-circle')
-                ->color('warning'),
-
+                ->color('warning')
+                ->url(route('survey.export', array_merge(['scope' => 'in_progress'], $this->filters ?? []))),
+                
             Stat::make('Cancelled Progress', $cancelled)
                 ->description('Cancelled the survey progress.')
                 ->descriptionIcon('heroicon-o-x-circle')
-                ->color('danger'),
+                ->color('danger')
+                ->url(route('survey.export', array_merge(['scope' => 'cancelled'], $this->filters ?? []))),
 
             Stat::make('Reminders Sent', $remindersSent)
                 ->description('Total reminders sent to members.')
                 ->descriptionIcon('heroicon-o-bell')
                 ->color('info'),
+                // ->url(route('survey.export', ['scope' => 'COMPLETED'])),
 
             Stat::make('Members Sent Reminder', $membersSentReminder)
                 ->description('Unique members who received reminders.')
                 ->descriptionIcon('heroicon-o-user-group')
-                ->color('primary'),
+                ->color('primary')
+                ->url(route('survey.export', ['scope' => 'members_with_reminders'], $this->filters ?? [])),
+
             Stat::make('Repeated Reminders (3 Times)', $repeatReminders)
                 ->description('Phone numbers that received the same reminder 3 times.')
                 ->descriptionIcon('heroicon-o-exclamation-circle')
                 ->color('danger')
-                ->url(
-                    \App\Filament\Resources\SurveyProgressResource::getUrl('index', [
-                        'tableFilters' => [
-                            '3_reminders' => true,   // 👈 apply your filter here
-                        ],
-                    ])
-                ),
+                ->url(route('survey.export', ['scope' => 'repeat_reminders'], $this->filters ?? [])),
 
         ];
     }

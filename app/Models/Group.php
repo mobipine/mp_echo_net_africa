@@ -24,6 +24,10 @@ class Group extends Model
     {
         return $this->hasMany(KycDocument::class);
     }
+    public function County()
+    {
+        return $this->belongsTo(\App\Models\County::class,'county');
+    }
     public function members()
     {
         return $this->hasMany(\App\Models\Member::class);
