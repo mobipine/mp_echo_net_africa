@@ -108,8 +108,8 @@ class ExportSurveyProgress implements
             'Current Question',
             'County',
             'Status',
-            'Completed At',
-            'Created At',
+            // 'Completed At',
+            // 'Created At',
         ];
     }
 
@@ -123,8 +123,8 @@ class ExportSurveyProgress implements
             $row->currentQuestion->question ?? 'N/A',
             $row->member->county->name ?? $row->member->group->County->name ?? 'N/A',
             $row->status,
-            $row->completed_at ? Carbon::parse($row->completed_at)->format('Y-m-d H:i:s') : null,
-            $row->created_at ? Carbon::parse($row->created_at)->format('Y-m-d H:i:s') : null,
+            // $row->completed_at ? Carbon::parse($row->completed_at)->format('Y-m-d H:i:s') : null,
+            // $row->created_at ? Carbon::parse($row->created_at)->format('Y-m-d H:i:s') : null,
 
         ];
     }
