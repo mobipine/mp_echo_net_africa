@@ -33,7 +33,7 @@
     }
     * {
         font-family: Poppins, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-        
+
     }
 
     .vue-flow__minimap {
@@ -57,7 +57,8 @@
         font-size: 12px;
         background: #f4f4f5;
         /* -webkit-box-shadow:0px 5px 10px 0px rgba(0,0,0,.3); */
-        box-shadow: 0 2px 5px #0000004d
+        box-shadow: 0 2px 5px #0000004d;
+        max-width: 300px;
     }
 
     .dnd-flow aside .nodes>* {
@@ -82,6 +83,7 @@
 
         .dnd-flow aside {
             min-width: 200px;
+            max-width: 300px;
         }
     }
 
