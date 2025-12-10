@@ -3,6 +3,7 @@
 use App\Http\Controllers\SmsExportsController;
 use App\Http\Controllers\ResponseExportsController;
 use App\Http\Controllers\SurveyExportsController;
+use App\Http\Controllers\UssdWebHookController;
 use App\Http\Controllers\WebHookController;
 use App\Models\SurveyQuestion;
 use Illuminate\Support\Facades\Route;
@@ -14,6 +15,7 @@ Route::get('/', function () {
 });
 
 Route::any('/webhook', [WebHookController::class, 'handleWebhook']);//route to receive responses from short code SMS Service
+Route::any('/ussd-webhook', [UssdWebHookController::class, 'handleUssdWebhook']);//route to receive responses from USSD Service
 
 Route::get('/export-sms/{scope}', [SmsExportsController::class, 'index'])
     ->name('sms.export');
@@ -21,7 +23,7 @@ Route::get('/export-sms/{scope}', [SmsExportsController::class, 'index'])
 Route::any('/export-surveys/{scope}', [SurveyExportsController::class, 'export'])
     ->name('survey.export');
 
-    
+
 Route::get('/export-responses', [ResponseExportsController::class, 'export'])->name('response.export');
 
 Route::get('/get-next-qtn', function () {
@@ -45,7 +47,7 @@ Route::get('/get-next-qtn', function () {
 
 
     if($current_question_id == null) {
-        
+
         //get the start element
         //this will be the element with a label of "Start"
         $startElement = null;
@@ -55,7 +57,7 @@ Route::get('/get-next-qtn', function () {
                 break;
             }
         }
-    
+
         //get the first question element
         //this will be the element that is connected to the start element (the start element can only have one connection)
         //go to the edges and find the edge that has the start element as the source
@@ -67,7 +69,7 @@ Route::get('/get-next-qtn', function () {
                 break;
             }
         }
-    
+
         //get the target of the starting edge
         $firstQuestionElementId = $startingEdge['target'];
         $firstQuestionElement = null;
@@ -116,7 +118,7 @@ Route::get('/get-next-qtn', function () {
             }
             //get the question_id
             $next_question_id = $nextQuestionElement['data']['questionId'];
-            
+
 
         } else {
             //get the possible answers and the flows they lead to
@@ -157,7 +159,7 @@ Route::get('/get-next-qtn', function () {
 
                 //get the question_id
                 $next_question_id = $nextQuestionElement['data']['questionId'];
-                
+
             } else {
                 //if no match, check if there is a violation response
                 $violationResponse = $currentQuestionElement['data']['violationResponse'];
@@ -179,9 +181,9 @@ Route::get('/get-next-qtn', function () {
 
 
 
-        
+
     }
-    
+
     if($next_question_id) {
         $next_question = SurveyQuestion::find($next_question_id);
         return $next_question;
