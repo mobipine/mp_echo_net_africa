@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import useSurveyDragAndDrop from './useSurveyDnD'
+import useSurveyDragAndDrop from '../../composables/useSurveyDnD'
 
 const { onDragStart } = useSurveyDragAndDrop()
 

@@ -10,6 +10,7 @@ use Filament\Tables\Table;
 use Illuminate\Validation\Rules\Unique;
 use Illuminate\Validation\ValidationException;
 use App\Models\Official;
+use Filament\Notifications\Notification;
 
 class OfficialsRelationManager extends RelationManager
 {
@@ -76,14 +77,41 @@ class OfficialsRelationManager extends RelationManager
             ])
 
             ->headerActions([
-                Tables\Actions\CreateAction::make()
-                    ->mutateFormDataUsing(function (array $data, $livewire) {
-                        $groupId = $livewire->ownerRecord->id;
+                Tables\Actions\Action::make('createOfficial')
+                    ->label('Create Official')
+                    ->icon('heroicon-m-plus')
+                    ->color('primary')
+                    ->modalHeading('Create Official')
+                    ->form([
+                        Forms\Components\Select::make('member_id')
+                            ->label('Member')
+                            ->relationship(
+                                'member',
+                                'name',
+                                fn ($query) => $query->where('group_id', $this->ownerRecord->id)
+                            )
+                            ->required()
+                            ->searchable()
+                            ->preload(),
+
+                        Forms\Components\Select::make('official_position_id')
+                            ->label('Position')
+                            ->relationship('position', 'position_name')
+                            ->required()
+                            ->searchable()
+                            ->preload(),
+                    ])
+                    ->action(function (array $data) {
+                        $groupId = $this->ownerRecord->id;
                         $positionId = is_array($data['official_position_id'])
                             ? ($data['official_position_id']['id'] ?? null)
                             : $data['official_position_id'];
-                        if (! $positionId) {
-                            return $data;
+                        $memberId = is_array($data['member_id'])
+                            ? ($data['member_id']['id'] ?? null)
+                            : $data['member_id'];
+
+                        if (! $positionId || ! $memberId) {
+                            return;
                         }
 
                         $activeExists = Official::where('group_id', $groupId)
@@ -92,11 +120,26 @@ class OfficialsRelationManager extends RelationManager
                             ->exists();
 
                         if ($activeExists) {
-                            throw ValidationException::withMessages([
-                                'official_position_id' => 'This position is already taken by an active official.',
-                            ]);
+                            //show
+                            Notification::make()
+                                ->title('Error')
+                                ->body('This position is already taken by an active official.')
+                                ->danger()
+                                ->send();
+
+                                throw ValidationException::withMessages([
+                                    'official_position_id' => 'This position is already taken by an active official.',
+                                ]);
                         }
-                        return $data;
+
+                        // Create the official under this relation
+                        $this->ownerRecord->officials()->create([
+                            'member_id' => $memberId,
+                            'official_position_id' => $positionId,
+                            'group_id' => $groupId,
+                            'is_active' => true,
+                            'joined_at' => now(),
+                        ]);
                     }),
 
                 // Past Officials modal
