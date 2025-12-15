@@ -93,7 +93,7 @@ function updateSearchData() {
 }
 
 // Display & Input node specific
-const displayTemplate = ref(nodeData.value.displayTemplate || 'default')
+const displayContent = ref(nodeData.value.displayContent || '')
 const requiresInput = ref(nodeData.value.requiresInput || false)
 const inputPrompt = ref(nodeData.value.inputPrompt || '')
 const inputDataKey = ref(nodeData.value.inputDataKey || '')
@@ -105,8 +105,22 @@ const inputValidation = ref({
   max: nodeData.value.inputValidation?.max || ''
 })
 
+// Available placeholders
+const availablePlaceholders = [
+  { key: '{member_name}', description: 'Selected member\'s name' },
+  { key: '{member_phone}', description: 'Selected member\'s phone number' },
+  { key: '{member_id}', description: 'Selected member\'s ID' },
+  { key: '{loan_details}', description: 'All member loans with balances' },
+  { key: '{selected_loan_details}', description: 'Details of selected loan' },
+  { key: '{selected_loan_balance}', description: 'Balance of selected loan' },
+  { key: '{selected_loan_amount}', description: 'Original amount of selected loan' },
+  { key: '{repayment_amount}', description: 'Entered repayment amount' },
+  { key: '{new_balance}', description: 'Calculated new balance after repayment' },
+  { key: '{group_name}', description: 'Member\'s group name' }
+]
+
 function updateDisplayData() {
-  nodeData.value.displayTemplate = displayTemplate.value
+  nodeData.value.displayContent = displayContent.value
   nodeData.value.requiresInput = requiresInput.value
   nodeData.value.inputPrompt = inputPrompt.value
   nodeData.value.inputDataKey = inputDataKey.value
@@ -159,7 +173,7 @@ function updateEndData() {
           </div>
         </DialogTitle>
 
-        <div class="mt-4">
+        <div class="mt-4 max-h-[60vh] overflow-y-auto pr-2">
           <!-- Node Label -->
           <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 dark:text-white mb-1">
@@ -299,20 +313,42 @@ function updateEndData() {
           <template v-if="nodeType === 'ussd-display'">
             <div class="mb-4">
               <label class="block text-sm font-medium text-gray-700 dark:text-white mb-1">
-                Display Template
+                Display Content
               </label>
-              <select
-                v-model="displayTemplate"
-                @change="updateDisplayData()"
-                class="block w-full rounded-md border-0 py-1.5 px-2 text-gray-900 dark:text-white dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-              >
-                <option value="default">Default</option>
-                <option value="loan_details">Loan Details (with selection)</option>
-                <option value="loan_balance">Member Loan Balance</option>
-                <option value="member_info">Member Info</option>
-                <option value="selected_loan_details">Selected Loan Details</option>
-                <option value="loan_repayment_confirmation">Loan Repayment Confirmation</option>
-              </select>
+              <textarea
+                v-model="displayContent"
+                @input="updateDisplayData()"
+                rows="8"
+                class="block w-full rounded-md border-0 py-1.5 px-2 text-gray-900 dark:text-white dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6 font-mono"
+                placeholder="Enter your message here...&#10;&#10;Example:&#10;Member: {member_name}&#10;Phone: {member_phone}&#10;&#10;{loan_details}"
+              ></textarea>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Use placeholders to display dynamic data. Type the message as you want users to see it.
+              </p>
+            </div>
+
+            <!-- Available Placeholders -->
+            <div class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div class="flex items-center gap-2 mb-2">
+                <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span class="text-xs font-semibold text-blue-800 dark:text-blue-300">Available Placeholders</span>
+              </div>
+              <div class="space-y-1 max-h-40 overflow-y-auto">
+                <div
+                  v-for="placeholder in availablePlaceholders"
+                  :key="placeholder.key"
+                  class="flex items-start gap-2 text-xs"
+                >
+                  <code class="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded font-mono whitespace-nowrap">
+                    {{ placeholder.key }}
+                  </code>
+                  <span class="text-blue-700 dark:text-blue-300 leading-5">
+                    {{ placeholder.description }}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <!-- Input Configuration -->

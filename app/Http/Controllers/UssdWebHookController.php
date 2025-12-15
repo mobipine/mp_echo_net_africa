@@ -622,20 +622,20 @@ class UssdWebHookController extends Controller
      */
     private function handleDisplayNode(UssdSession $session, array $node, string $userInput = ''): array
     {
-        $template = $node['data']['displayTemplate'] ?? 'default';
+        $displayContent = $node['data']['displayContent'] ?? '';
         $requiresInput = $node['data']['requiresInput'] ?? false;
         $inputPrompt = $node['data']['inputPrompt'] ?? '';
         $inputDataKey = $node['data']['inputDataKey'] ?? '';
         $inputType = $node['data']['inputType'] ?? 'text';
         $inputValidation = $node['data']['inputValidation'] ?? [];
 
-        // Get display message based on template
-        $message = $this->getDisplayMessage($session, $template);
+        // Process display content with placeholders
+        $message = $this->processDisplayContent($session, $displayContent);
 
-        // If there was an error getting the message
-        if (strpos($message, 'not found') !== false || strpos($message, 'No member') !== false) {
+        // If display content is empty or has configuration error
+        if (empty(trim($message)) || $message === 'No display content configured.') {
             return [
-                'message' => $message,
+                'message' => $message ?: 'No display content configured for this node.',
                 'continue' => false
             ];
         }
@@ -678,6 +678,30 @@ class UssdWebHookController extends Controller
 
                 // Store valid input
                 $session->setData($inputDataKey, $userInput);
+
+                // Special handling: if inputDataKey is 'selected_loan_number', also store the actual loan ID
+                if ($inputDataKey === 'selected_loan_number') {
+                    $loansList = $session->getData('loans_list', []);
+                    $loanNumber = (int)$userInput;
+
+                    if (isset($loansList[$loanNumber])) {
+                        $session->setData('selected_loan_id', $loansList[$loanNumber]);
+                    }
+                }
+
+                // Special handling: if inputDataKey is 'repayment_amount', calculate new balance
+                if ($inputDataKey === 'repayment_amount') {
+                    $loanId = $session->getData('selected_loan_id');
+                    if ($loanId) {
+                        $loan = \App\Models\Loan::find($loanId);
+                        if ($loan) {
+                            $repaymentAmount = floatval($userInput);
+                            $newBalance = $loan->getRemainingBalanceAttribute() - $repaymentAmount;
+                            $session->setData('calculated_new_balance', $newBalance);
+                        }
+                    }
+                }
+
                 $session->save();
 
                 // Move to next node
@@ -763,71 +787,112 @@ class UssdWebHookController extends Controller
     }
 
     /**
-     * Get display message based on template
+     * Process display content by replacing placeholders with actual data
      */
-    private function getDisplayMessage(UssdSession $session, string $template): string
+    private function processDisplayContent(UssdSession $session, string $content): string
     {
+        if (empty($content)) {
+            return 'No display content configured.';
+        }
+
+        // Get member data if available
         $memberId = $session->getData('selected_member_id');
-        if (!$memberId) {
-            return 'No member selected. Please start again.';
+        $member = $memberId ? Member::with('group')->find($memberId) : null;
+
+        // Get loan data if available
+        $loanId = $session->getData('selected_loan_id');
+        $selectedLoan = $loanId ? \App\Models\Loan::find($loanId) : null;
+
+        // Build replacement map
+        $replacements = [
+            '{member_name}' => $member ? $member->name : '[No member selected]',
+            '{member_phone}' => $member ? $member->phone : '[No phone]',
+            '{member_id}' => $member ? $member->id : '[No ID]',
+            '{group_name}' => $member && $member->group ? $member->group->name : '[No group]',
+            '{repayment_amount}' => $session->getData('repayment_amount') ? 'KES ' . number_format($session->getData('repayment_amount'), 2) : '[No amount]',
+            '{new_balance}' => $session->getData('calculated_new_balance') ? 'KES ' . number_format($session->getData('calculated_new_balance'), 2) : '[Not calculated]',
+        ];
+
+        // Add selected loan placeholders
+        if ($selectedLoan) {
+            $replacements['{selected_loan_details}'] = $this->formatSelectedLoanDetails($selectedLoan);
+            $replacements['{selected_loan_balance}'] = 'KES ' . number_format($selectedLoan->getRemainingBalanceAttribute(), 2);
+            $replacements['{selected_loan_amount}'] = 'KES ' . number_format($selectedLoan->principal_amount, 2);
+        } else {
+            $replacements['{selected_loan_details}'] = '[No loan selected]';
+            $replacements['{selected_loan_balance}'] = '[No loan selected]';
+            $replacements['{selected_loan_amount}'] = '[No loan selected]';
         }
 
-        $member = Member::find($memberId);
-        if (!$member) {
-            return 'Member not found. Please start again.';
+        // Add all loans placeholder
+        if ($member) {
+            $replacements['{loan_details}'] = $this->formatAllLoansDetails($member);
+        } else {
+            $replacements['{loan_details}'] = '[No member selected]';
         }
 
-        switch ($template) {
-            case 'loan_balance':
-                return $this->formatLoanBalanceMessage($member);
+        // Replace all placeholders
+        $message = str_replace(array_keys($replacements), array_values($replacements), $content);
 
-            case 'loan_details':
-                return $this->formatLoanDetailsMessage($member);
+        return $message;
+    }
 
-            case 'member_info':
-                return $this->formatMemberInfoMessage($member);
+    /**
+     * Format all loans for a member
+     */
+    private function formatAllLoansDetails(Member $member): string
+    {
+        $loans = $member->loans()->where('status', 'Approved')->get();
 
-            case 'loan_repayment_confirmation':
-                return $this->formatLoanRepaymentConfirmation($session, $member);
-
-            default:
-                return "Member: {$member->name}\nPhone: {$member->phone}";
+        if ($loans->isEmpty()) {
+            return "No active loans found.";
         }
+
+        // $output = "Active Loans:\n\n";
+        foreach ($loans as $index => $loan) {
+
+            // dd($loan->getRemainingBalanceAttribute(), $loan->balance, $loan->loan_number);
+            $balance = $loan->getRemainingBalanceAttribute();
+            // $loanNumber = $index + 1;
+            $output = $index + 1 . ". ";
+            $output .= "Loan {$loan->loan_number} - KES " . number_format($loan->principal_amount, 2) . "\n";
+            $output .= "Balance: KES " . number_format($balance, 2) . "\n";
+
+            if ($loan->due_date) {
+                $output .= "Due: " . $loan->due_at->format('Y-m-d') . "\n";
+            }
+
+            $output .= "\n";
+
+            // dd($output);
+
+            // Store loan in an indexed array for later selection
+            $session = UssdSession::where('session_id', request()->input('session_id'))->first();
+            if ($session) {
+                $loansList = $session->getData('loans_list', []);
+                $loansList[$index + 1] = $loan->id;
+                $session->setData('loans_list', $loansList);
+                $session->save();
+            }
+        }
+
+        return rtrim($output);
     }
 
     /**
-     * Format loan balance message
+     * Format selected loan details
      */
-    private function formatLoanBalanceMessage(Member $member): string
+    private function formatSelectedLoanDetails(\App\Models\Loan $loan): string
     {
-        // Placeholder: implement actual loan balance logic
-        return "Member: {$member->name}\nPhone: {$member->phone}\n\n[Loan Balance Details]";
-    }
+        // dd($loan->getRemainingBalanceAttribute(), $loan->balance, $loan->loan_number);
+        $balance = $loan->getRemainingBalanceAttribute();
 
-    /**
-     * Format loan details message
-     */
-    private function formatLoanDetailsMessage(Member $member): string
-    {
-        // Placeholder: implement actual loan details logic
-        return "Member: {$member->name}\nPhone: {$member->phone}\n\n[Loan Details]";
-    }
+        $output = "Loan {$loan->loan_number} - KES " . number_format($loan->principal_amount, 2) . "\n";
+        $output .= "Balance: KES " . number_format($balance, 2) . "\n";
+        $output .= "Due: " . $loan->due_at->format('Y-m-d') . "\n";
+        // dd($output);
+        return $output;
 
-    /**
-     * Format member info message
-     */
-    private function formatMemberInfoMessage(Member $member): string
-    {
-        return "Member: {$member->name}\nPhone: {$member->phone}\nGroup: {$member->group->name}";
-    }
-
-    /**
-     * Format loan repayment confirmation message
-     */
-    private function formatLoanRepaymentConfirmation(UssdSession $session, Member $member): string
-    {
-        $amount = $session->getData('repayment_amount', 0);
-        return "Confirm Loan Repayment:\n\nMember: {$member->name}\nAmount: KES {$amount}\n\nPress 1 to confirm";
     }
 
     /**

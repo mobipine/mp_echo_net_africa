@@ -106,7 +106,7 @@ export default function useUssdDragAndDrop() {
         nodeData.resultsLimit = 10
         break
       case 'ussd-display':
-        nodeData.displayTemplate = 'default'
+        nodeData.displayContent = ''
         nodeData.requiresInput = false
         nodeData.inputPrompt = ''
         nodeData.inputDataKey = ''
