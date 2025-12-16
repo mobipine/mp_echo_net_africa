@@ -136,11 +136,43 @@ function updateDisplayData() {
 
 // Action node specific
 const actionType = ref(nodeData.value.actionType || 'record_loan_repayment')
-const endpoint = ref(nodeData.value.endpoint || '/api/ussd/record-repayment')
+
+// Available action types
+const availableActions = [
+  {
+    value: 'record_loan_repayment',
+    label: 'Record Loan Repayment',
+    description: 'Records a loan repayment for the selected member and loan'
+  },
+//   {
+//     value: 'disburse_loan',
+//     label: 'Disburse Loan',
+//     description: 'Processes a new loan disbursement to a member'
+//   },
+//   {
+//     value: 'register_member',
+//     label: 'Register New Member',
+//     description: 'Creates a new member record in the system'
+//   },
+//   {
+//     value: 'update_member_info',
+//     label: 'Update Member Info',
+//     description: 'Updates member details like phone, address, etc.'
+//   },
+//   {
+//     value: 'send_notification',
+//     label: 'Send Notification',
+//     description: 'Sends SMS/email notification to member'
+//   },
+//   {
+//     value: 'generate_report',
+//     label: 'Generate Report',
+//     description: 'Generates and sends financial report'
+//   }
+]
 
 function updateActionData() {
   nodeData.value.actionType = actionType.value
-  nodeData.value.endpoint = endpoint.value
   updateData()
 }
 
@@ -471,25 +503,44 @@ function updateEndData() {
               <select
                 v-model="actionType"
                 @change="updateActionData()"
-                class="block w-full rounded-md border-0 py-1.5 text-gray-900 dark:text-white dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                class="block w-full rounded-md border-0 py-1.5 px-2 text-gray-900 dark:text-white dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
               >
-                <option value="record_loan_repayment">Record Loan Repayment</option>
-                <option value="custom">Custom Action</option>
+                <option
+                  v-for="action in availableActions"
+                  :key="action.value"
+                  :value="action.value"
+                >
+                  {{ action.label }}
+                </option>
               </select>
+              <p class="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                {{ availableActions.find(a => a.value === actionType)?.description }}
+              </p>
             </div>
 
-            <div class="mb-4">
-              <label class="block text-sm font-medium text-gray-700 dark:text-white mb-1">
-                Endpoint
-              </label>
-              <input
-                v-model="endpoint"
-                @input="updateActionData()"
-                type="text"
-                class="block w-full rounded-md border-0 py-1.5 text-gray-900 dark:text-white dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                placeholder="/api/ussd/record-repayment"
-              />
+            <!-- Action Details Info Box -->
+            <div class="mb-4 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+              <div class="flex items-start gap-2">
+                <svg class="w-5 h-5 text-indigo-600 dark:text-indigo-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div>
+                  <p class="text-xs font-semibold text-indigo-800 dark:text-indigo-300 mb-1">
+                    How Actions Work
+                  </p>
+                  <p class="text-xs text-indigo-700 dark:text-indigo-300">
+                    Actions perform backend operations like database updates.
+                    Each action type is pre-configured with its own function.
+                  </p>
+                </div>
+              </div>
             </div>
+
+            <!-- Note about adding new actions -->
+            <!-- <div class="mb-4 p-2 bg-gray-50 dark:bg-gray-700 rounded text-xs text-gray-600 dark:text-gray-400">
+              <strong>Note:</strong> To add a new action type, update the availableActions array in the modal
+              and add a corresponding case in UssdWebHookController::executeAction()
+            </div> -->
           </template>
 
           <!-- End Node Configuration -->

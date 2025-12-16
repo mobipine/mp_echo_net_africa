@@ -900,41 +900,208 @@ class UssdWebHookController extends Controller
      */
     private function handleActionNode(UssdSession $session, array $node): array
     {
-        // Placeholder: implement real actions (e.g., check balance, record repayment)
-        $actionType = $node['data']['actionType'] ?? 'custom';
-        $endpoint = $node['data']['endpoint'] ?? null;
+        $actionType = $node['data']['actionType'] ?? 'record_loan_repayment';
 
-        // For now, just acknowledge the action type
-        $message = "Action: {$actionType}";
-        if ($endpoint) {
-            $message .= "\nEndpoint: {$endpoint}";
-        }
+        // Execute the action based on type
+        try {
+            $result = $this->executeAction($session, $actionType, $node);
 
-        // Move to next node using edges
-        $nextNode = $session->flow->getNextNode($node['id']);
-        if ($nextNode) {
-            $session->current_node_id = $nextNode['id'];
-            $session->save();
-            return $this->processFlow($session, '');
-        }
+            if (!$result['success']) {
+                return [
+                    'message' => $result['message'] ?? 'Action failed. Please try again.',
+                    'continue' => false
+                ];
+            }
 
-        // Fallback: try to find edge manually
-        $edges = $session->flow->flow_definition['edges'] ?? [];
-        foreach ($edges as $edge) {
-            if ($edge['source'] === $node['id']) {
-                $targetNode = $session->flow->findNode($edge['target']);
-                if ($targetNode) {
-                    $session->current_node_id = $targetNode['id'];
-                    $session->save();
-                    return $this->processFlow($session, '');
+            // Action succeeded, move to next node
+            $nextNode = $session->flow->getNextNode($node['id']);
+            if ($nextNode) {
+                $session->current_node_id = $nextNode['id'];
+                $session->save();
+                return $this->processFlow($session, '');
+            }
+
+            // Fallback: try to find edge manually
+            $edges = $session->flow->flow_definition['edges'] ?? [];
+            foreach ($edges as $edge) {
+                if ($edge['source'] === $node['id']) {
+                    $targetNode = $session->flow->findNode($edge['target']);
+                    if ($targetNode) {
+                        $session->current_node_id = $targetNode['id'];
+                        $session->save();
+                        return $this->processFlow($session, '');
+                    }
                 }
             }
+
+            // No next node found, end session
+            return [
+                'message' => $result['message'] ?? 'Action completed successfully.',
+                'continue' => false
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Action execution failed', [
+                'action_type' => $actionType,
+                'session_id' => $session->session_id,
+                'error' => $e->getMessage()
+            ]);
+
+            return [
+                'message' => 'An error occurred. Please try again later.',
+                'continue' => false
+            ];
+        }
+    }
+
+    /**
+     * Execute specific action based on action type
+     */
+    private function executeAction(UssdSession $session, string $actionType, array $node): array
+    {
+        switch ($actionType) {
+            case 'record_loan_repayment':
+                return $this->actionRecordLoanRepayment($session);
+
+                //in case we need to create another action e.g
+            // case 'disburse_loan':
+            //     return $this->actionDisburseLoan($session);
+
+
+
+            default:
+                return [
+                    'success' => false,
+                    'message' => "Unknown action type: {$actionType}"
+                ];
+        }
+    }
+
+    /**
+     * Action: Record Loan Repayment
+     * Uses the same logic as Filament LoanRepaymentPage
+     */
+    private function actionRecordLoanRepayment(UssdSession $session): array
+    {
+        try {
+            // Get required data from session
+            $loanId = $session->getData('selected_loan_id');
+            $repaymentAmount = $session->getData('repayment_amount');
+            $memberId = $session->getData('selected_member_id');
+            $authorizedNationalId = $session->getData('authorized_national_id');
+
+            if (!$loanId || !$repaymentAmount) {
+                return [
+                    'success' => false,
+                    'message' => 'Missing loan or repayment amount information.'
+                ];
+            }
+
+            // Get the loan
+            $loan = \App\Models\Loan::find($loanId);
+            if (!$loan) {
+                return [
+                    'success' => false,
+                    'message' => 'Loan not found.'
+                ];
+            }
+
+            // Validate repayment amount (same validation as Filament)
+            $amount = floatval($repaymentAmount);
+
+            if ($amount <= 0) {
+                return [
+                    'success' => false,
+                    'message' => 'Invalid repayment amount. Must be greater than zero.'
+                ];
+            }
+
+            $currentAmountOwed = $loan->remaining_balance;
+            if ($amount > $currentAmountOwed) {
+                return [
+                    'success' => false,
+                    'message' => 'Repayment amount exceeds current amount owed (KES ' . number_format($currentAmountOwed, 2) . ').'
+                ];
+            }
+
+            // dd($loan->remaining_balance, $amount);
+
+            // Create the loan repayment record (same as Filament)
+            $repayment = \App\Models\LoanRepayment::create([
+                'loan_id' => $loan->id,
+                'member_id' => $memberId,
+                'amount' => $amount,
+                'repayment_date' => now(),
+                'payment_method' => 'ussd',
+                'reference_number' => 'USSD_' . $session->session_id . '_' . time(),
+                'notes' => 'Recorded via USSD by official (National ID: ' . $authorizedNationalId . ')',
+                'recorded_by' => 1, // No user auth in USSD context
+            ]);
+
+            // dd($repayment);
+
+            // Create transactions using the RepaymentAllocationService (same as Filament)
+            $this->createUssdRepaymentTransactions($repayment);
+
+            Log::info('USSD loan repayment recorded successfully', [
+                'repayment_id' => $repayment->id,
+                'loan_id' => $loan->id,
+                'amount' => $amount,
+                'session_id' => $session->session_id
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Loan repayment recorded successfully.'
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('USSD loan repayment action failed', [
+                'session_id' => $session->session_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+// dd($e);
+            return [
+                'success' => false,
+                'message' => 'Failed to record repayment. Please try again.'
+            ];
+        }
+    }
+
+    /**
+     * Create transactions for USSD loan repayment
+     * Uses the same RepaymentAllocationService as Filament
+     */
+    private function createUssdRepaymentTransactions(\App\Models\LoanRepayment $repayment)
+    {
+        $loan = $repayment->loan;
+        $amount = $repayment->amount;
+
+        // Get account name for USSD payment method (typically mobile money)
+        $accountName = config('repayment_priority.accounts.mobile_money', 'Mobile Money Account');
+
+        // Use the repayment allocation service (same as Filament)
+        $allocationService = new \App\Services\RepaymentAllocationService();
+        $transactionData = $allocationService->createRepaymentTransactions(
+            $loan,
+            (float) $amount,
+            'ussd',
+            $accountName
+        );
+
+        // Create transactions
+        foreach ($transactionData as $data) {
+            \App\Models\Transaction::create(array_merge($data, [
+                'repayment_id' => $repayment->id,
+                'transaction_date' => $repayment->repayment_date,
+            ]));
         }
 
-        return [
-            'message' => $message,
-            'continue' => false
-        ];
+        // Update loan status if fully repaid (same as Filament)
+        if ($loan->remaining_balance <= 0) {
+            $loan->update(['status' => 'Fully Repaid']);
+        }
     }
 
     /**

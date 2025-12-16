@@ -36,4 +36,4 @@ Route::prefix('v1')->name('api.')->group(function () {
 
 // USSD Webhook - External service endpoint (no CSRF protection needed)
 // NOTE: This route is at /api/ussd-webhook - update your USSD provider configuration
-Route::any('/ussd-webhook', [UssdWebHookController::class, 'handleUssdWebhook']);
+// Route::any('/ussd-webhook', [UssdWebHookController::class, 'handleUssdWebhook']);

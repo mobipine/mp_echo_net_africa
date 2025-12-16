@@ -115,7 +115,6 @@ export default function useUssdDragAndDrop() {
         break
       case 'ussd-action':
         nodeData.actionType = 'record_loan_repayment'
-        nodeData.endpoint = '/api/ussd/record-repayment'
         break
       case 'ussd-end':
         nodeData.endMessage = 'Thank you for using our service. Goodbye!'
