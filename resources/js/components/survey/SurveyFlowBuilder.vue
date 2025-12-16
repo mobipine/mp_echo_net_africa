@@ -1,14 +1,14 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
-import DropzoneBackground from './DropzoneBackground.vue'
+import DropzoneBackground from '../common/DropzoneBackground.vue'
 import { ControlButton, Controls } from '@vue-flow/controls'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
 import { ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
 import Sidebar from './SurveySidebar.vue'
-import useSurveyDragAndDrop from './useSurveyDnD'
+import useSurveyDragAndDrop from '../../composables/useSurveyDnD'
 import { useToast } from 'vue-toastification';
 
 const { onDragOver, onDrop, onDragLeave, isDragOver } = useSurveyDragAndDrop()
@@ -57,7 +57,7 @@ function onNodeClick({ node }) {
     console.warn('Invalid node click event')
     return
   }
-  
+
   selected.value = node
   open.value = true
 }
@@ -99,7 +99,7 @@ function updateEdgeLabel(flowId, sourceId, targetId, newLabel) {
     const edge = edges.value.find(edge => edge.source === sourceId && edge.target === targetId);
     if (edge) {
       edge.label = newLabel;
-    }  
+    }
 }
 
 function getSelectedNode(id) {
@@ -128,16 +128,16 @@ function getNodeAnswers(id) {
 function getLinkedFlowValue(index) {
   console.log('Getting linked flow for index:', index);
   if (!selected.value || !elements.value) return '';
-  
+
   const selectedElement = elements.value.find(el => el.id === selected.value.id);
   return selectedElement?.data?.possibleAnswers?.[index]?.linkedFlow || '';
 }
 
 function setLinkedFlowValue(index, value) {
   console.log('Setting linked flow for index:', index, 'to value:', value);
-  
+
   if (!selected.value || !elements.value) return;
-  
+
   const selectedElement = elements.value.find(el => el.id === selected.value.id);
   if (selectedElement?.data?.possibleAnswers?.[index]) {
     selectedElement.data.possibleAnswers[index].linkedFlow = value;

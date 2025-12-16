@@ -15,10 +15,11 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->validateCsrfTokens(except: [
             '/webhook', // Exclude the webhook route from CSRF protection
+            '/ussd-webhook', // Exclude the USSD webhook route from CSRF protection
         ]);
 
         $middleware->trustProxies(at: '*');
-       
+
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

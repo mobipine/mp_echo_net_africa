@@ -3,10 +3,10 @@
 use App\Http\Controllers\SmsExportsController;
 use App\Http\Controllers\ResponseExportsController;
 use App\Http\Controllers\SurveyExportsController;
-use App\Http\Controllers\UssdWebHookController;
 use App\Http\Controllers\WebHookController;
 use App\Models\SurveyQuestion;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\UssdWebHookController;
 
 Route::get('/', function () {
     // return view('welcome');
@@ -16,6 +16,7 @@ Route::get('/', function () {
 
 Route::any('/webhook', [WebHookController::class, 'handleWebhook']);//route to receive responses from short code SMS Service
 Route::any('/ussd-webhook', [UssdWebHookController::class, 'handleUssdWebhook']);//route to receive responses from USSD Service
+// USSD webhook moved to routes/api.php to avoid CSRF issues - now at /api/ussd-webhook
 
 Route::get('/export-sms/{scope}', [SmsExportsController::class, 'index'])
     ->name('sms.export');
