@@ -207,7 +207,7 @@ class ProcessSurveyProgressCommand extends Command
                 } elseif ($isconfirmationDue) {
                     // Check if user has already received 3 reminders
                     if ($progress->number_of_reminders >= 3) {
-                        Log::info("Max reminders (3) reached for {$member->phone}");
+                        // Log::info("Max reminders (3) reached for {$member->phone}");
                         continue; // Skip sending
                     }
 
