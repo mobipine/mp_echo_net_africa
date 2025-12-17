@@ -9,6 +9,7 @@ use App\Models\Member;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class UssdWebHookController extends Controller
 {
@@ -79,7 +80,24 @@ class UssdWebHookController extends Controller
             $message = $response['message'];
             $continue = $response['continue'] ?? false;
             $sessionId = $sessionId;
-            return $message;
+
+
+            if(Str::contains($message, "END")){
+
+                $message = ltrim(str_replace("END", "", $message));
+
+                echo "END ".$message;
+
+            }else{
+
+                echo "CON ".$message;
+            }
+
+
+
+            Log::info($message);
+
+            // return $message;
 
         } catch (\Exception $e) {
             Log::error('USSD Webhook Error:', [
