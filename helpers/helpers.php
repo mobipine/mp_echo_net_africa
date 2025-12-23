@@ -199,23 +199,23 @@ function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
             $numberText = implode(', ', $numbers) . " or " . $lastNumber;
         }
 
-        // Bilingual instruction (English and Swahili) - accepts both number and answer text
-        $message .= "\n\nTafadhali jibu kwa nambari {$numberText} au chaguo husika.\nPlease reply with the number {$numberText} or the corresponding option.";
+        // Shorter instruction - reply with number or text (under 160 chars total)
+        $message .= "\n\nReply {$numberText}";
         Log::info("The message to be sent is {$message}");
     }
     else {
         $message = $firstQuestion->question;
         if ($firstQuestion->answer_data_type === 'Strictly Number') {
-            $message .= "\n *Note: Your answer should be a number.*";
+            $message .= "\n(Number only)";
         } elseif ($firstQuestion->answer_data_type === 'Alphanumeric') {
-            $message .= "\n *Note: Your answer should contain only letters and numbers.*";
+            $message .= "\n(Letters & numbers only)";
         }
     }
     if ($reminder) {
-
-        $message = "$survey->continue_confirmation_question\n$message";
-        $message = str_replace('\n', "\n", $message);
-        Log::info("The formarted message to be sent is {$survey->continue_confirmation_question}");
+        // Shorter reminder prefix instead of full continue_confirmation_question
+        $reminderPrefix = "REMINDER: {$member->name}";
+        $message = "{$reminderPrefix}\n{$message}";
+        Log::info("The formarted reminder message to be sent");
     }
 
     $loanReceivedMonthId=$loanAmountQuestionId = \App\Models\SurveyQuestion::where('purpose', 'loan_received_date')
