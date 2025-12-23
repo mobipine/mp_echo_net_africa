@@ -100,6 +100,32 @@ class SendIncompleteRemindersCommand extends Command
         $bySurvey = $progresses->groupBy('survey_id');
         $byMember = $progresses->groupBy('member_id');
 
+        // Calculate total SMS credits needed
+        $totalCredits = 0;
+        $totalMessages = 0;
+        $creditBreakdown = [];
+
+        foreach ($progresses as $progress) {
+            if ($progress->member && $progress->survey && $progress->currentQuestion) {
+                $message = formartQuestion(
+                    $progress->currentQuestion,
+                    $progress->member,
+                    $progress->survey,
+                    true
+                );
+                $messageLength = strlen($message);
+                $credits = ceil($messageLength / 160);
+                $totalCredits += $credits;
+                $totalMessages++;
+
+                // Track credit distribution
+                if (!isset($creditBreakdown[$credits])) {
+                    $creditBreakdown[$credits] = 0;
+                }
+                $creditBreakdown[$credits]++;
+            }
+        }
+
         // Show sample of reminders (first 20)
         $sampleProgresses = $progresses->take(20);
 
@@ -134,6 +160,27 @@ class SendIncompleteRemindersCommand extends Command
         $this->info("   • Reminders to be sent: {$progresses->count()}");
         $this->info("   • Unique surveys: {$bySurvey->count()}");
         $this->info("   • Unique members: {$byMember->count()}");
+
+        // Show SMS credits calculation
+        $this->newLine();
+        $this->info("💳 SMS Credits Calculation:");
+        $this->info("   • Total SMS messages: {$totalMessages}");
+        $this->info("   • Total SMS credits needed: {$totalCredits} credits");
+        if ($totalMessages > 0) {
+            $avgCreditsPerMessage = round($totalCredits / $totalMessages, 2);
+            $this->info("   • Average credits per message: {$avgCreditsPerMessage}");
+        }
+
+        // Show credit distribution
+        if (!empty($creditBreakdown)) {
+            $this->newLine();
+            $this->info("📊 Credit Distribution:");
+            ksort($creditBreakdown);
+            foreach ($creditBreakdown as $credits => $count) {
+                $percentage = round(($count / $totalMessages) * 100, 1);
+                $this->info("   • {$credits} credit(s): {$count} messages ({$percentage}%)");
+            }
+        }
 
         // Show breakdown by survey
         $this->newLine();
@@ -194,6 +241,7 @@ class SendIncompleteRemindersCommand extends Command
         $sent = 0;
         $failed = 0;
         $skipped = 0;
+        $totalCredits = 0;
 
         foreach ($progresses as $progress) {
             try {
@@ -223,6 +271,11 @@ class SendIncompleteRemindersCommand extends Command
                 // Format reminder message
                 $message = formartQuestion($currentQuestion, $member, $survey, true);
 
+                // Calculate credits for this message
+                $messageLength = strlen($message);
+                $credits = ceil($messageLength / 160);
+                $totalCredits += $credits;
+
                 // Create SMS inbox record with is_reminder = true
                 SMSInbox::create([
                     'phone_number' => $member->phone,
@@ -241,7 +294,7 @@ class SendIncompleteRemindersCommand extends Command
 
                 $sent++;
 
-                Log::info("Incomplete survey reminder sent: Member {$member->id} ({$member->name}), Survey {$survey->id} ({$survey->title}), Progress ID {$progress->id}");
+                Log::info("Incomplete survey reminder sent: Member {$member->id} ({$member->name}), Survey {$survey->id} ({$survey->title}), Progress ID {$progress->id}, Credits: {$credits}");
 
                 DB::commit();
             } catch (\Exception $e) {
@@ -268,10 +321,21 @@ class SendIncompleteRemindersCommand extends Command
         if ($failed > 0) {
             $this->warn("   • Failed to send: {$failed} reminders");
         }
+
+        // Show SMS credits used
+        $this->newLine();
+        $this->info("💳 SMS Credits Used:");
+        $this->info("   • Total SMS inbox records created: {$sent}");
+        $this->info("   • Total SMS credits used: {$totalCredits} credits");
+        if ($sent > 0) {
+            $avgCreditsPerMessage = round($totalCredits / $sent, 2);
+            $this->info("   • Average credits per message: {$avgCreditsPerMessage}");
+        }
+
         $this->newLine();
         $this->comment('💡 Messages will be sent by the dispatch:sms command');
 
-        Log::info("SendIncompleteRemindersCommand completed: {$sent} sent, {$skipped} skipped, {$failed} failed");
+        Log::info("SendIncompleteRemindersCommand completed: {$sent} sent, {$skipped} skipped, {$failed} failed, {$totalCredits} credits used");
     }
 }
 
