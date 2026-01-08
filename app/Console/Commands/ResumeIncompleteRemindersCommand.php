@@ -12,33 +12,35 @@ use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 /**
- * SEND INCOMPLETE REMINDERS COMMAND
+ * RESUME INCOMPLETE REMINDERS COMMAND
  *
- * Scans all incomplete survey progress records and sends reminders
- * for the current question they are on.
+ * Resumes sending reminders for incomplete surveys by skipping those
+ * that have already been processed (have recent reminder SMS records).
  *
  * Features:
  * - --dry-run: Preview what would be sent without actually sending
- * - --limit: Limit number of reminders to send (optional, defaults to all)
+ * - --limit: Limit number of reminders to send (optional)
+ * - --since: Only check reminders created since this time (default: 1 hour ago)
+ * - Automatically skips already processed reminders
  */
-class SendIncompleteRemindersCommand extends Command
+class ResumeIncompleteRemindersCommand extends Command
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'surveys:send-incomplete-reminders
+    protected $signature = 'surveys:resume-incomplete-reminders
                             {--dry-run : Preview what would be sent without making changes}
                             {--limit= : Maximum number of reminders to send (optional, sends to all if not specified)}
-                            {--chunk=1000 : Process reminders in chunks to avoid memory issues}';
+                            {--since= : Only check reminders created since this time (e.g., "1 hour ago", "30 minutes ago")}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Send reminders to all members with incomplete surveys on their current question';
+    protected $description = 'Resume sending reminders for incomplete surveys, skipping already processed ones';
 
     /**
      * Execute the console command.
@@ -47,6 +49,15 @@ class SendIncompleteRemindersCommand extends Command
     {
         $isDryRun = $this->option('dry-run');
         $limit = $this->option('limit') ? (int) $this->option('limit') : null;
+        $sinceOption = $this->option('since') ?: '1 hour ago';
+
+        try {
+            $sinceTime = Carbon::parse($sinceOption);
+        } catch (\Exception $e) {
+            $this->error("Invalid --since time format: {$sinceOption}");
+            $this->comment('Examples: "1 hour ago", "30 minutes ago", "2024-01-01 10:00:00"');
+            return Command::FAILURE;
+        }
 
         // Check if survey messages are enabled
         if (!$isDryRun && !config('survey_settings.messages_enabled', true)) {
@@ -56,10 +67,11 @@ class SendIncompleteRemindersCommand extends Command
         }
 
         $this->info($isDryRun ? '🔍 DRY RUN MODE - No reminders will be sent' : '⚙️  NORMAL MODE - Reminders will be sent');
+        $this->info("🕐 Checking for reminders created since: {$sinceTime->format('Y-m-d H:i:s')}");
         if ($limit) {
             $this->info("📊 Limit: {$limit} reminders");
         } else {
-            $this->info("📊 Limit: Send to ALL incomplete surveys");
+            $this->info("📊 Limit: Send to ALL remaining incomplete surveys");
         }
         $this->newLine();
 
@@ -77,14 +89,39 @@ class SendIncompleteRemindersCommand extends Command
             return Command::SUCCESS;
         }
 
-        $this->info("Found {$totalIncomplete} incomplete survey progress records");
+        $this->info("Found {$totalIncomplete} total incomplete survey progress records");
+        $this->newLine();
+
+        // Get all progress IDs that have recent reminder SMS records
+        $recentReminderProgressIds = SMSInbox::where('is_reminder', true)
+            ->whereNotNull('survey_progress_id')
+            ->where('created_at', '>=', $sinceTime)
+            ->pluck('survey_progress_id')
+            ->unique()
+            ->toArray();
+
+        $this->info("Found " . count($recentReminderProgressIds) . " progress records with recent reminders (will be skipped)");
+        $this->newLine();
+
+        // Filter out already processed ones
+        $query->whereNotIn('id', $recentReminderProgressIds);
+
+        $remainingCount = $query->count();
+
+        if ($remainingCount === 0) {
+            $this->info('✅ All incomplete surveys have already been processed.');
+            $this->comment("💡 All {$totalIncomplete} incomplete surveys have reminder SMS records created since {$sinceTime->format('Y-m-d H:i:s')}");
+            return Command::SUCCESS;
+        }
+
+        $this->info("Found {$remainingCount} incomplete surveys that still need reminders");
         $this->newLine();
 
         // Get records based on limit
         $incompleteProgresses = $limit ? $query->limit($limit)->get() : $query->get();
 
         if ($isDryRun) {
-            $this->runDryMode($incompleteProgresses, $totalIncomplete);
+            $this->runDryMode($incompleteProgresses, $totalIncomplete, $remainingCount, count($recentReminderProgressIds));
         } else {
             $this->runNormalMode($incompleteProgresses);
         }
@@ -95,7 +132,7 @@ class SendIncompleteRemindersCommand extends Command
     /**
      * Run in dry-run mode - show what would be sent
      */
-    protected function runDryMode($progresses, $totalIncomplete)
+    protected function runDryMode($progresses, $totalIncomplete, $remainingCount, $alreadyProcessed)
     {
         // Group by survey for summary
         $bySurvey = $progresses->groupBy('survey_id');
@@ -158,6 +195,8 @@ class SendIncompleteRemindersCommand extends Command
         $this->newLine();
         $this->info("📊 Summary:");
         $this->info("   • Total incomplete surveys in DB: {$totalIncomplete}");
+        $this->info("   • Already processed (skipped): {$alreadyProcessed}");
+        $this->info("   • Remaining to process: {$remainingCount}");
         $this->info("   • Reminders to be sent: {$progresses->count()}");
         $this->info("   • Unique surveys: {$bySurvey->count()}");
         $this->info("   • Unique members: {$byMember->count()}");
@@ -191,21 +230,6 @@ class SendIncompleteRemindersCommand extends Command
             $this->info("   • {$survey->title} (ID: {$surveyId}): {$surveyProgresses->count()} reminders");
         }
 
-        // Show breakdown by age
-        $this->newLine();
-        $this->info("📅 Breakdown by Age:");
-        $byAge = $progresses->groupBy(function ($progress) {
-            $daysOld = Carbon::parse($progress->created_at)->diffInDays(now());
-            if ($daysOld === 0) return 'Today';
-            if ($daysOld === 1) return '1 day';
-            if ($daysOld <= 7) return '2-7 days';
-            if ($daysOld <= 30) return '8-30 days';
-            return '30+ days';
-        });
-        foreach ($byAge as $range => $group) {
-            $this->info("   • {$range}: {$group->count()} reminders");
-        }
-
         // Show sample message
         $this->newLine();
         $this->info("📨 Sample Reminder Message:");
@@ -233,13 +257,10 @@ class SendIncompleteRemindersCommand extends Command
      */
     protected function runNormalMode($progresses)
     {
-        $chunkSize = (int) $this->option('chunk');
-        $totalCount = $progresses->count();
-
-        $this->info("Sending {$totalCount} reminders in chunks of {$chunkSize}...");
+        $this->info("Sending {$progresses->count()} reminders...");
         $this->newLine();
 
-        $bar = $this->output->createProgressBar($totalCount);
+        $bar = $this->output->createProgressBar($progresses->count());
         $bar->start();
 
         $sent = 0;
@@ -247,79 +268,82 @@ class SendIncompleteRemindersCommand extends Command
         $skipped = 0;
         $totalCredits = 0;
 
-        // Process in chunks to avoid memory issues
-        $progresses->chunk($chunkSize)->each(function ($chunk) use (&$sent, &$failed, &$skipped, &$totalCredits, $bar) {
-            foreach ($chunk as $progress) {
-                try {
-                    // Refresh to ensure we have latest data
-                    $progress->refresh();
+        foreach ($progresses as $progress) {
+            try {
+                // Refresh to ensure we have latest data
+                $progress->refresh();
 
-                    // Double-check it's still incomplete
-                    if ($progress->completed_at || !$progress->currentQuestion) {
-                        $skipped++;
-                        $bar->advance();
-                        continue;
-                    }
-
-                    $member = $progress->member;
-                    $survey = $progress->survey;
-                    $currentQuestion = $progress->currentQuestion;
-
-                    if (!$member || !$survey || !$currentQuestion) {
-                        $skipped++;
-                        Log::warning("Skipping reminder for progress ID {$progress->id}: Missing member, survey, or question");
-                        $bar->advance();
-                        continue;
-                    }
-
-                    DB::beginTransaction();
-
-                    // Format reminder message
-                    $message = formartQuestion($currentQuestion, $member, $survey, true);
-
-                    // Calculate credits for this message
-                    $messageLength = strlen($message);
-                    $credits = ceil($messageLength / 160);
-                    $totalCredits += $credits;
-
-                    // Create SMS inbox record with is_reminder = true
-                    SMSInbox::create([
-                        'phone_number' => $member->phone,
-                        'message' => $message,
-                        'channel' => $progress->channel ?? 'sms',
-                        'is_reminder' => true,
-                        'member_id' => $member->id,
-                        'survey_progress_id' => $progress->id,
-                    ]);
-
-                    // Update progress
-                    $progress->update([
-                        'last_dispatched_at' => now(),
-                    ]);
-                    $progress->increment('number_of_reminders');
-
-                    $sent++;
-
-                    Log::info("Incomplete survey reminder sent: Member {$member->id} ({$member->name}), Survey {$survey->id} ({$survey->title}), Progress ID {$progress->id}, Credits: {$credits}");
-
-                    DB::commit();
-                } catch (\Exception $e) {
-                    DB::rollBack();
-                    $failed++;
-                    Log::error("Failed to send reminder for progress ID {$progress->id}: " . $e->getMessage());
-                    $this->newLine();
-                    $this->warn("⚠️  Failed: Progress ID {$progress->id} - {$e->getMessage()}");
+                // Double-check it's still incomplete
+                if ($progress->completed_at || !$progress->currentQuestion) {
+                    $skipped++;
+                    $bar->advance();
+                    continue;
                 }
 
-                $bar->advance();
+                // Double-check it hasn't been processed since we started
+                $recentReminder = SMSInbox::where('survey_progress_id', $progress->id)
+                    ->where('is_reminder', true)
+                    ->where('created_at', '>=', Carbon::now()->subHour())
+                    ->exists();
+
+                if ($recentReminder) {
+                    $skipped++;
+                    $bar->advance();
+                    continue;
+                }
+
+                $member = $progress->member;
+                $survey = $progress->survey;
+                $currentQuestion = $progress->currentQuestion;
+
+                if (!$member || !$survey || !$currentQuestion) {
+                    $skipped++;
+                    Log::warning("Skipping reminder for progress ID {$progress->id}: Missing member, survey, or question");
+                    $bar->advance();
+                    continue;
+                }
+
+                DB::beginTransaction();
+
+                // Format reminder message
+                $message = formartQuestion($currentQuestion, $member, $survey, true);
+
+                // Calculate credits for this message
+                $messageLength = strlen($message);
+                $credits = ceil($messageLength / 160);
+                $totalCredits += $credits;
+
+                // Create SMS inbox record with is_reminder = true
+                SMSInbox::create([
+                    'phone_number' => $member->phone,
+                    'message' => $message,
+                    'channel' => $progress->channel ?? 'sms',
+                    'is_reminder' => true,
+                    'member_id' => $member->id,
+                    'survey_progress_id' => $progress->id,
+                ]);
+
+                // Update progress
+                $progress->update([
+                    'last_dispatched_at' => now(),
+                ]);
+                $progress->increment('number_of_reminders');
+
+                $sent++;
+
+                Log::info("Resume incomplete survey reminder sent: Member {$member->id} ({$member->name}), Survey {$survey->id} ({$survey->title}), Progress ID {$progress->id}, Credits: {$credits}");
+
+                DB::commit();
+            } catch (\Exception $e) {
+                DB::rollBack();
+                $failed++;
+                Log::error("Failed to send reminder for progress ID {$progress->id}: " . $e->getMessage());
+                $this->newLine();
+                $this->warn("⚠️  Failed: Progress ID {$progress->id} - {$e->getMessage()}");
             }
 
-            // Clear memory after each chunk
-            unset($chunk);
-            if (function_exists('gc_collect_cycles')) {
-                gc_collect_cycles();
-            }
-        });
+            $bar->advance();
+        }
 
         $bar->finish();
         $this->newLine(2);
@@ -329,7 +353,7 @@ class SendIncompleteRemindersCommand extends Command
         $this->info("📊 Summary:");
         $this->info("   • Successfully sent: {$sent} reminders");
         if ($skipped > 0) {
-            $this->comment("   • Skipped: {$skipped} reminders (completed or invalid)");
+            $this->comment("   • Skipped: {$skipped} reminders (completed, invalid, or already processed)");
         }
         if ($failed > 0) {
             $this->warn("   • Failed to send: {$failed} reminders");
@@ -347,8 +371,8 @@ class SendIncompleteRemindersCommand extends Command
 
         $this->newLine();
         $this->comment('💡 Messages will be sent by the dispatch:sms command');
+        $this->comment('💡 Run this command again to continue processing remaining reminders');
 
-        Log::info("SendIncompleteRemindersCommand completed: {$sent} sent, {$skipped} skipped, {$failed} failed, {$totalCredits} credits used");
+        Log::info("ResumeIncompleteRemindersCommand completed: {$sent} sent, {$skipped} skipped, {$failed} failed, {$totalCredits} credits used");
     }
 }
-
