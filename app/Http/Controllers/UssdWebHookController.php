@@ -28,8 +28,10 @@ class UssdWebHookController extends Controller
         Log::info('USSD Webhook Received:', $request->all());
 
             $sessionId = $request->input('session_id');
-            $phoneNumber = $request->input('phone_number');
-            $userInput = $request->input('user_input', '');
+            // $phoneNumber = $request->input('phone_number');
+            $phoneNumber = $request->input('mobile_number');
+            // $userInput = $request->input('user_input', '');
+            $userInput = $request->input('message');
             $serviceCode = $request->input('service_code');
 
             // Validate required parameters
