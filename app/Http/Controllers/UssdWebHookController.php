@@ -77,7 +77,7 @@ class UssdWebHookController extends Controller
             // Process the flow
             $response = $this->processFlow($session, $userInput);
 
-
+// dd($response, "response");
 
             $message = $response['message'];
             $continue = $response['continue'] ?? false;
@@ -166,12 +166,12 @@ class UssdWebHookController extends Controller
             $session->save();
             return $this->handleBackNavigation($session, $node);
         }
-
         // Track navigation history
         $session->addToHistory($currentNodeId);
 
         // Route to appropriate node handler based on node type
         $nodeType = $node['type'] ?? 'ussd-start';
+        // dd($node, $nodeType, "node");
 
         $response = match($nodeType) {
             'ussd-start' => $this->handleStartNode($session, $node),
@@ -186,6 +186,7 @@ class UssdWebHookController extends Controller
                 'continue' => false
             ]
         };
+
 
         // Ensure continue=true only when there's a next node
         if (isset($response['continue']) && $response['continue'] === true) {
@@ -230,6 +231,7 @@ class UssdWebHookController extends Controller
 
         // Handle "0" - Go back
         if ($userInputTrimmed === '0') {
+            // dd($currentNode, "going back");
             // First, check if node has a "back" edge defined
             $edges = $flow->flow_definition['edges'] ?? [];
             foreach ($edges as $edge) {
@@ -409,7 +411,32 @@ class UssdWebHookController extends Controller
         if (!$official) {
             $session->cancel();
             return [
-                'message' => 'Access denied. National ID not found for an active group official.',
+                'message' => 'Access denied. National ID not found for an active group official. Please try again or contact administrator.',
+                'continue' => false
+            ];
+        }
+
+        // Verify phone number matches the official's registered phone number
+        $officialPhone = $official->member->phone;
+        $dialingPhone = $session->phone_number;
+
+        if (empty($officialPhone)) {
+            // If official has no registered phone, deny access for security
+            $session->cancel();
+            return [
+                'message' => 'Access denied. No phone number registered for this National ID. Please try again or contact administrator.',
+                'continue' => false
+            ];
+        }
+
+        // Normalize both numbers for comparison using existing helper
+        $normalizedOfficialPhone = normalizePhoneNumber($officialPhone);
+        $normalizedDialingPhone = normalizePhoneNumber($dialingPhone);
+
+        if ($normalizedOfficialPhone !== $normalizedDialingPhone) {
+            $session->cancel();
+            return [
+                'message' => 'Access denied. Phone number does not match registered number for this National ID. Please try again or contact administrator.',
                 'continue' => false
             ];
         }
@@ -530,12 +557,15 @@ class UssdWebHookController extends Controller
      */
     private function handleSearchNode(UssdSession $session, array $node, string $userInput): array
     {
-        $prompt = $node['data']['searchPrompt'] ?? 'Enter member first name:';
+        $prompt = $node['data']['searchPrompt'] ?? 'Enter member National ID:';
         $resultsLimit = $node['data']['resultsLimit'] ?? 10;
         $groupId = $session->group_id;
 
-        // If no input yet, prompt
+        // If no input yet, clear old search results and prompt
         if (trim($userInput) === '') {
+            // Clear any previous search results when starting fresh
+            $session->setData('search_results', []);
+            $session->save();
             $message = $this->appendNavigationOptions($prompt, $node);
             return [
                 'message' => $message,
@@ -543,13 +573,31 @@ class UssdWebHookController extends Controller
             ];
         }
 
-        // If we already have search results stored and the input is numeric, treat as selection
+        // Check if we have stored results and if input could be a selection
         $storedResults = $session->getData('search_results', []);
-        if (!empty($storedResults) && is_numeric($userInput)) {
+        $inputLength = strlen(trim($userInput));
+        $isNumeric = is_numeric($userInput);
+
+        // Determine if input is a selection number (1-10) vs a National ID (typically 8+ digits)
+        // Selection numbers are typically 1-2 digits, National IDs are longer
+        $isLikelySelection = $isNumeric && $inputLength <= 2 && (int)$userInput >= 1 && (int)$userInput <= 10;
+
+        // Also check if input matches any stored result's National ID - if so, it's a new search
+        $matchesStoredNationalId = false;
+        if (!empty($storedResults) && $isNumeric) {
+            foreach ($storedResults as $result) {
+                if (isset($result['national_id']) && $result['national_id'] === $userInput) {
+                    $matchesStoredNationalId = true;
+                    break;
+                }
+            }
+        }
+
+        // If we have stored results and input looks like a selection (not a National ID), treat as selection
+        if (!empty($storedResults) && $isLikelySelection && !$matchesStoredNationalId) {
             $index = (int)$userInput - 1;
             if ($index >= 0 && $index < count($storedResults)) {
                 $selected = $storedResults[$index];
-                // dd($selected, $session->current_node_id);
                 // Persist selection in session
                 $session->setData('selected_member_id', $selected['id']);
                 $session->setData('selected_member_name', $selected['name']);
@@ -558,15 +606,11 @@ class UssdWebHookController extends Controller
                 // Move to next node using edges (same pattern as menu node)
                 $nextNode = $session->flow->getNextNode($node['id']);
 
-                // dd($nextNode);
-
                 if ($nextNode) {
                     $session->current_node_id = $nextNode['id'];
                     $session->save();
                     return $this->processFlow($session, '');
                 }
-
-                // dd($nextNode);
 
                 // Fallback: try to find edge manually
                 $edges = $session->flow->flow_definition['edges'] ?? [];
@@ -596,10 +640,20 @@ class UssdWebHookController extends Controller
             ];
         }
 
-        // Perform search by name (prefix)
+        // If input doesn't match stored results or is a new search, clear old results
+        if (!empty($storedResults) && !$isLikelySelection) {
+            $session->setData('search_results', []);
+            $session->save();
+        }
+
+        // Perform search by National ID (exact or partial match)
         $query = Member::query()
-            ->select('id', 'name', 'phone')
-            ->where('name', 'like', $userInput . '%')
+            ->select('id', 'name', 'phone', 'national_id')
+            ->where(function($q) use ($userInput) {
+                $q->where('national_id', $userInput)  // Exact match first
+                  ->orWhere('national_id', 'like', $userInput . '%');  // Partial match
+            })
+            ->orderByRaw("CASE WHEN national_id = ? THEN 0 ELSE 1 END", [$userInput])
             ->orderBy('name')
             ->limit($resultsLimit);
 
@@ -610,7 +664,7 @@ class UssdWebHookController extends Controller
         $results = $query->get();
 
         if ($results->isEmpty()) {
-            $message = $this->appendNavigationOptions("No members found for \"{$userInput}\". Try again:", $node);
+            $message = $this->appendNavigationOptions("No members found for National ID \"{$userInput}\". Try again:", $node);
             return [
                 'message' => $message,
                 'continue' => true
@@ -623,6 +677,7 @@ class UssdWebHookController extends Controller
                 'id' => $m->id,
                 'name' => $m->name,
                 'phone' => $m->phone,
+                'national_id' => $m->national_id,
             ];
         })->values()->all());
         $session->save();
@@ -748,8 +803,10 @@ class UssdWebHookController extends Controller
         }
 
         // Show message with continue option if there's a next node
+        // Don't show "1. Continue" if this is a loan selection display (loans are already numbered)
+        $isLoanSelection = ($inputDataKey === 'selected_loan_number');
         $hasNextNode = $this->hasNextNode($session, $node);
-        if ($hasNextNode) {
+        if ($hasNextNode && !$isLoanSelection) {
             $message .= "\n1. Continue";
         }
 
@@ -814,14 +871,37 @@ class UssdWebHookController extends Controller
         if (empty($content)) {
             return 'No display content configured.';
         }
+        // $userInput = $session->getData('user_input');
+        // $userInput = request()->input('message');
+
 
         // Get member data if available
         $memberId = $session->getData('selected_member_id');
         $member = $memberId ? Member::with('group')->find($memberId) : null;
 
         // Get loan data if available
-        $loanId = $session->getData('selected_loan_id');
-        $selectedLoan = $loanId ? \App\Models\Loan::find($loanId) : null;
+        // $loanId = $session->getData('selected_loan_id');
+        // if($loanId) {
+        //     // dd($loanId, "loanId");
+        //     $selectedLoan = \App\Models\Loan::find($loanId);
+        // } else {
+        //     $selectedLoan = null;
+        // }
+
+        //the number input is not the loan id, it is just the number used to display on the ussd app
+        // $selectedLoan = $loanId ? \App\Models\Loan::find($loanId) : null;
+
+        //take all the loans for the member and the loan selected will be $memberLoans[userInput -1]
+        if($session->getData('selected_loan_number')){
+            $userInput = $session->getData('selected_loan_number');
+            $memberLoans = $member->loans()->where('status', 'Approved')->get();
+            $selectedLoan = $memberLoans[$userInput - 1];
+
+            $loan_id = $selectedLoan->id;
+            $session->setData('selected_loan_id', $loan_id);
+        }
+
+        // dd($selectedLoan, $userInput, $memberLoans, "selectedLoan");
 
         // Build replacement map
         $replacements = [
@@ -834,11 +914,13 @@ class UssdWebHookController extends Controller
         ];
 
         // Add selected loan placeholders
-        if ($selectedLoan) {
+        if (isset($selectedLoan) && $selectedLoan != null) {
+            // dd($selectedLoan, $loanId, \App\Models\Loan::find($loanId), "selectedLoan FOUND");
             $replacements['{selected_loan_details}'] = $this->formatSelectedLoanDetails($selectedLoan);
             $replacements['{selected_loan_balance}'] = 'KES ' . number_format($selectedLoan->getRemainingBalanceAttribute(), 2);
             $replacements['{selected_loan_amount}'] = 'KES ' . number_format($selectedLoan->principal_amount, 2);
         } else {
+            // dd($selectedLoan, $loanId, \App\Models\Loan::find($loanId), "selectedLoan Not FOUND");
             $replacements['{selected_loan_details}'] = '[No loan selected]';
             $replacements['{selected_loan_balance}'] = '[No loan selected]';
             $replacements['{selected_loan_amount}'] = '[No loan selected]';
@@ -846,7 +928,7 @@ class UssdWebHookController extends Controller
 
         // Add all loans placeholder
         if ($member) {
-            $replacements['{loan_details}'] = $this->formatAllLoansDetails($member);
+            $replacements['{loan_details}'] = $this->formatAllLoansDetails($member, $session);
         } else {
             $replacements['{loan_details}'] = '[No member selected]';
         }
@@ -860,7 +942,7 @@ class UssdWebHookController extends Controller
     /**
      * Format all loans for a member
      */
-    private function formatAllLoansDetails(Member $member): string
+    private function formatAllLoansDetails(Member $member, UssdSession $session): string
     {
         $loans = $member->loans()->where('status', 'Approved')->get();
 
@@ -868,14 +950,15 @@ class UssdWebHookController extends Controller
             return "No active loans found.";
         }
 
-        // $output = "Active Loans:\n\n";
-        foreach ($loans as $index => $loan) {
+        $output = "";
+        $loansList = [];
 
-            // dd($loan->getRemainingBalanceAttribute(), $loan->balance, $loan->loan_number);
+        foreach ($loans as $index => $loan) {
             $balance = $loan->getRemainingBalanceAttribute();
-            // $loanNumber = $index + 1;
-            $output = $index + 1 . ". ";
-            $output .= "Loan {$loan->loan_number} - KES " . number_format($loan->principal_amount, 2) . "\n";
+            $loanNumber = $index + 1;
+
+            $output .= $loanNumber . ". ";
+            $output .= "Loan {$loan->loan_number} - (ACC-{$member->account_number}) - KES " . number_format($loan->principal_amount, 2) . "\n";
             $output .= "Balance: KES " . number_format($balance, 2) . "\n";
 
             if ($loan->due_date) {
@@ -884,17 +967,13 @@ class UssdWebHookController extends Controller
 
             $output .= "\n";
 
-            // dd($output);
-
-            // Store loan in an indexed array for later selection
-            $session = UssdSession::where('session_id', request()->input('session_id'))->first();
-            if ($session) {
-                $loansList = $session->getData('loans_list', []);
-                $loansList[$index + 1] = $loan->id;
-                $session->setData('loans_list', $loansList);
-                $session->save();
-            }
+            // Store loan in an indexed array for later selection (keyed by displayed number)
+            $loansList[$loanNumber] = $loan->id;
         }
+
+        // Store the loans list in session for selection
+        $session->setData('loans_list', $loansList);
+        $session->save();
 
         return rtrim($output);
     }
@@ -1154,7 +1233,15 @@ class UssdWebHookController extends Controller
             $num = $idx + 1;
             $name = $row['name'] ?? 'Unknown';
             $phone = $row['phone'] ?? '';
-            $lines[] = "{$num}. {$name}" . ($phone ? " ({$phone})" : '');
+            $nationalId = $row['national_id'] ?? '';
+            $display = "{$num}. {$name}";
+            if ($nationalId) {
+                $display .= " (ID: {$nationalId})";
+            }
+            if ($phone) {
+                $display .= " - {$phone}";
+            }
+            $lines[] = $display;
         }
         return implode("\n", $lines);
     }

@@ -445,7 +445,7 @@ onConnect((params) => {
             leave-from="opacity-100 translate-y-0 sm:scale-100"
             leave-to="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95">
             <DialogPanel
-              class="relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 text-left shadow-xl transition-all w-full max-w-2xl">
+              class="relative transform  rounded-lg  dark:bg-gray-800 text-left shadow-xl transition-all w-full max-w-2xl">
               <UssdNodeConfigModal
                 v-if="selected"
                 :node="selected"
@@ -474,8 +474,8 @@ onConnect((params) => {
             leave-from="opacity-100 translate-y-0 sm:scale-100"
             leave-to="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95">
             <DialogPanel
-              class="relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 text-left shadow-xl transition-all w-full max-w-2xl">
-              <UssdEdgeConfigModal
+              class="relative transform rounded-lg bg-white dark:bg-gray-800 text-left shadow-xl transition-all w-full max-w-2xl">
+              <!-- <UssdEdgeConfigModal
                 v-if="selectedEdge"
                 :edge="selectedEdge"
                 :sourceNode="selectedEdgeSourceNode"
@@ -483,7 +483,7 @@ onConnect((params) => {
                 @close="edgeModalOpen = false"
                 @update="updateEdge(selectedEdge.id, $event)"
                 @remove="removeEdge(selectedEdge.id)"
-              />
+              /> -->
             </DialogPanel>
           </TransitionChild>
         </div>

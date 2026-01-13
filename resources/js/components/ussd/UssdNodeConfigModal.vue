@@ -186,7 +186,7 @@ function updateEndData() {
 </script>
 
 <template>
-  <div class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+  <div id="node-config-modal" class="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
     <div class="sm:flex sm:items-start">
       <div
         class="mx-auto flex size-12 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900 sm:mx-0 sm:size-10">
@@ -205,7 +205,7 @@ function updateEndData() {
           </div>
         </DialogTitle>
 
-        <div class="mt-4 max-h-[60vh] overflow-y-auto pr-2">
+        <div class="mt-4 pr-2">
           <!-- Node Label -->
           <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 dark:text-white mb-1">
@@ -250,7 +250,7 @@ function updateEndData() {
                   + Add Option
                 </button>
               </div>
-              <div class="space-y-2 max-h-60 overflow-y-auto">
+              <div class="space-y-2">
                 <div
                   v-for="(option, index) in menuOptions"
                   :key="index"
@@ -292,7 +292,7 @@ function updateEndData() {
                 @input="updateSearchData()"
                 type="text"
                 class="block w-full rounded-md border-0 py-1.5 text-gray-900 dark:text-white dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
-                placeholder="Enter member first name:"
+                placeholder="Enter member National ID:"
               />
             </div>
 
@@ -367,7 +367,7 @@ function updateEndData() {
                 </svg>
                 <span class="text-xs font-semibold text-blue-800 dark:text-blue-300">Available Placeholders</span>
               </div>
-              <div class="space-y-1 max-h-40 overflow-y-auto">
+              <div class="space-y-1 ">
                 <div
                   v-for="placeholder in availablePlaceholders"
                   :key="placeholder.key"
@@ -598,8 +598,13 @@ function updateEndData() {
             </div>
           </template>
 
-          <!-- Remove Node Button -->
-          <div class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 flex justify-between items-center sm:px-6">
+    <!-- Remove Node Button -->
             <button
               type="button"
               @click="handleRemove"
@@ -607,12 +612,6 @@ function updateEndData() {
             >
               Remove Node & Connections
             </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
     <button
       type="button"
       @click="$emit('close')"
@@ -622,4 +621,12 @@ function updateEndData() {
     </button>
   </div>
 </template>
+
+
+<style scoped>
+#node-config-modal {
+  max-height: 70vh !important;
+  overflow-y: auto !important;
+}
+</style>
 
