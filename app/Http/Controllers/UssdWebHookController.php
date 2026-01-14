@@ -433,7 +433,12 @@ class UssdWebHookController extends Controller
         $normalizedOfficialPhone = normalizePhoneNumber($officialPhone);
         $normalizedDialingPhone = normalizePhoneNumber($dialingPhone);
 
-        if ($normalizedOfficialPhone !== $normalizedDialingPhone) {
+        // Extract last 9 digits from both numbers for comparison
+        // This handles cases where numbers might be in different formats (0xxx, 254xxx, +254xxx)
+        $officialLast9 = substr(preg_replace('/\D/', '', $normalizedOfficialPhone), -9);
+        $dialingLast9 = substr(preg_replace('/\D/', '', $normalizedDialingPhone), -9);
+
+        if ($officialLast9 !== $dialingLast9) {
             $session->cancel();
             return [
                 'message' => 'Access denied. Phone number does not match registered number for this National ID. Please try again or contact administrator.',
