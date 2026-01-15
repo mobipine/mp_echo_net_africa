@@ -33,9 +33,17 @@ class SurveyQuestionResource extends Resource
                 Forms\Components\Select::make('swahili_question_id')
                     ->label('Kiswahili Question (Alternative)')
                     ->options(function ($record) {
+                        $options = [];
+
+                        // Add "No Alternative" option first (using question's own ID as sentinel)
+                        if ($record) {
+                            $options[$record->id] = 'No Alternative (English-only question)';
+                        }
+
                         // If creating a new question, show all questions
                         if (!$record) {
-                            return \App\Models\SurveyQuestion::pluck('question', 'id');
+                            $allQuestions = \App\Models\SurveyQuestion::pluck('question', 'id')->toArray();
+                            return array_merge($options, $allQuestions);
                         }
 
                         // Get all survey IDs that this question belongs to
@@ -43,7 +51,10 @@ class SurveyQuestionResource extends Resource
 
                         if (empty($surveyIds)) {
                             // If question doesn't belong to any survey yet, show all questions
-                            return \App\Models\SurveyQuestion::pluck('question', 'id');
+                            $allQuestions = \App\Models\SurveyQuestion::where('id', '!=', $record->id)
+                                ->pluck('question', 'id')
+                                ->toArray();
+                            return array_merge($options, $allQuestions);
                         }
 
                         // Get all questions that belong to the same surveys
@@ -51,13 +62,14 @@ class SurveyQuestionResource extends Resource
                             $query->whereIn('surveys.id', $surveyIds);
                         })
                         ->where('id', '!=', $record->id) // Exclude the current question
-                        ->pluck('question', 'id');
+                        ->pluck('question', 'id')
+                        ->toArray();
 
-                        return $questionsInSameSurveys;
+                        return array_merge($options, $questionsInSameSurveys);
                     })
                     ->searchable()
                     ->nullable()
-                    ->helperText('Link this English question to its Kiswahili alternative from the same survey(s). Leave empty if this is a Kiswahili question or if no translation exists.'),
+                    ->helperText('Link this English question to its Kiswahili alternative from the same survey(s). Select "No Alternative" for English-only questions that should still appear in reports. Leave empty if this is a Kiswahili question.'),
                 Forms\Components\Select::make('answer_data_type')
                     ->options(['Alphanumeric' => 'Alphanumeric', 'Strictly Number' => 'Strictly Number'])
                     ->required(),
