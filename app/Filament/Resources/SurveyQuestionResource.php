@@ -36,7 +36,7 @@ class SurveyQuestionResource extends Resource
                         $options = [];
 
                         // Add "No Alternative" option first (using question's own ID as sentinel)
-                        if ($record) {
+                        if ($record && $record->id) {
                             $options[$record->id] = 'No Alternative (English-only question)';
                         }
 
@@ -69,6 +69,13 @@ class SurveyQuestionResource extends Resource
                     })
                     ->searchable()
                     ->nullable()
+                    ->dehydrated(true)
+                    ->afterStateHydrated(function ($state, $record, Forms\Set $set) {
+                        // If swahili_question_id equals the question's own ID, keep it as is (No Alternative)
+                        if ($record && $state == $record->id) {
+                            $set('swahili_question_id', $record->id);
+                        }
+                    })
                     ->helperText('Link this English question to its Kiswahili alternative from the same survey(s). Select "No Alternative" for English-only questions that should still appear in reports. Leave empty if this is a Kiswahili question.'),
                 Forms\Components\Select::make('answer_data_type')
                     ->options(['Alphanumeric' => 'Alphanumeric', 'Strictly Number' => 'Strictly Number'])
