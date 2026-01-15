@@ -77,6 +77,8 @@ class QuestionsRelationManager extends RelationManager
                     // ->modalButton('Create'),
             ])
             ->actions([
+                Tables\Actions\EditAction::make()
+                    ->url(fn (Model $record): string => \App\Filament\Resources\SurveyQuestionResource::getUrl('edit', ['record' => $record])),
                 Action::make('remove')
                     ->label('Remove')
                     ->action(function (Model $record): void {

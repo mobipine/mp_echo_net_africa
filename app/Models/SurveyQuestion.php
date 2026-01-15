@@ -19,7 +19,8 @@ class SurveyQuestion extends Model
         'is_recurrent',
         'recur_interval',
         'recur_unit',
-        'recur_times'
+        'recur_times',
+        'swahili_question_id'
     ];
 
     protected $casts = [
@@ -34,6 +35,22 @@ class SurveyQuestion extends Model
     public function surveys()
     {
         return $this->belongsToMany(Survey::class, 'survey_question_survey');
+    }
+
+    /**
+     * Get the Kiswahili version of this question (if this is an English question)
+     */
+    public function swahiliQuestion()
+    {
+        return $this->belongsTo(SurveyQuestion::class, 'swahili_question_id');
+    }
+
+    /**
+     * Get the English version of this question (if this is a Kiswahili question)
+     */
+    public function englishQuestion()
+    {
+        return $this->hasOne(SurveyQuestion::class, 'swahili_question_id');
     }
 
     //add a function that takes in the survey_id and returns the position of the question in that survey

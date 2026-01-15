@@ -30,6 +30,34 @@ class SurveyQuestionResource extends Resource
         return $form
             ->schema([
                 Forms\Components\TextInput::make('question')->required()->maxLength(255),
+                Forms\Components\Select::make('swahili_question_id')
+                    ->label('Kiswahili Question (Alternative)')
+                    ->options(function ($record) {
+                        // If creating a new question, show all questions
+                        if (!$record) {
+                            return \App\Models\SurveyQuestion::pluck('question', 'id');
+                        }
+
+                        // Get all survey IDs that this question belongs to
+                        $surveyIds = $record->surveys->pluck('id')->toArray();
+
+                        if (empty($surveyIds)) {
+                            // If question doesn't belong to any survey yet, show all questions
+                            return \App\Models\SurveyQuestion::pluck('question', 'id');
+                        }
+
+                        // Get all questions that belong to the same surveys
+                        $questionsInSameSurveys = \App\Models\SurveyQuestion::whereHas('surveys', function ($query) use ($surveyIds) {
+                            $query->whereIn('surveys.id', $surveyIds);
+                        })
+                        ->where('id', '!=', $record->id) // Exclude the current question
+                        ->pluck('question', 'id');
+
+                        return $questionsInSameSurveys;
+                    })
+                    ->searchable()
+                    ->nullable()
+                    ->helperText('Link this English question to its Kiswahili alternative from the same survey(s). Leave empty if this is a Kiswahili question or if no translation exists.'),
                 Forms\Components\Select::make('answer_data_type')
                     ->options(['Alphanumeric' => 'Alphanumeric', 'Strictly Number' => 'Strictly Number'])
                     ->required(),
