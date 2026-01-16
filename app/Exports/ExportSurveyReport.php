@@ -3,18 +3,32 @@
 namespace App\Exports;
 
 use App\Models\Survey;
+use App\Models\User;
+use Filament\Notifications\Actions\Action;
+use Filament\Notifications\Notification;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Log;
+use Maatwebsite\Excel\Concerns\Exportable;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
-class ExportSurveyReport implements WithMultipleSheets
+class ExportSurveyReport implements WithMultipleSheets, ShouldQueue
 {
+    use Exportable;
+
     protected int $surveyId;
+    protected int $userId;
+    protected string $diskName;
+    protected string $filePath;
     protected ?Survey $survey = null;
     protected array $englishQuestions = [];
     protected array $headings = [];
 
-    public function __construct(int $surveyId)
+    public function __construct(int $surveyId, int $userId, string $diskName, string $filePath)
     {
         $this->surveyId = $surveyId;
+        $this->userId = $userId;
+        $this->diskName = $diskName;
+        $this->filePath = $filePath;
         $this->survey = Survey::with('questions')->findOrFail($surveyId);
 
         // Get English questions (those with swahili_question_id set, including "no alternative" ones)
@@ -55,10 +69,11 @@ class ExportSurveyReport implements WithMultipleSheets
 
     public function sheets(): array
     {
+        // Only pass userId and filePath to the first sheet to avoid duplicate notifications
         return [
-            new SurveyReportSheetAll($this->surveyId, $this->englishQuestions, $this->headings),
-            new SurveyReportSheetCompleted($this->surveyId, $this->englishQuestions, $this->headings),
-            new SurveyReportSheetIncomplete($this->surveyId, $this->englishQuestions, $this->headings),
+            new SurveyReportSheetAll($this->surveyId, $this->englishQuestions, $this->headings, $this->userId, $this->filePath),
+            new SurveyReportSheetCompleted($this->surveyId, $this->englishQuestions, $this->headings, null, null),
+            new SurveyReportSheetIncomplete($this->surveyId, $this->englishQuestions, $this->headings, null, null),
         ];
     }
 }

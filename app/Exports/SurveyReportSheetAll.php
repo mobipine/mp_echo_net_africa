@@ -4,6 +4,10 @@ namespace App\Exports;
 
 use App\Models\SurveyProgress;
 use App\Models\SurveyResponse;
+use App\Models\User;
+use Filament\Notifications\Actions\Action;
+use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
@@ -20,12 +24,16 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
     protected int $surveyId;
     protected array $englishQuestions;
     protected array $headings;
+    protected ?int $userId = null;
+    protected ?string $filePath = null;
 
-    public function __construct(int $surveyId, array $englishQuestions, array $headings)
+    public function __construct(int $surveyId, array $englishQuestions, array $headings, ?int $userId = null, ?string $filePath = null)
     {
         $this->surveyId = $surveyId;
         $this->englishQuestions = $englishQuestions;
         $this->headings = $headings;
+        $this->userId = $userId;
+        $this->filePath = $filePath;
     }
 
     public function title(): string
@@ -193,7 +201,41 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
 
                 // Freeze header row
                 $sheet->freezePane('A2');
+
+                // Send notification when export is complete (only from the "All" sheet to avoid duplicates)
+                if ($this->userId && $this->filePath && $this->title() === 'All') {
+                    $this->sendNotification();
+                }
             },
         ];
+    }
+
+    protected function sendNotification(): void
+    {
+        try {
+            $user = User::find($this->userId);
+            if (!$user) {
+                return;
+            }
+
+            $downloadUrl = asset('storage/' . $this->filePath);
+            $survey = \App\Models\Survey::find($this->surveyId);
+
+            Notification::make()
+                ->title('Survey Report Export Complete! ✅')
+                ->body("Your {$survey->title} report is ready for download.")
+                ->success()
+                ->actions([
+                    Action::make('download')
+                        ->label('Download Report')
+                        ->url($downloadUrl, shouldOpenInNewTab: true)
+                        ->button(),
+                ])
+                ->sendToDatabase($user);
+
+            Log::info("Survey report export completed for user {$this->userId}, file: {$this->filePath}");
+        } catch (\Exception $e) {
+            Log::error("Failed to send notification for survey report export: " . $e->getMessage());
+        }
     }
 }

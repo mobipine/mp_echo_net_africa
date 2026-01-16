@@ -11,8 +11,10 @@ use Filament\Forms\Form;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Section;
 use Filament\Pages\Actions\Action;
+use Filament\Notifications\Notification;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\ExportSurveyReport;
+use Illuminate\Support\Facades\Storage;
 
 class SmsResponseReports extends Page
 {
@@ -99,12 +101,29 @@ class SmsResponseReports extends Page
 
         return [
             Action::make('download_survey_report')
-                ->label("Download {$survey->title} Report")
+                ->label("Generate {$survey->title} Report")
                 ->icon('heroicon-o-document-arrow-down')
                 ->color('success')
-                ->action(function () use ($surveyId, $sanitizedTitle) {
-                    $filename = strtolower($sanitizedTitle) . '_report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
-                    return Excel::download(new ExportSurveyReport($surveyId), $filename);
+                ->action(function () use ($surveyId, $sanitizedTitle, $survey) {
+                    $diskName = 'public';
+                    $directory = 'exports';
+                    $filenameOnly = strtolower($sanitizedTitle) . '_report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
+                    $fullFilePath = $directory . '/' . $filenameOnly;
+                    $userId = auth()->id();
+
+                    // Queue the export
+                    Excel::queue(
+                        new ExportSurveyReport($surveyId, $userId, $diskName, $fullFilePath),
+                        $fullFilePath,
+                        $diskName
+                    );
+
+                    // Send immediate notification
+                    Notification::make()
+                        ->title('Export Started')
+                        ->body("Your {$survey->title} report is being generated. You will be notified when it's ready for download.")
+                        ->success()
+                        ->send();
                 }),
         ];
     }
