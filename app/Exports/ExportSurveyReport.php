@@ -11,19 +11,9 @@ use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\Exportable;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
-class ExportSurveyReport implements WithMultipleSheets, ShouldQueue
+class ExportSurveyReport implements WithMultipleSheets
 {
     use Exportable;
-
-    /**
-     * The number of seconds the job can run before timing out.
-     */
-    public int $timeout = 3600; // 1 hour
-
-    /**
-     * The number of times the job may be attempted.
-     */
-    public int $tries = 3;
 
     protected int $surveyId;
     protected int $userId;

@@ -12,9 +12,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Section;
 use Filament\Pages\Actions\Action;
 use Filament\Notifications\Notification;
-use Maatwebsite\Excel\Facades\Excel;
-use App\Exports\ExportSurveyReport;
-use Illuminate\Support\Facades\Storage;
+use App\Jobs\GenerateSurveyReportJob;
 
 class SmsResponseReports extends Page
 {
@@ -112,12 +110,8 @@ class SmsResponseReports extends Page
                         $fullFilePath = $directory . '/' . $filenameOnly;
                         $userId = auth()->id();
 
-                        // Queue the export (returns immediately, doesn't wait)
-                        Excel::queue(
-                            new ExportSurveyReport($surveyId, $userId, $diskName, $fullFilePath),
-                            $fullFilePath,
-                            $diskName
-                        );
+                        // Dispatch the job to queue (returns immediately)
+                        GenerateSurveyReportJob::dispatch($surveyId, $userId, $diskName, $fullFilePath);
 
                         // Send immediate notification
                         Notification::make()
