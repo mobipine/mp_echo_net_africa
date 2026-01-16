@@ -113,6 +113,14 @@ class SmsResponseReports extends Page
                         // Dispatch the job to queue (returns immediately)
                         GenerateSurveyReportJob::dispatch($surveyId, $userId, $diskName, $fullFilePath);
 
+                        // Log for debugging
+                        \Illuminate\Support\Facades\Log::info('Survey report job dispatched', [
+                            'survey_id' => $surveyId,
+                            'user_id' => $userId,
+                            'file_path' => $fullFilePath,
+                            'queue_connection' => config('queue.default'),
+                        ]);
+
                         // Send immediate notification
                         Notification::make()
                             ->title('Export Started')
