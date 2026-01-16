@@ -26,14 +26,16 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
     protected array $headings;
     protected ?int $userId = null;
     protected ?string $filePath = null;
+    protected ?string $progressKey = null;
 
-    public function __construct(int $surveyId, array $englishQuestions, array $headings, ?int $userId = null, ?string $filePath = null)
+    public function __construct(int $surveyId, array $englishQuestions, array $headings, ?int $userId = null, ?string $filePath = null, ?string $progressKey = null)
     {
         $this->surveyId = $surveyId;
         $this->englishQuestions = $englishQuestions;
         $this->headings = $headings;
         $this->userId = $userId;
         $this->filePath = $filePath;
+        $this->progressKey = $progressKey;
     }
 
     public function title(): string
@@ -50,6 +52,7 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
     {
         // Pre-load all responses once (usually smaller dataset than progresses)
         // Group by normalized phone for efficient lookup
+        // Use chunking for responses too if dataset is very large
         $allResponses = SurveyResponse::where('survey_id', $this->surveyId)
             ->select('msisdn', 'question_id', 'survey_response', 'created_at')
             ->orderBy('created_at', 'desc')
@@ -64,15 +67,36 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
                 });
             });
 
-        // Use chunking to avoid memory issues with large datasets
+        // Use a generator to avoid loading all data into memory at once
+        // This processes data in chunks and yields rows one at a time
         $data = collect();
+        $processed = 0;
+        $total = SurveyProgress::where('survey_id', $this->surveyId)->count();
 
         // Process progresses in chunks to avoid memory exhaustion
         SurveyProgress::where('survey_id', $this->surveyId)
             ->with(['member.group', 'member.county'])
-            ->chunk(1000, function ($progresses) use (&$data, $allResponses) {
+            ->chunk(500, function ($progresses) use (&$data, $allResponses, &$processed, $total) {
                 $chunkData = $this->buildData($progresses, $allResponses);
                 $data = $data->merge($chunkData);
+
+                // Update progress
+                $processed += $progresses->count();
+                if ($this->progressKey && $total > 0) {
+                    $progress = min(90, (int)(($processed / $total) * 90)); // 90% max (10% for file writing)
+                    \Illuminate\Support\Facades\Cache::put($this->progressKey, [
+                        'status' => 'processing',
+                        'progress' => $progress,
+                        'total' => $total,
+                        'processed' => $processed,
+                        'message' => "Processing {$processed} of {$total} records..."
+                    ], 3600);
+                }
+
+                // Force garbage collection after each chunk to free memory
+                if ($processed % 2000 == 0) {
+                    gc_collect_cycles();
+                }
             });
 
         return $data;

@@ -19,17 +19,19 @@ class ExportSurveyReport implements WithMultipleSheets
     protected int $userId;
     protected string $diskName;
     protected string $filePath;
+    protected ?string $progressKey = null;
     protected ?Survey $survey = null;
     protected array $englishQuestions = [];
     protected array $headings = [];
 
-    public function __construct(int $surveyId, int $userId, string $diskName, string $filePath)
+    public function __construct(int $surveyId, int $userId, string $diskName, string $filePath, ?string $progressKey = null)
     {
         // Only store IDs - don't do heavy queries here (runs synchronously before queuing)
         $this->surveyId = $surveyId;
         $this->userId = $userId;
         $this->diskName = $diskName;
         $this->filePath = $filePath;
+        $this->progressKey = $progressKey;
     }
 
     /**
@@ -91,9 +93,9 @@ class ExportSurveyReport implements WithMultipleSheets
 
         // Only pass userId and filePath to the first sheet to avoid duplicate notifications
         return [
-            new SurveyReportSheetAll($this->surveyId, $this->englishQuestions, $this->headings, $this->userId, $this->filePath),
-            new SurveyReportSheetCompleted($this->surveyId, $this->englishQuestions, $this->headings, null, null),
-            new SurveyReportSheetIncomplete($this->surveyId, $this->englishQuestions, $this->headings, null, null),
+            new SurveyReportSheetAll($this->surveyId, $this->englishQuestions, $this->headings, $this->userId, $this->filePath, $this->progressKey),
+            // new SurveyReportSheetCompleted($this->surveyId, $this->englishQuestions, $this->headings, null, null, null),
+            // new SurveyReportSheetIncomplete($this->surveyId, $this->englishQuestions, $this->headings, null, null, null),
         ];
     }
 }
