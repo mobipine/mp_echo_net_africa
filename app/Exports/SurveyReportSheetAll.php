@@ -185,111 +185,89 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
     {
         return [
             AfterSheet::class => function (AfterSheet $event) {
-                $sheet = $event->sheet->getDelegate();
-                $highestRow = $sheet->getHighestRow();
-                $highestColumn = $sheet->getHighestColumn();
-                $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
+                try {
+                    $sheet = $event->sheet->getDelegate();
+                    $highestRow = $sheet->getHighestRow();
+                    $highestColumn = $sheet->getHighestColumn();
+                    $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
 
-                // Style header row (row 1)
-                $headerRange = 'A1:' . $highestColumn . '1';
-                $sheet->getStyle($headerRange)->applyFromArray([
-                    'font' => [
-                        'bold' => true,
-                        'color' => ['rgb' => 'FFFFFF'],
-                        'size' => 11,
-                    ],
-                    'fill' => [
-                        'fillType' => Fill::FILL_SOLID,
-                        'startColor' => ['rgb' => '4472C4'], // Blue background
-                    ],
-                    'alignment' => [
-                        'horizontal' => Alignment::HORIZONTAL_CENTER,
-                        'vertical' => Alignment::VERTICAL_CENTER,
-                    ],
-                    'borders' => [
-                        'allBorders' => [
-                            'borderStyle' => Border::BORDER_THIN,
-                            'color' => ['rgb' => '000000'],
+                    // Style header row (row 1)
+                    $headerRange = 'A1:' . $highestColumn . '1';
+                    $sheet->getStyle($headerRange)->applyFromArray([
+                        'font' => [
+                            'bold' => true,
+                            'color' => ['rgb' => 'FFFFFF'],
+                            'size' => 11,
                         ],
-                    ],
-                ]);
-
-                // Set row height for header
-                $sheet->getRowDimension(1)->setRowHeight(20);
-
-                // Add borders to all data cells
-                if ($highestRow > 1) {
-                    $dataRange = 'A2:' . $highestColumn . $highestRow;
-                    $sheet->getStyle($dataRange)->applyFromArray([
+                        'fill' => [
+                            'fillType' => Fill::FILL_SOLID,
+                            'startColor' => ['rgb' => '4472C4'], // Blue background
+                        ],
+                        'alignment' => [
+                            'horizontal' => Alignment::HORIZONTAL_CENTER,
+                            'vertical' => Alignment::VERTICAL_CENTER,
+                        ],
                         'borders' => [
                             'allBorders' => [
                                 'borderStyle' => Border::BORDER_THIN,
-                                'color' => ['rgb' => 'CCCCCC'],
+                                'color' => ['rgb' => '000000'],
                             ],
-                        ],
-                        'alignment' => [
-                            'vertical' => Alignment::VERTICAL_CENTER,
                         ],
                     ]);
 
-                    // Alternate row colors for better readability
-                    for ($row = 2; $row <= $highestRow; $row++) {
-                        if ($row % 2 == 0) {
-                            $rowRange = 'A' . $row . ':' . $highestColumn . $row;
-                            $sheet->getStyle($rowRange)->applyFromArray([
-                                'fill' => [
-                                    'fillType' => Fill::FILL_SOLID,
-                                    'startColor' => ['rgb' => 'F2F2F2'], // Light gray
+                    // Set row height for header
+                    $sheet->getRowDimension(1)->setRowHeight(20);
+
+                    // Add borders to all data cells
+                    if ($highestRow > 1) {
+                        $dataRange = 'A2:' . $highestColumn . $highestRow;
+                        $sheet->getStyle($dataRange)->applyFromArray([
+                            'borders' => [
+                                'allBorders' => [
+                                    'borderStyle' => Border::BORDER_THIN,
+                                    'color' => ['rgb' => 'CCCCCC'],
                                 ],
-                            ]);
+                            ],
+                            'alignment' => [
+                                'vertical' => Alignment::VERTICAL_CENTER,
+                            ],
+                        ]);
+
+                        // Alternate row colors for better readability
+                        for ($row = 2; $row <= $highestRow; $row++) {
+                            if ($row % 2 == 0) {
+                                $rowRange = 'A' . $row . ':' . $highestColumn . $row;
+                                $sheet->getStyle($rowRange)->applyFromArray([
+                                    'fill' => [
+                                        'fillType' => Fill::FILL_SOLID,
+                                        'startColor' => ['rgb' => 'F2F2F2'], // Light gray
+                                    ],
+                                ]);
+                            }
                         }
                     }
-                }
 
-                // Auto-size columns
-                for ($col = 1; $col <= $highestColumnIndex; $col++) {
-                    $columnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col);
-                    $sheet->getColumnDimension($columnLetter)->setAutoSize(true);
-                }
+                    // Auto-size columns
+                    for ($col = 1; $col <= $highestColumnIndex; $col++) {
+                        $columnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col);
+                        $sheet->getColumnDimension($columnLetter)->setAutoSize(true);
+                    }
 
                 // Freeze header row
                 $sheet->freezePane('A2');
 
-                // Send notification when export is complete (only from the "All" sheet to avoid duplicates)
-                if ($this->userId && $this->filePath && $this->title() === 'All') {
-                    $this->sendNotification();
+                // Notification is now sent from the job after file is verified
+                // Removed from here to ensure file is fully saved before notification
+                } catch (\Exception $e) {
+                    // Log but don't throw - we don't want styling errors to fail the export
+                    Log::error("Error in AfterSheet event handler for survey export: " . $e->getMessage(), [
+                        'survey_id' => $this->surveyId,
+                        'sheet_title' => $this->title(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
                 }
             },
         ];
     }
 
-    protected function sendNotification(): void
-    {
-        try {
-            $user = User::find($this->userId);
-            if (!$user) {
-                return;
-            }
-
-            // Use Storage facade to generate correct URL
-            $downloadUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($this->filePath);
-            $survey = \App\Models\Survey::find($this->surveyId);
-
-            Notification::make()
-                ->title('Survey Report Export Complete! ✅')
-                ->body("Your {$survey->title} report is ready for download.")
-                ->success()
-                ->actions([
-                    Action::make('download')
-                        ->label('Download Report')
-                        ->url($downloadUrl, shouldOpenInNewTab: true)
-                        ->button(),
-                ])
-                ->sendToDatabase($user);
-
-            Log::info("Survey report export completed for user {$this->userId}, file: {$this->filePath}, url: {$downloadUrl}");
-        } catch (\Exception $e) {
-            Log::error("Failed to send notification for survey report export: " . $e->getMessage());
-        }
-    }
 }

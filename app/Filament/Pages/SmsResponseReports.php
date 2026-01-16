@@ -113,8 +113,25 @@ class SmsResponseReports extends Page
                         // Create unique progress key
                         $progressKey = "export_progress_{$userId}_{$surveyId}_" . md5($fullFilePath . now()->timestamp);
 
+                        // Check if a job for this survey/user is already in progress
+                        $uniqueJobId = "survey_export_{$userId}_{$surveyId}_" . md5($fullFilePath);
+                        $cacheKey = "export_job_running_{$uniqueJobId}";
+                        
+                        if (\Illuminate\Support\Facades\Cache::has($cacheKey)) {
+                            Notification::make()
+                                ->title('Export Already in Progress')
+                                ->body("An export for {$survey->title} is already being generated. Please wait for it to complete.")
+                                ->warning()
+                                ->send();
+                            return;
+                        }
+
+                        // Mark job as running (expires in 1 hour)
+                        \Illuminate\Support\Facades\Cache::put($cacheKey, true, 3600);
+
                         // Dispatch the job to queue (returns immediately)
                         // The job implements ShouldBeUnique to prevent duplicate runs
+                        // The job will clear the cache key in its finally block
                         GenerateSurveyReportJob::dispatch($surveyId, $userId, $diskName, $fullFilePath, $progressKey);
 
                         // Log for debugging
