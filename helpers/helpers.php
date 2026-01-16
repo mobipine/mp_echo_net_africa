@@ -871,7 +871,7 @@ function normalizePhoneNumber(string $phoneNumber): string
     if (substr($cleanNumber, 0, 1) !== "0") {
         $cleanNumber = "0" . ltrim($cleanNumber, '0');
     }
-    Log::info("Normalized phone number: {$cleanNumber}");
+    // Log::info("Normalized phone number: {$cleanNumber}");
     return $cleanNumber;
 }
 
