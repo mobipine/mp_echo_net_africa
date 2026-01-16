@@ -48,30 +48,38 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
 
     public function collection()
     {
-        // Get ALL members who started this survey
-        $allProgresses = SurveyProgress::where('survey_id', $this->surveyId)
-            ->with(['member.group', 'member.county'])
-            ->get();
+        // Pre-load all responses once (usually smaller dataset than progresses)
+        // Group by normalized phone for efficient lookup
+        $allResponses = SurveyResponse::where('survey_id', $this->surveyId)
+            ->select('msisdn', 'question_id', 'survey_response', 'created_at')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->groupBy(function ($response) {
+                return normalizePhoneNumber($response->msisdn);
+            })
+            ->map(function ($responses) {
+                // Group by question_id and get latest response
+                return $responses->groupBy('question_id')->map(function ($qResponses) {
+                    return $qResponses->first();
+                });
+            });
 
-        return $this->buildData($allProgresses);
+        // Use chunking to avoid memory issues with large datasets
+        $data = collect();
+
+        // Process progresses in chunks to avoid memory exhaustion
+        SurveyProgress::where('survey_id', $this->surveyId)
+            ->with(['member.group', 'member.county'])
+            ->chunk(1000, function ($progresses) use (&$data, $allResponses) {
+                $chunkData = $this->buildData($progresses, $allResponses);
+                $data = $data->merge($chunkData);
+            });
+
+        return $data;
     }
 
-    protected function buildData($progresses)
+    protected function buildData($progresses, $allResponses)
     {
-        // Get all responses for this survey
-        $allResponses = SurveyResponse::where('survey_id', $this->surveyId)
-            ->get();
-
-        // Group responses by normalized phone number for reliable matching
-        $responsesByPhone = collect();
-        foreach ($allResponses as $response) {
-            $normalizedPhone = normalizePhoneNumber($response->msisdn);
-            if (!$responsesByPhone->has($normalizedPhone)) {
-                $responsesByPhone[$normalizedPhone] = collect();
-            }
-            $responsesByPhone[$normalizedPhone]->push($response);
-        }
-
         $data = collect();
 
         foreach ($progresses as $progress) {
@@ -79,18 +87,16 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
             if (!$member) {
                 continue;
             }
-            
+
             $msisdn = $member->phone;
+            if (!$msisdn) {
+                continue;
+            }
+
             $normalizedMemberPhone = normalizePhoneNumber($msisdn);
-            
-            $memberResponses = $responsesByPhone->get($normalizedMemberPhone, collect());
-            // Group by question_id and get the latest response for each question
-            $responseMap = $memberResponses
-                ->sortByDesc('created_at')
-                ->groupBy('question_id')
-                ->map(function ($responses) {
-                    return $responses->first(); // Get the latest (already sorted by created_at desc)
-                });
+
+            // Get responses for this member from pre-loaded collection
+            $responseMap = $allResponses->get($normalizedMemberPhone, collect());
 
             // Build row with member details - replace empty values with N/A
             $row = [
@@ -109,15 +115,15 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
             foreach ($this->englishQuestions as $question) {
                 $englishQuestionId = $question['id'];
                 $swahiliQuestionId = $question['swahili_question_id'] ?? null;
-                
+
                 // Check English answer first, then Kiswahili
                 $englishResponse = $responseMap->get($englishQuestionId);
                 $swahiliResponse = $swahiliQuestionId ? $responseMap->get($swahiliQuestionId) : null;
-                
-                $answer = $englishResponse 
-                    ? $englishResponse->survey_response 
+
+                $answer = $englishResponse
+                    ? $englishResponse->survey_response
                     : ($swahiliResponse ? $swahiliResponse->survey_response : '');
-                
+
                 // Replace empty answer with N/A
                 $row[] = $answer ?: 'N/A';
             }

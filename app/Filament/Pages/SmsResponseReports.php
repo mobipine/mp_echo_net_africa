@@ -105,26 +105,36 @@ class SmsResponseReports extends Page
                 ->icon('heroicon-o-document-arrow-down')
                 ->color('success')
                 ->action(function () use ($surveyId, $sanitizedTitle, $survey) {
-                    $diskName = 'public';
-                    $directory = 'exports';
-                    $filenameOnly = strtolower($sanitizedTitle) . '_report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
-                    $fullFilePath = $directory . '/' . $filenameOnly;
-                    $userId = auth()->id();
+                    try {
+                        $diskName = 'public';
+                        $directory = 'exports';
+                        $filenameOnly = strtolower($sanitizedTitle) . '_report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
+                        $fullFilePath = $directory . '/' . $filenameOnly;
+                        $userId = auth()->id();
 
-                    // Queue the export
-                    Excel::queue(
-                        new ExportSurveyReport($surveyId, $userId, $diskName, $fullFilePath),
-                        $fullFilePath,
-                        $diskName
-                    );
+                        // Queue the export (returns immediately, doesn't wait)
+                        Excel::queue(
+                            new ExportSurveyReport($surveyId, $userId, $diskName, $fullFilePath),
+                            $fullFilePath,
+                            $diskName
+                        );
 
-                    // Send immediate notification
-                    Notification::make()
-                        ->title('Export Started')
-                        ->body("Your {$survey->title} report is being generated. You will be notified when it's ready for download.")
-                        ->success()
-                        ->send();
-                }),
+                        // Send immediate notification
+                        Notification::make()
+                            ->title('Export Started')
+                            ->body("Your {$survey->title} report is being generated in the background. You will be notified when it's ready for download.")
+                            ->success()
+                            ->send();
+                    } catch (\Exception $e) {
+                        \Illuminate\Support\Facades\Log::error('Failed to queue survey report export: ' . $e->getMessage());
+                        Notification::make()
+                            ->title('Export Failed')
+                            ->body('Failed to start the export. Please try again or contact support.')
+                            ->danger()
+                            ->send();
+                    }
+                })
+                ->requiresConfirmation(false),
         ];
     }
 }

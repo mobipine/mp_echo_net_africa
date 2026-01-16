@@ -29,25 +29,33 @@ class ExportSurveyReport implements WithMultipleSheets, ShouldQueue
         $this->userId = $userId;
         $this->diskName = $diskName;
         $this->filePath = $filePath;
-        $this->survey = Survey::with('questions')->findOrFail($surveyId);
 
-        // Get English questions (those with swahili_question_id set, including "no alternative" ones)
-        // A question is English if:
-        // 1. swahili_question_id is NOT NULL (has alternative OR marked as "no alternative")
-        // 2. If swahili_question_id equals the question's own ID, it means "no alternative"
-        $this->englishQuestions = $this->survey->questions()
-            ->whereNotNull('swahili_question_id') // Only English questions (with or without alternative)
-            ->orderBy('pivot_position')
-            ->get()
-            ->map(function ($question) {
-                // If swahili_question_id equals the question's own ID, it means "no alternative"
-                // Set it to null for easier handling in the export
-                if ($question->swahili_question_id == $question->id) {
-                    $question->swahili_question_id = null; // Mark as no alternative
-                }
-                return $question;
-            })
-            ->toArray();
+        // Load survey and questions in constructor (before queuing)
+        // This ensures data is available when the job runs
+        try {
+            $this->survey = Survey::with('questions')->findOrFail($surveyId);
+
+            // Get English questions (those with swahili_question_id set, including "no alternative" ones)
+            // A question is English if:
+            // 1. swahili_question_id is NOT NULL (has alternative OR marked as "no alternative")
+            // 2. If swahili_question_id equals the question's own ID, it means "no alternative"
+            $this->englishQuestions = $this->survey->questions()
+                ->whereNotNull('swahili_question_id') // Only English questions (with or without alternative)
+                ->orderBy('pivot_position')
+                ->get()
+                ->map(function ($question) {
+                    // If swahili_question_id equals the question's own ID, it means "no alternative"
+                    // Set it to null for easier handling in the export
+                    if ($question->swahili_question_id == $question->id) {
+                        $question->swahili_question_id = null; // Mark as no alternative
+                    }
+                    return $question;
+                })
+                ->toArray();
+        } catch (\Exception $e) {
+            Log::error("Failed to initialize ExportSurveyReport: " . $e->getMessage());
+            throw $e;
+        }
 
         // Build headings: Member details + English question texts
         $this->headings = [
