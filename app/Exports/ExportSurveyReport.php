@@ -15,6 +15,16 @@ class ExportSurveyReport implements WithMultipleSheets, ShouldQueue
 {
     use Exportable;
 
+    /**
+     * The number of seconds the job can run before timing out.
+     */
+    public int $timeout = 3600; // 1 hour
+
+    /**
+     * The number of times the job may be attempted.
+     */
+    public int $tries = 3;
+
     protected int $surveyId;
     protected int $userId;
     protected string $diskName;
@@ -25,15 +35,24 @@ class ExportSurveyReport implements WithMultipleSheets, ShouldQueue
 
     public function __construct(int $surveyId, int $userId, string $diskName, string $filePath)
     {
+        // Only store IDs - don't do heavy queries here (runs synchronously before queuing)
         $this->surveyId = $surveyId;
         $this->userId = $userId;
         $this->diskName = $diskName;
         $this->filePath = $filePath;
+    }
 
-        // Load survey and questions in constructor (before queuing)
-        // This ensures data is available when the job runs
+    /**
+     * Initialize survey data when job runs (not in constructor)
+     */
+    protected function initializeData(): void
+    {
+        if ($this->survey !== null) {
+            return; // Already initialized
+        }
+
         try {
-            $this->survey = Survey::with('questions')->findOrFail($surveyId);
+            $this->survey = Survey::with('questions')->findOrFail($this->surveyId);
 
             // Get English questions (those with swahili_question_id set, including "no alternative" ones)
             // A question is English if:
@@ -52,31 +71,34 @@ class ExportSurveyReport implements WithMultipleSheets, ShouldQueue
                     return $question;
                 })
                 ->toArray();
+
+            // Build headings: Member details + English question texts
+            $this->headings = [
+                'Group Name',
+                'Name',
+                'Email',
+                'Phone Number',
+                'National ID',
+                'Gender',
+                'Date of Birth',
+                'Marital Status',
+                'County Name'
+            ];
+
+            foreach ($this->englishQuestions as $question) {
+                $this->headings[] = $question['question'];
+            }
         } catch (\Exception $e) {
             Log::error("Failed to initialize ExportSurveyReport: " . $e->getMessage());
             throw $e;
-        }
-
-        // Build headings: Member details + English question texts
-        $this->headings = [
-            'Group Name',
-            'Name',
-            'Email',
-            'Phone Number',
-            'National ID',
-            'Gender',
-            'Date of Birth',
-            'Marital Status',
-            'County Name'
-        ];
-
-        foreach ($this->englishQuestions as $question) {
-            $this->headings[] = $question['question'];
         }
     }
 
     public function sheets(): array
     {
+        // Initialize data when sheets() is called (when job runs, not during queuing)
+        $this->initializeData();
+
         // Only pass userId and filePath to the first sheet to avoid duplicate notifications
         return [
             new SurveyReportSheetAll($this->surveyId, $this->englishQuestions, $this->headings, $this->userId, $this->filePath),
