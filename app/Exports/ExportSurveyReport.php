@@ -66,6 +66,7 @@ class ExportSurveyReport implements WithMultipleSheets
 
             // Build headings: Member details + English question texts
             $this->headings = [
+                'Group Name',
                 'Name',
                 'Email',
                 'Phone Number',
@@ -73,7 +74,6 @@ class ExportSurveyReport implements WithMultipleSheets
                 'Gender',
                 'Date of Birth',
                 'Marital Status',
-                'Group Name',
                 'County Name'
             ];
 
