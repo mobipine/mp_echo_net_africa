@@ -110,8 +110,12 @@ class SmsResponseReports extends Page
                         $fullFilePath = $directory . '/' . $filenameOnly;
                         $userId = auth()->id();
 
+                        // Create unique progress key
+                        $progressKey = "export_progress_{$userId}_{$surveyId}_" . md5($fullFilePath . now()->timestamp);
+
                         // Dispatch the job to queue (returns immediately)
-                        GenerateSurveyReportJob::dispatch($surveyId, $userId, $diskName, $fullFilePath);
+                        // The job implements ShouldBeUnique to prevent duplicate runs
+                        GenerateSurveyReportJob::dispatch($surveyId, $userId, $diskName, $fullFilePath, $progressKey);
 
                         // Log for debugging
                         \Illuminate\Support\Facades\Log::info('Survey report job dispatched', [

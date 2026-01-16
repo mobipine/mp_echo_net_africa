@@ -7,6 +7,7 @@ use App\Models\SurveyResponse;
 use App\Models\User;
 use Filament\Notifications\Actions\Action;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -50,34 +51,20 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
 
     public function collection()
     {
-        // Pre-load all responses once (usually smaller dataset than progresses)
-        // Group by normalized phone for efficient lookup
-        // Use chunking for responses too if dataset is very large
-        $allResponses = SurveyResponse::where('survey_id', $this->surveyId)
-            ->select('msisdn', 'question_id', 'survey_response', 'created_at')
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->groupBy(function ($response) {
-                return normalizePhoneNumber($response->msisdn);
-            })
-            ->map(function ($responses) {
-                // Group by question_id and get latest response
-                return $responses->groupBy('question_id')->map(function ($qResponses) {
-                    return $qResponses->first();
-                });
-            });
+        // Optimized: Build response lookup map efficiently using database aggregation
+        // This is much faster than loading all responses into memory
+        $responseMap = $this->buildResponseMap();
 
-        // Use a generator to avoid loading all data into memory at once
-        // This processes data in chunks and yields rows one at a time
         $data = collect();
         $processed = 0;
         $total = SurveyProgress::where('survey_id', $this->surveyId)->count();
 
-        // Process progresses in chunks to avoid memory exhaustion
+        // Process progresses in smaller chunks for better memory management
         SurveyProgress::where('survey_id', $this->surveyId)
             ->with(['member.group', 'member.county'])
-            ->chunk(500, function ($progresses) use (&$data, $allResponses, &$processed, $total) {
-                $chunkData = $this->buildData($progresses, $allResponses);
+            ->orderBy('id') // Ensure consistent ordering
+            ->chunk(250, function ($progresses) use (&$data, $responseMap, &$processed, $total) {
+                $chunkData = $this->buildData($progresses, $responseMap);
                 $data = $data->merge($chunkData);
 
                 // Update progress
@@ -93,8 +80,8 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
                     ], 3600);
                 }
 
-                // Force garbage collection after each chunk to free memory
-                if ($processed % 2000 == 0) {
+                // Force garbage collection periodically
+                if ($processed % 1000 == 0) {
                     gc_collect_cycles();
                 }
             });
@@ -102,7 +89,43 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
         return $data;
     }
 
-    protected function buildData($progresses, $allResponses)
+    /**
+     * Build response lookup map efficiently using database queries
+     * Returns: [normalized_phone => [question_id => latest_response]]
+     */
+    protected function buildResponseMap(): \Illuminate\Support\Collection
+    {
+        // Get latest response per phone/question using subquery (more efficient than loading all)
+        $responses = SurveyResponse::where('survey_id', $this->surveyId)
+            ->select('msisdn', 'question_id', 'survey_response', 'created_at')
+            ->whereIn('id', function ($query) {
+                // Subquery to get only the latest response ID for each phone/question combo
+                $query->select(DB::raw('MAX(id)'))
+                    ->from('survey_responses')
+                    ->where('survey_id', $this->surveyId)
+                    ->groupBy('msisdn', 'question_id');
+            })
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        // Build lookup map: [normalized_phone => [question_id => response]]
+        $map = collect();
+        foreach ($responses as $response) {
+            $normalizedPhone = normalizePhoneNumber($response->msisdn);
+            if (!$map->has($normalizedPhone)) {
+                $map[$normalizedPhone] = collect();
+            }
+            // Store response object
+            $map[$normalizedPhone][$response->question_id] = (object)[
+                'survey_response' => $response->survey_response,
+                'created_at' => $response->created_at
+            ];
+        }
+
+        return $map;
+    }
+
+    protected function buildData($progresses, $responseMap)
     {
         $data = collect();
 
@@ -119,8 +142,8 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
 
             $normalizedMemberPhone = normalizePhoneNumber($msisdn);
 
-            // Get responses for this member from pre-loaded collection
-            $responseMap = $allResponses->get($normalizedMemberPhone, collect());
+            // Get responses for this member from optimized lookup map
+            $memberResponses = $responseMap->get($normalizedMemberPhone, collect());
 
             // Build row with member details - replace empty values with N/A
             $row = [
@@ -141,12 +164,12 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
                 $swahiliQuestionId = $question['swahili_question_id'] ?? null;
 
                 // Check English answer first, then Kiswahili
-                $englishResponse = $responseMap->get($englishQuestionId);
-                $swahiliResponse = $swahiliQuestionId ? $responseMap->get($swahiliQuestionId) : null;
+                $englishResponse = $memberResponses->get($englishQuestionId);
+                $swahiliResponse = $swahiliQuestionId ? $memberResponses->get($swahiliQuestionId) : null;
 
                 $answer = $englishResponse
-                    ? $englishResponse->survey_response
-                    : ($swahiliResponse ? $swahiliResponse->survey_response : '');
+                    ? ($englishResponse->survey_response ?? '')
+                    : ($swahiliResponse ? ($swahiliResponse->survey_response ?? '') : '');
 
                 // Replace empty answer with N/A
                 $row[] = $answer ?: 'N/A';
@@ -248,7 +271,8 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
                 return;
             }
 
-            $downloadUrl = asset('storage/' . $this->filePath);
+            // Use Storage facade to generate correct URL
+            $downloadUrl = \Illuminate\Support\Facades\Storage::disk('public')->url($this->filePath);
             $survey = \App\Models\Survey::find($this->surveyId);
 
             Notification::make()
@@ -263,7 +287,7 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
                 ])
                 ->sendToDatabase($user);
 
-            Log::info("Survey report export completed for user {$this->userId}, file: {$this->filePath}");
+            Log::info("Survey report export completed for user {$this->userId}, file: {$this->filePath}, url: {$downloadUrl}");
         } catch (\Exception $e) {
             Log::error("Failed to send notification for survey report export: " . $e->getMessage());
         }
