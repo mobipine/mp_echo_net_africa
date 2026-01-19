@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\LoanRepayment;
+use App\Models\Setting;
 use App\Notifications\LoanRepaymentRecorded;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -15,9 +16,6 @@ use Illuminate\Support\Facades\Notification;
 class SendLoanRepaymentNotification implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    // Hard-coded for now as requested (admin/test inbox)
-    private const ADMIN_EMAIL = 'royimwangi@gmail.com';
 
     public function __construct(private readonly int $repaymentId)
     {
@@ -38,9 +36,22 @@ class SendLoanRepaymentNotification implements ShouldQueue
             return;
         }
 
+        // Check if notifications are enabled (master switch)
+        if (!Setting::get('loan_notifications.enabled', true)) {
+            Log::info('Loan repayment notifications are disabled');
+            return;
+        }
+
+        // Check if email notifications for repayments are enabled
+        if (!Setting::get('loan_repayment.email_enabled', true)) {
+            Log::info('Email notifications for loan repayments are disabled');
+            return;
+        }
+
         $memberEmail = $repayment->member?->email;
 
-        if ($memberEmail) {
+        // Send notification to member if enabled and email exists
+        if (Setting::get('loan_notifications.member_notifications', true) && $memberEmail) {
             Notification::route('mail', $memberEmail)
                 ->notify(new LoanRepaymentRecorded($repayment));
 
@@ -51,20 +62,35 @@ class SendLoanRepaymentNotification implements ShouldQueue
                 'amount' => $repayment->amount,
             ]);
         } else {
-            Log::info('Loan repayment notification skipped for member: missing email', [
+            Log::info('Loan repayment notification skipped for member', [
                 'member_id' => $repayment->member?->id,
                 'repayment_id' => $this->repaymentId,
+                'reason' => !Setting::get('loan_notifications.member_notifications', true) ? 'member_notifications_disabled' : 'missing_email',
             ]);
         }
 
-        Notification::route('mail', self::ADMIN_EMAIL)
-            ->notify(new LoanRepaymentRecorded($repayment, true));
+        // Send notification to admin if enabled
+        if (Setting::get('loan_notifications.admin_notifications', true)) {
+            $adminEmail = Setting::get('loan_notifications.admin_email');
+            
+            if ($adminEmail && $adminEmail !== 'admin@example.com') {
+                Notification::route('mail', $adminEmail)
+                    ->notify(new LoanRepaymentRecorded($repayment, true));
 
-        Log::info('Loan repayment notification sent to admin', [
-            'repayment_id' => $this->repaymentId,
-            'admin_email' => self::ADMIN_EMAIL,
-            'amount' => $repayment->amount,
-        ]);
+                Log::info('Loan repayment notification sent to admin', [
+                    'repayment_id' => $this->repaymentId,
+                    'admin_email' => $adminEmail,
+                    'amount' => $repayment->amount,
+                ]);
+            } else {
+                Log::warning('Admin email not configured for loan repayment notifications', [
+                    'repayment_id' => $this->repaymentId,
+                    'admin_email' => $adminEmail,
+                ]);
+            }
+        } else {
+            Log::info('Admin notifications are disabled for loan repayments');
+        }
     }
 }
 
