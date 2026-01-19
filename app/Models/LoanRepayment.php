@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Jobs\SendLoanRepaymentNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Log;
 
 class LoanRepayment extends Model
 {
@@ -25,6 +27,38 @@ class LoanRepayment extends Model
         'repayment_date' => 'date',
         'amount' => 'decimal:2',
     ];
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::created(function ($repayment) {
+            Log::info('LoanRepaymentObserver: created event triggered', [
+                'repayment_id' => $repayment->id,
+                'member_id' => $repayment->member_id,
+                'loan_id' => $repayment->loan_id,
+                'amount' => $repayment->amount,
+            ]);
+
+            // Dispatch notification job
+            SendLoanRepaymentNotification::dispatch($repayment->id);
+            
+            Log::info('Loan repayment notification job dispatched', [
+                'repayment_id' => $repayment->id,
+                'member_id' => $repayment->member_id,
+                'loan_id' => $repayment->loan_id,
+            ]);
+
+            // Process queue immediately in local environment
+            if (config('app.env') === 'local') {
+                \Illuminate\Support\Facades\Artisan::call('queue:work', [
+                    '--once' => true,
+                    '--timeout' => 60
+                ]);
+                Log::info('Queue processed automatically in local environment');
+            }
+        });
+    }
 
     public function loan()
     {

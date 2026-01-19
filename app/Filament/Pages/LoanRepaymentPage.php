@@ -404,6 +404,14 @@ class LoanRepaymentPage extends Page implements HasForms
         // Create transactions for the repayment
         $this->createRepaymentTransactions($repayment);
 
+        Log::info('LoanRepaymentPage: Repayment created via Filament', [
+            'repayment_id' => $repayment->id,
+            'member_id' => $repayment->member_id,
+            'loan_id' => $repayment->loan_id,
+            'amount' => $repayment->amount,
+            'created_via' => 'filament_page'
+        ]);
+
         Log::info('Loan repayment recorded successfully', ['repayment' => $repayment->toArray()]);
         
         Notification::make()
