@@ -8,7 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class LoanRepaymentRecorded extends Notification implements ShouldQueue
+class LoanRepaymentRecorded extends Notification
 {
     use Queueable;
 
@@ -33,6 +33,14 @@ class LoanRepaymentRecorded extends Notification implements ShouldQueue
         $amount = number_format((float) $this->repayment->amount, 2);
         $paymentMethod = ucfirst(str_replace('_', ' ', $this->repayment->payment_method ?? ''));
         $repaymentDate = optional($this->repayment->repayment_date)->format('M d, Y');
+
+        // Log the amount for debugging
+        \Illuminate\Support\Facades\Log::info('Email notification amount debug', [
+            'repayment_id' => $this->repayment->id,
+            'raw_amount' => $this->repayment->amount,
+            'formatted_amount' => $amount,
+            'amount_type' => gettype($this->repayment->amount),
+        ]);
 
         $mail = (new MailMessage())
             ->subject($this->forAdmin

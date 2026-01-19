@@ -21,6 +21,10 @@ class SendLoanRepaymentNotification implements ShouldQueue
 
     public function __construct(private readonly int $repaymentId)
     {
+        // In local environment, send immediately without queue
+        if (config('app.env') === 'local') {
+            $this->connection = 'sync';
+        }
     }
 
     public function handle(): void
@@ -44,6 +48,7 @@ class SendLoanRepaymentNotification implements ShouldQueue
                 'repayment_id' => $this->repaymentId,
                 'member_id' => $repayment->member?->id,
                 'member_email' => $memberEmail,
+                'amount' => $repayment->amount,
             ]);
         } else {
             Log::info('Loan repayment notification skipped for member: missing email', [
@@ -58,6 +63,7 @@ class SendLoanRepaymentNotification implements ShouldQueue
         Log::info('Loan repayment notification sent to admin', [
             'repayment_id' => $this->repaymentId,
             'admin_email' => self::ADMIN_EMAIL,
+            'amount' => $repayment->amount,
         ]);
     }
 }

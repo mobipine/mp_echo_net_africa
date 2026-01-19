@@ -48,15 +48,6 @@ class LoanRepayment extends Model
                 'member_id' => $repayment->member_id,
                 'loan_id' => $repayment->loan_id,
             ]);
-
-            // Process queue immediately in local environment
-            if (config('app.env') === 'local') {
-                \Illuminate\Support\Facades\Artisan::call('queue:work', [
-                    '--once' => true,
-                    '--timeout' => 60
-                ]);
-                Log::info('Queue processed automatically in local environment');
-            }
         });
     }
 
