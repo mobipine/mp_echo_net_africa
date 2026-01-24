@@ -30,7 +30,7 @@ class LoanRepaymentsRelationManager extends RelationManager
         // Override to use custom query since the relationship is complex (3 levels)
         $groupId = $this->getOwnerRecord()->id;
         return LoanRepayment::query()
-            ->whereHas('loan.member', fn ($query) => $query->where('group_id', $groupId));
+            ->whereHas('loan.member.groups', fn ($query) => $query->where('groups.id', $groupId));
     }
 
     public function table(Table $table): Table

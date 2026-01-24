@@ -281,7 +281,7 @@ class LoanResource extends Resource implements HasShieldPermissions
                             }
 
                             // Check if group has sufficient funds
-                            $group = $record->member->group;
+                            $group = $record->member->groups()->first() ?? $record->member->group;
                             $groupTransactionService = app(\App\Services\GroupTransactionService::class);
                             $bankAccount = $groupTransactionService->getGroupAccount($group, 'bank');
                             $currentBalance = $groupTransactionService->getGroupAccountBalance($bankAccount);
@@ -412,10 +412,21 @@ class LoanResource extends Resource implements HasShieldPermissions
     {
         $member_id = Auth::user()->member_id;
         if ($member_id) {
-        $group_id = \App\Models\Member::find($member_id)->group_id;
-        return parent::getEloquentQuery()->where('member_id', $member_id)->orWhereHas('member', function ($query) use ($group_id) {
-                $query->where('group_id', $group_id);
-            });
+            $member = \App\Models\Member::find($member_id);
+            if ($member) {
+                // Get all group IDs the member belongs to
+                $groupIds = $member->groups()->pluck('groups.id')->toArray();
+                // Fallback to legacy group_id if no groups found
+                if (empty($groupIds) && $member->group_id) {
+                    $groupIds = [$member->group_id];
+                }
+                
+                return parent::getEloquentQuery()
+                    ->where('member_id', $member_id)
+                    ->orWhereHas('member.groups', function ($query) use ($groupIds) {
+                        $query->whereIn('groups.id', $groupIds);
+                    });
+            }
         }
         return parent::getEloquentQuery();
     }
@@ -498,9 +509,9 @@ class LoanResource extends Resource implements HasShieldPermissions
             }
         }
 
-        // Get member's group for group-level accounting
-        $group = $loan->member->group;
-        $groupId = $group->id;
+        // Get member's group for group-level accounting (use first group)
+        $group = $loan->member->groups()->first() ?? $loan->member->group;
+        $groupId = $group ? $group->id : null;
 
         // Create loan receivable transaction (GROUP ACCOUNT)
         Transaction::create([

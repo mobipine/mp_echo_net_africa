@@ -101,9 +101,9 @@ class CountySurveySummaryWidget extends TableWidget
         if (!empty($this->filters['group_id'])) {
             if (is_array($this->filters['group_id'])) {
                 $groupIds = implode(',', array_map('intval', $this->filters['group_id']));
-                $sql .= " AND members.group_id IN ({$groupIds})";
+                $sql .= " AND EXISTS (SELECT 1 FROM group_member WHERE group_member.member_id = members.id AND group_member.group_id IN ({$groupIds}))";
             } else {
-                $sql .= " AND members.group_id = " . intval($this->filters['group_id']);
+                $sql .= " AND EXISTS (SELECT 1 FROM group_member WHERE group_member.member_id = members.id AND group_member.group_id = " . intval($this->filters['group_id']) . ")";
             }
         }
 

@@ -41,8 +41,8 @@ class SurveyDropoutAnalysis extends ChartWidget
         // Filter by group(s)
         if (!empty($groupIds)) {
             $groupIds = is_array($groupIds) ? $groupIds : [$groupIds];
-            $query->whereHas('member', function ($q) use ($groupIds) {
-                $q->whereIn('group_id', $groupIds);
+            $query->whereHas('member.groups', function ($q) use ($groupIds) {
+                $q->whereIn('groups.id', $groupIds);
             });
         }
         if (!empty($countyId)) {

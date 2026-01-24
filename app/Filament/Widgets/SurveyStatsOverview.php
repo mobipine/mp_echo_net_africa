@@ -45,8 +45,8 @@ class SurveyStatsOverview extends BaseWidget
         if (!empty($groupIds)) {
             $groupIds = is_array($groupIds) ? $groupIds : [$groupIds];
 
-            $baseQuery->whereHas('member', function ($query) use ($groupIds) {
-                $query->whereIn('group_id', $groupIds);
+            $baseQuery->whereHas('member.groups', function ($query) use ($groupIds) {
+                $query->whereIn('groups.id', $groupIds);
             });
         }
 

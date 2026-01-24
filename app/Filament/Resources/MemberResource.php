@@ -53,12 +53,15 @@ class MemberResource extends Resource
     {
         return $form
             ->schema([
-                \Filament\Forms\Components\Select::make('group_id')
-                ->native(false)
-                    ->label('Group')
+                \Filament\Forms\Components\Select::make('groups')
+                    ->label('Groups')
+                    ->multiple()
+                    ->relationship('groups', 'name')
                     ->searchable()
-                    ->relationship('group', 'name')
-                    ->required(),
+                    ->preload()
+                    ->native(false)
+                    ->required()
+                    ->helperText('Select one or more groups this member belongs to'),
                 \Filament\Forms\Components\TextInput::make('name')->required()->placeholder('e.g. John Doe')->hint("As it appears on the ID"),
                 \Filament\Forms\Components\TextInput::make('account_number')
                     ->required()
@@ -215,7 +218,12 @@ class MemberResource extends Resource
                 \Filament\Tables\Columns\TextColumn::make('id')->sortable(),
                 \Filament\Tables\Columns\TextColumn::make('stage')->sortable()->toggleable(isToggledHiddenByDefault:true)->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('name')->sortable()->searchable(),
-                \Filament\Tables\Columns\TextColumn::make('group.name')->label('Group')->sortable()->searchable(),
+                \Filament\Tables\Columns\TextColumn::make('groups.name')
+                    ->label('Groups')
+                    ->badge()
+                    ->separator(',')
+                    ->sortable()
+                    ->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('email')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('phone')->sortable()->toggleable(isToggledHiddenByDefault:true)->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('national_id')->sortable()->toggleable(isToggledHiddenByDefault:true),

@@ -115,7 +115,7 @@ class ApproveLoanAction
         }
 
         // Check if group has sufficient funds
-        $group = $record->member->group;
+        $group = $record->member->groups()->first() ?? $record->member->group;
         $groupTransactionService = app(\App\Services\GroupTransactionService::class);
         $bankAccount = $groupTransactionService->getGroupAccount($group, 'bank');
         $currentBalance = $groupTransactionService->getGroupAccountBalance($bankAccount);

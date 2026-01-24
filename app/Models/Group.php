@@ -28,9 +28,13 @@ class Group extends Model
     {
         return $this->belongsTo(\App\Models\County::class,'county');
     }
+    /**
+     * Get all members belonging to this group (many-to-many)
+     */
     public function members()
     {
-        return $this->hasMany(\App\Models\Member::class);
+        return $this->belongsToMany(\App\Models\Member::class, 'group_member')
+            ->withTimestamps();
     }
     public function localImplementingPartner()
     {

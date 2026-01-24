@@ -86,11 +86,17 @@ class MemberEditRequestResource extends Resource
                             Log::info($dob);
                             $member->update([
                                 'name' => $record->name ?? $member->name,
-                                'group_id' => $group_id ?? $member->group_id,
                                 'national_id' => $record->national_id ?? $member->national_id,
                                 'gender' => $record->gender ?? $member->gender,
                                 'dob' => $dob ?? $member->dob,
                             ]);
+                            
+                            // Sync groups if group_id is provided
+                            if ($group_id) {
+                                if (!$member->groups()->where('groups.id', $group_id)->exists()) {
+                                    $member->groups()->attach($group_id);
+                                }
+                            }
                            
                             $record->update(['status' => 'approved']);
                             

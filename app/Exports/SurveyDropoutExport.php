@@ -63,8 +63,8 @@ class SurveyDropoutExport implements FromCollection, WithHeadings, ShouldAutoSiz
 
         if (!empty($groupIds)) {
             $groupIds = is_array($groupIds) ? $groupIds : [$groupIds];
-            $baseQuery->whereHas('member', function ($q) use ($groupIds) {
-                $q->whereIn('group_id', $groupIds);
+            $baseQuery->whereHas('member.groups', function ($q) use ($groupIds) {
+                $q->whereIn('groups.id', $groupIds);
             });
         }
 
@@ -96,7 +96,7 @@ class SurveyDropoutExport implements FromCollection, WithHeadings, ShouldAutoSiz
 
             if (!empty($surveyId)) $countQuery->where('survey_id', $surveyId);
             if (!empty($groupIds)) {
-                $countQuery->whereHas('member', fn($q) => $q->whereIn('group_id', $groupIds));
+                $countQuery->whereHas('member.groups', fn($q) => $q->whereIn('groups.id', $groupIds));
             }
             if (!empty($countyId)) {
                 $countQuery->whereHas('member', fn($q) => $q->where('county_id', $countyId));

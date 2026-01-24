@@ -127,7 +127,7 @@ class CountySurveySummaryExport implements
         }
 
         if (!empty($this->filters['group_id'])) {
-            $sql .= " AND members.group_id = {$this->filters['group_id']}";
+            $sql .= " AND EXISTS (SELECT 1 FROM group_member WHERE group_member.member_id = members.id AND group_member.group_id = {$this->filters['group_id']})";
         }
 
         if (!$ignoreCounty && !empty($this->filters['county_id'])) {

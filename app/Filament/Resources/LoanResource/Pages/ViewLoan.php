@@ -41,7 +41,7 @@ class ViewLoan extends ViewRecord
 
         // Populate the data array with loan record data
         $this->data = [
-            'group_name' => $this->record->member->group->name,
+            'group_name' => $this->record->member->groups()->first()?->name ?? $this->record->member->group?->name ?? 'N/A',
             'loan_number' => $this->record->loan_number,
             'status' => $this->record->status,
             'principal_amount' => $this->record->principal_amount,

@@ -49,7 +49,7 @@ class ExportSurveyProgress implements
 
     public function query()
     {
-        $query = SurveyProgress::query()->with('member', 'survey');
+        $query = SurveyProgress::query()->with('member.groups', 'member.county', 'survey');
 
         // Apply filters
         if (!empty($this->filters['survey_id'])) {
@@ -57,7 +57,7 @@ class ExportSurveyProgress implements
         }
         if (!empty($this->filters['group_id'])) {
             $groupIds = is_array($this->filters['group_id']) ? $this->filters['group_id'] : [$this->filters['group_id']];
-            $query->whereHas('member', fn($q) => $q->whereIn('group_id', $groupIds));
+            $query->whereHas('member.groups', fn($q) => $q->whereIn('groups.id', $groupIds));
         }
         if (!empty($this->filters['county_id'])) {
             $query->whereHas('member', fn($q) => $q->where('county_id', $this->filters['county_id']));
@@ -115,13 +115,14 @@ class ExportSurveyProgress implements
 
     public function map($row): array
     {
+        $groupNames = $row->member->groups->pluck('name')->join(', ') ?: 'N/A';
         return [
             $row->member->name ?? 'N/A',
-            $row->member->group->name ?? 'N/A',
+            $groupNames,
             $row->member->phone ?? 'N/A',
             $row->survey->title ?? 'N/A',
             $row->currentQuestion->question ?? 'N/A',
-            $row->member->county->name ?? $row->member->group->County->name ?? 'N/A',
+            $row->member->county->name ?? ($row->member->groups->first()?->County?->name ?? 'N/A'),
             $row->status,
             // $row->completed_at ? Carbon::parse($row->completed_at)->format('Y-m-d H:i:s') : null,
             // $row->created_at ? Carbon::parse($row->created_at)->format('Y-m-d H:i:s') : null,

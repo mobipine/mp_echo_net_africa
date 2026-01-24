@@ -207,7 +207,10 @@ class LoanApplication extends Page implements HasForms
                         if (!$groupId) {
                             return [];
                         }
-                        return Member::where('group_id', $groupId)
+                        // Get members that belong to the selected group (via many-to-many)
+                        return Member::whereHas('groups', function ($query) use ($groupId) {
+                            $query->where('groups.id', $groupId);
+                        })
                             ->get()
                             ->pluck('name', 'id')
                             ->toArray();
@@ -681,7 +684,9 @@ class LoanApplication extends Page implements HasForms
         // Log::info($groupId, $currentMemberId, $principalAmount);
 
         // Get all members in the group except the loan applicant
-        $members = Member::where('group_id', $groupId)
+        $members = Member::whereHas('groups', function ($query) use ($groupId) {
+            $query->where('groups.id', $groupId);
+        })
             ->where('id', '!=', $currentMemberId)
             ->get();
 
@@ -1359,7 +1364,9 @@ class LoanApplication extends Page implements HasForms
         if ($memberId && !$groupId) {
             $member = Member::find($memberId);
             if ($member) {
-                $groupId = $member->group_id;
+                // Get the first group from the many-to-many relationship
+                $firstGroup = $member->groups()->first();
+                $groupId = $firstGroup ? $firstGroup->id : null;
             }
         }
 

@@ -61,7 +61,7 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
 
         // Process progresses in smaller chunks for better memory management
         SurveyProgress::where('survey_id', $this->surveyId)
-            ->with(['member.group', 'member.county'])
+            ->with(['member.groups', 'member.county'])
             ->orderBy('id') // Ensure consistent ordering
             ->chunk(250, function ($progresses) use (&$data, $responseMap, &$processed, $total) {
                 $chunkData = $this->buildData($progresses, $responseMap);
@@ -146,8 +146,9 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
             $memberResponses = $responseMap->get($normalizedMemberPhone, collect());
 
             // Build row with member details - replace empty values with N/A
+            $groupNames = $member->groups->pluck('name')->join(', ') ?: 'N/A';
             $row = [
-                $member->group->name ?? 'N/A',
+                $groupNames,
                 $member->name ?? 'N/A',
                 $member->email ?? 'N/A',
                 $msisdn ?? 'N/A',

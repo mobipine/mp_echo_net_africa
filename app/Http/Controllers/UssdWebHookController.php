@@ -448,7 +448,9 @@ class UssdWebHookController extends Controller
 
         // Mark session as authorized for this phone number
         $session->authenticated_user_id = $official->member->user->id ?? null;
-        $session->group_id = $official->group_id;
+        // Get the first group from the member's groups (for backward compatibility)
+        $firstGroup = $official->member->groups()->first();
+        $session->group_id = $firstGroup ? $firstGroup->id : $official->group_id;
         $session->setData('authorized', true);
         $session->setData('authorized_phone', $session->phone_number);
         $session->setData('authorized_national_id', $userInput);
@@ -663,7 +665,9 @@ class UssdWebHookController extends Controller
             ->limit($resultsLimit);
 
         if ($groupId) {
-            $query->where('group_id', $groupId);
+            $query->whereHas('groups', function ($q) use ($groupId) {
+                $q->where('groups.id', $groupId);
+            });
         }
 
         $results = $query->get();
@@ -882,7 +886,7 @@ class UssdWebHookController extends Controller
 
         // Get member data if available
         $memberId = $session->getData('selected_member_id');
-        $member = $memberId ? Member::with('group')->find($memberId) : null;
+        $member = $memberId ? Member::with('groups')->find($memberId) : null;
 
         // Get loan data if available
         // $loanId = $session->getData('selected_loan_id');
@@ -913,7 +917,7 @@ class UssdWebHookController extends Controller
             '{member_name}' => $member ? $member->name : '[No member selected]',
             '{member_phone}' => $member ? $member->phone : '[No phone]',
             '{member_id}' => $member ? $member->id : '[No ID]',
-            '{group_name}' => $member && $member->group ? $member->group->name : '[No group]',
+            '{group_name}' => $member && $member->groups->isNotEmpty() ? $member->groups->first()->name : '[No group]',
             '{repayment_amount}' => $session->getData('repayment_amount') ? 'KES ' . number_format($session->getData('repayment_amount'), 2) : '[No amount]',
             '{new_balance}' => $session->getData('calculated_new_balance') ? 'KES ' . number_format($session->getData('calculated_new_balance'), 2) : '[Not calculated]',
         ];

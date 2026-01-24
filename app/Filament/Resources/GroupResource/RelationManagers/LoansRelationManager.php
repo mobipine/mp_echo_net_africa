@@ -28,9 +28,9 @@ class LoansRelationManager extends RelationManager
 
     protected function getTableQuery(): Builder
     {
-        // Get all loans for members of this group
+        // Get all loans for members of this group (using many-to-many relationship)
         return Loan::query()
-            ->whereHas('member', fn ($query) => $query->where('group_id', $this->getOwnerRecord()->id));
+            ->whereHas('member.groups', fn ($query) => $query->where('groups.id', $this->getOwnerRecord()->id));
     }
 
     public function table(Table $table): Table

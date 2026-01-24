@@ -269,9 +269,9 @@ class AccrueLoanInterest extends Command
      */
     private function createInterestAccrualTransactions(Loan $loan, float $interestAmount): void
     {
-        // Get member's group for group-level accounting
-        $group = $loan->member->group;
-        $groupId = $group->id;
+        // Get member's group for group-level accounting (use first group)
+        $group = $loan->member->groups()->first() ?? $loan->member->group;
+        $groupId = $group ? $group->id : null;
 
         // Debit: Interest Receivable (Asset - money owed to us) - GROUP ACCOUNT
         Transaction::create([

@@ -26,9 +26,36 @@ class Member extends Model
         return $this->belongsTo(\App\Models\County::class);
     }
 
+    /**
+     * Get the primary group (for backward compatibility)
+     * Returns the first group from the many-to-many relationship
+     * or falls back to the legacy group_id if pivot table is empty
+     * 
+     * @deprecated Use groups() relationship instead
+     */
     public function group()
     {
-        return $this->belongsTo(\App\Models\Group::class);
+        // Try to get from pivot table first
+        $firstGroup = $this->groups()->first();
+        if ($firstGroup) {
+            return $firstGroup;
+        }
+        
+        // Fallback to legacy group_id for backward compatibility
+        if ($this->group_id) {
+            return \App\Models\Group::find($this->group_id);
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get all groups this member belongs to (many-to-many)
+     */
+    public function groups()
+    {
+        return $this->belongsToMany(\App\Models\Group::class, 'group_member')
+            ->withTimestamps();
     }
 
     public function dependants()

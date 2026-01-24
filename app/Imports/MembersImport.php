@@ -116,7 +116,6 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                     if ($existing) {
                         // Update only missing or outdated fields
                         $existing->update([
-                            'group_id' => $group->id,
                             'name' => $existing->name ?: $name,
                             'phone' => $phone ?: $existing->phone,
                             'gender' => $this->normalizeGender($gender) ?: $existing->gender,
@@ -124,12 +123,16 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                             'county_id' => $countyId ?: $existing->county_id,
                             'is_active' => true,
                         ]);
+                        
+                        // Sync groups (add group if not already associated)
+                        if (!$existing->groups()->where('groups.id', $group->id)->exists()) {
+                            $existing->groups()->attach($group->id);
+                        }
 
                         $updatedCount++;
                     } else {
                         // Create new member
-                        Member::create([
-                            'group_id' => $group->id,
+                        $member = Member::create([
                             'name' => $name,
                             'phone' => $phone ?: null,
                             'national_id' => $nationalId,
@@ -138,6 +141,9 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                             'dob' => $dobCarbon,
                             'is_active' => true,
                         ]);
+                        
+                        // Attach group
+                        $member->groups()->attach($group->id);
 
                         $importedCount++;
                     }

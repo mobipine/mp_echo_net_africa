@@ -251,9 +251,9 @@ class RepaymentAllocationService
      */
     private function createChargesPaymentTransactions(Loan $loan, float $amount, string $accountName = ""): array
     {
-        // Get member's group for group-level accounting
-        $group = $loan->member->group;
-        $groupId = $group->id;
+        // Get member's group for group-level accounting (use first group)
+        $group = $loan->member->groups()->first() ?? $loan->member->group;
+        $groupId = $group ? $group->id : null;
         
         return [
             // Debit: Bank/Cash Account (money coming in) - GROUP ACCOUNT
@@ -291,9 +291,9 @@ class RepaymentAllocationService
      */
     private function createInterestPaymentTransactions(Loan $loan, float $amount, string $accountName = ""): array
     {
-        // Get member's group for group-level accounting
-        $group = $loan->member->group;
-        $groupId = $group->id;
+        // Get member's group for group-level accounting (use first group)
+        $group = $loan->member->groups()->first() ?? $loan->member->group;
+        $groupId = $group ? $group->id : null;
         
         return [
             // Debit: Bank/Cash Account (money coming in) - GROUP ACCOUNT
@@ -331,9 +331,9 @@ class RepaymentAllocationService
      */
     private function createPrincipalPaymentTransactions(Loan $loan, float $amount, string $accountName = ""): array
     {
-        // Get member's group for group-level accounting
-        $group = $loan->member->group;
-        $groupId = $group->id;
+        // Get member's group for group-level accounting (use first group)
+        $group = $loan->member->groups()->first() ?? $loan->member->group;
+        $groupId = $group ? $group->id : null;
         
         return [
             // Debit: Bank/Cash Account (money coming in) - GROUP ACCOUNT
