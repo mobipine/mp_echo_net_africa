@@ -111,7 +111,7 @@ class LoanRepaymentsRelationManager extends RelationManager
 
                 TextColumn::make('repayment_date')
                     ->label('Date')
-                    ->date('M j, Y')
+                    ->dateTime('M j, Y g:i A')
                     ->sortable(),
 
                 BadgeColumn::make('payment_method')

@@ -61,7 +61,7 @@ class TransactionResource extends Resource
                     ->money('KES', true)
                     ->sortable(),
                 Tables\Columns\TextColumn::make('transaction_date')
-                    ->date()
+                    ->dateTime()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('description')
                     ->limit(50)

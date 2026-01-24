@@ -177,7 +177,7 @@ class LoanResource extends Resource implements HasShieldPermissions
 
 
                 Tables\Columns\TextColumn::make('release_date')
-                    ->date()
+                    ->dateTime()
                     ->searchable()
                     // ->format('Y-m-d')
                     ->sortable(),

@@ -32,7 +32,7 @@ class LoanRepaymentRecorded extends Notification
         $loanNumber = $loan?->loan_number ?? 'N/A';
         $amount = number_format((float) $this->repayment->amount, 2);
         $paymentMethod = ucfirst(str_replace('_', ' ', $this->repayment->payment_method ?? ''));
-        $repaymentDate = optional($this->repayment->repayment_date)->format('M d, Y');
+        $repaymentDate = optional($this->repayment->repayment_date)->format('M d, Y H:i:s');
 
         // Log the amount for debugging
         \Illuminate\Support\Facades\Log::info('Email notification amount debug', [
@@ -54,7 +54,7 @@ class LoanRepaymentRecorded extends Notification
             )
             ->line("Loan Number: {$loanNumber}")
             ->line("Amount Paid: KES {$amount}")
-            ->line("Payment Method: {$paymentMethod}")
+            ->line("Payment Record Method: {$paymentMethod}")
             ->line("Repayment Date: {$repaymentDate}");
 
         if ($this->forAdmin && $member) {
@@ -65,4 +65,3 @@ class LoanRepaymentRecorded extends Notification
         return $mail->line('Thank you for your prompt payment.');
     }
 }
-

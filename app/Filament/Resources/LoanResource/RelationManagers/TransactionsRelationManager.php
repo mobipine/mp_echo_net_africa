@@ -146,7 +146,7 @@ class TransactionsRelationManager extends RelationManager
                     
                 TextColumn::make('transaction_date')
                     ->label('Date')
-                    ->date()
+                    ->dateTime()
                     ->sortable(),
                     
                 TextColumn::make('description')

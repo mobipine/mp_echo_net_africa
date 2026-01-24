@@ -55,7 +55,7 @@ class LoanRepaymentsRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('repayment_date')
                     ->label('Repayment Date')
-                    ->date()
+                    ->dateTime()
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('payment_method')
@@ -96,4 +96,3 @@ class LoanRepaymentsRelationManager extends RelationManager
             ->defaultSort('repayment_date', 'desc');
     }
 }
-
