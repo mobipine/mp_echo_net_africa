@@ -48,15 +48,64 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                     continue;
                 }
 
-                // Normalize phone number
-                if (!empty($phone) && !Str::startsWith($phone, '0')) {
-                    $phone = '0' . $phone;
-                }
-                if (strlen($phone) !== 10) {
-                    Log::warning("Invalid phone number skipped: {$phone}");
-
-                    $skippedCount++;
-                    continue; // skip this row
+                // Normalize phone number - format all phone numbers to ensure they're valid
+                if (!empty($phone)) {
+                    // Remove all non-digit characters
+                    $phone = preg_replace('/\D/', '', $phone);
+                    $originalPhone = $phone;
+                    
+                    // Handle different phone number formats
+                    // If it starts with 254 (country code), convert to 0 format
+                    if (substr($phone, 0, 3) === "254") {
+                        $phone = "0" . substr($phone, 3);
+                    }
+                    
+                    // If it's 13 digits starting with 0, it might be 0 + 254 + 9 digits
+                    // Remove the extra leading 0 and 254
+                    if (strlen($phone) === 13 && substr($phone, 0, 1) === "0" && substr($phone, 1, 3) === "254") {
+                        $phone = "0" . substr($phone, 4);
+                    }
+                    
+                    // If it's 12 digits starting with 0, it might be 0 + 254 + 8 digits
+                    // Remove the 254 part
+                    if (strlen($phone) === 12 && substr($phone, 0, 1) === "0" && substr($phone, 1, 3) === "254") {
+                        $phone = "0" . substr($phone, 4);
+                    }
+                    
+                    // If it's 11 digits starting with 0, take the last 10 digits (remove first digit)
+                    if (strlen($phone) === 11 && substr($phone, 0, 1) === "0") {
+                        $phone = "0" . substr($phone, 2);
+                    }
+                    
+                    // If it's 9 digits, add a leading 0 (assuming missing first digit)
+                    if (strlen($phone) === 9) {
+                        $phone = "0" . $phone;
+                    }
+                    
+                    // Ensure it starts with 0
+                    if (strlen($phone) > 0 && substr($phone, 0, 1) !== "0") {
+                        $phone = "0" . ltrim($phone, '0');
+                    }
+                    
+                    // If still not 10 digits, try to fix it
+                    if (strlen($phone) > 10) {
+                        // Take last 10 digits (ensuring it starts with 0)
+                        $phone = "0" . substr($phone, -9);
+                    } elseif (strlen($phone) < 10 && strlen($phone) > 0) {
+                        // Pad with leading zeros if less than 10 digits
+                        $phone = str_pad($phone, 10, "0", STR_PAD_LEFT);
+                    }
+                    
+                    // Final validation - if still not 10 digits, set to null but don't skip the row
+                    if (strlen($phone) !== 10) {
+                        Log::warning("Phone number could not be normalized properly (original: {$originalPhone}, normalized: {$phone}), setting to null");
+                        $phone = null;
+                    } elseif ($originalPhone !== $phone) {
+                        // Only log if the phone number was actually changed during normalization
+                        Log::info("Phone number normalized: {$originalPhone} -> {$phone}");
+                    }
+                } else {
+                    $phone = null;
                 }
 
                 // Create or get group
@@ -88,15 +137,16 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
 
                 $countyId = null;
 
-                if (!empty($countyName)) {
-                    $county = County::whereRaw('LOWER(name) = ?', [strtolower($countyName)])->first();
+                // Commented out county check - no longer validating county presence
+                // if (!empty($countyName)) {
+                //     $county = County::whereRaw('LOWER(name) = ?', [strtolower($countyName)])->first();
 
-                    if ($county) {
-                        $countyId = $county->id;
-                    } else {
-                        Log::warning("County not found: {$countyName}");
-                    }
-                }
+                //     if ($county) {
+                //         $countyId = $county->id;
+                //     } else {
+                //         Log::warning("County not found: {$countyName}");
+                //     }
+                // }
 
                 // Use a transaction to ensure safe updates
                 DB::transaction(function () use (
