@@ -175,6 +175,8 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
 
         $surveyOrder = $this->survey->order;
         $totalSent = 0;
+        
+        Log::info("Survey '{$this->survey->title}' has order: {$surveyOrder}");
 
         foreach ($groupIds as $groupId) {
             $group = Group::find($groupId);
@@ -183,28 +185,49 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                 continue;
             }
 
+            // Get all members first for debugging
+            $allMembers = $group->members()->get();
+            Log::info("Group '{$group->name}' (ID: {$group->id}) has {$allMembers->count()} total members");
+            
+            // Log member details for debugging
+            foreach ($allMembers as $m) {
+                Log::info("Member: {$m->name} (ID: {$m->id}), is_active: " . ($m->is_active ? 'true' : 'false') . ", stage: {$m->stage}, phone: {$m->phone}");
+            }
+            
             $members = $group->members()->where('is_active', true)->get();
             $sentCount = 0;
-            Log::info("Processing {$members->count()} members in group '{$group->name}'");
+            Log::info("Processing {$members->count()} active members in group '{$group->name}' (after filtering by is_active=true)");
 
             foreach ($members as $member) {
+                // Check if member has a phone number
+                if (empty($member->phone)) {
+                    Log::warning("Skipping {$member->name} (ID: {$member->id}): no phone number");
+                    continue;
+                }
+                
                 // --- Stage check and sequencing ---
-                if ($surveyOrder === 1) {
+                // Allow members in 'New' stage to receive any survey (for testing/flexibility)
+                // For other stages, check if they've completed the previous survey
+                if ($member->stage === 'New') {
+                    // Members in 'New' stage can receive any survey
+                    Log::info("Member {$member->name} (ID: {$member->id}) is in 'New' stage - allowing dispatch of survey order {$surveyOrder}");
+                } elseif ($surveyOrder === 1) {
+                    // For order 1, only allow 'New' members (already handled above, but keeping for clarity)
                     if ($member->stage !== 'New') {
-                        Log::info("Skipping {$member->name}: not in 'New' stage for first survey.");
+                        Log::info("Skipping {$member->name} (ID: {$member->id}): not in 'New' stage for first survey (current stage: '{$member->stage}')");
                         continue;
                     }
                 } else {
-                    // Fetch previous survey by order
+                    // For surveys with order > 1, check if member completed previous survey
                     $previousSurvey = Survey::where('order', $surveyOrder - 1)->first();
                     if (!$previousSurvey) {
-                        Log::warning("Previous survey (order " . ($surveyOrder - 1) . ") not found. Skipping {$member->name}.");
+                        Log::warning("Previous survey (order " . ($surveyOrder - 1) . ") not found. Skipping {$member->name} (ID: {$member->id}).");
                         continue;
                     }
 
                     $expectedStage = str_replace(' ', '', ucfirst($previousSurvey->title)) . 'Completed';
                     if ($member->stage !== $expectedStage) {
-                        Log::info("Skipping {$member->name}: stage '{$member->stage}' does not match expected '{$expectedStage}'.");
+                        Log::info("Skipping {$member->name} (ID: {$member->id}): stage '{$member->stage}' does not match expected '{$expectedStage}'.");
                         continue;
                     }
                 }
