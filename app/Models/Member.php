@@ -27,26 +27,14 @@ class Member extends Model
     }
 
     /**
-     * Get the primary group (for backward compatibility)
-     * Returns the first group from the many-to-many relationship
-     * or falls back to the legacy group_id if pivot table is empty
+     * Get the primary group via group_id (for backward compatibility)
+     * This relationship uses the legacy group_id column
      * 
-     * @deprecated Use groups() relationship instead
+     * @deprecated Use groups() relationship for many-to-many support
      */
     public function group()
     {
-        // Try to get from pivot table first
-        $firstGroup = $this->groups()->first();
-        if ($firstGroup) {
-            return $firstGroup;
-        }
-        
-        // Fallback to legacy group_id for backward compatibility
-        if ($this->group_id) {
-            return \App\Models\Group::find($this->group_id);
-        }
-        
-        return null;
+        return $this->belongsTo(\App\Models\Group::class);
     }
 
     /**

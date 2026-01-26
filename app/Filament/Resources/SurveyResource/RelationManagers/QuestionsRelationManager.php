@@ -77,6 +77,16 @@ class QuestionsRelationManager extends RelationManager
                     // ->modalButton('Create'),
             ])
             ->actions([
+                // Tables\Actions\ViewAction::make()
+                //     ->modalHeading(fn (Model $record) => 'View Question: ' . substr($record->question, 0, 50) . (strlen($record->question) > 50 ? '...' : ''))
+                //     ->modalContent(function (Model $record) {
+                //         // Eager load the swahili question relationship
+                //         $record->load('swahiliQuestion');
+                //         return view('filament.resources.survey-resource.relation-managers.view-question', [
+                //             'question' => $record,
+                //         ]);
+                //     })
+                //     ->modalWidth('2xl'),
                 Tables\Actions\EditAction::make()
                     ->url(fn (Model $record): string => \App\Filament\Resources\SurveyQuestionResource::getUrl('edit', ['record' => $record])),
                 Action::make('remove')
