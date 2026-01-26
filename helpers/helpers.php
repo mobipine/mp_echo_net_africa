@@ -273,13 +273,16 @@ function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
     ];
     }else{
 
+        // Get the first group from the many-to-many relationship
+        $group = $member?->groups()->first();
+        
         $placeholders = [
         '{member}' => $member?->name  ?? "Not recorded",
-        '{group}' => $member?->group?->name  ?? "Not recorded",
+        '{group}' => $group?->name  ?? "Not recorded",
         '{id}' => $member?->national_id   ?? "Not recorded",
         '{gender}'=>$member?->gender   ?? "Not recorded",
         '{dob}'=> \Carbon\Carbon::parse($member?->dob)->format('Y')   ?? "Not recorded",
-        '{LIP}' => $member?->group?->localImplementingPartner?->name  ?? "Not recorded" ,
+        '{LIP}' => $group?->localImplementingPartner?->name  ?? "Not recorded" ,
         '{month}' => \Carbon\Carbon::now()->monthName  ?? "Not recorded",
         '{loan_received_month}' => $loanMonth   ?? "Not recorded",
         '{loan_amount_received}' => $loanAmount  ?? "Not recorded", // Use 'N/A' or 0 if no response found
