@@ -6,10 +6,8 @@ use App\Models\Group;
 use App\Models\Member;
 use App\Models\SMSInbox;
 use App\Models\Survey;
-use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 class EstimateSurveyCost extends Command
 {
@@ -63,27 +61,30 @@ class EstimateSurveyCost extends Command
         $this->newLine();
 
         // Get all questions for the survey (ordered by position)
-        // Only count questions with Kiswahili alternatives (swahili_question_id IS NOT NULL and != question.id)
+        // Only count questions that have swahili_question_id set (either with alternative OR marked as "no alternative")
+        // Exclude questions where swahili_question_id IS NULL (Kiswahili questions or unconfigured)
         // Since members receive either English OR Kiswahili version, not both
         $allQuestions = $survey->questions()->get();
         
-        // Filter to only English questions that have real Kiswahili alternatives
-        // (swahili_question_id IS NOT NULL and not equal to the question's own ID)
+        // Filter to only English questions (swahili_question_id IS NOT NULL)
+        // This includes:
+        // 1. Questions with a real Kiswahili alternative (swahili_question_id != question.id)
+        // 2. Questions marked as "no alternative" (swahili_question_id == question.id)
+        // Excludes: Questions where swahili_question_id IS NULL (Kiswahili questions)
         $questions = $allQuestions->filter(function ($question) {
-            return $question->swahili_question_id !== null 
-                && $question->swahili_question_id != $question->id;
+            return $question->swahili_question_id !== null;
         });
         
         if ($questions->isEmpty()) {
-            $this->error("Survey has no questions with Kiswahili alternatives.");
-            $this->warn("Note: Only questions with Kiswahili alternatives are counted for cost estimation.");
+            $this->error("Survey has no English questions configured (swahili_question_id is null for all questions).");
+            $this->warn("Note: Only questions with swahili_question_id set (with alternative or marked as 'no alternative') are counted.");
             return 1;
         }
 
         $totalQuestions = $allQuestions->count();
-        $questionsWithAlternatives = $questions->count();
+        $questionsCounted = $questions->count();
         $this->info("Found {$totalQuestions} total question(s) in survey");
-        $this->info("Counting {$questionsWithAlternatives} question(s) with Kiswahili alternatives for cost estimation");
+        $this->info("Counting {$questionsCounted} question(s) with swahili_question_id set (includes alternatives and 'no alternative' markers)");
         $this->newLine();
 
         // Get a sample member for message formatting (use first active member from first group)
@@ -162,31 +163,25 @@ class EstimateSurveyCost extends Command
                 continue;
             }
 
-            // Get all active members in this group
-            $allMembers = $group->members()->where('is_active', true)->get();
+            // Get all active members in this group (no stage or order filtering)
+            $members = $group->members()->where('is_active', true)->get();
             
-            // Filter eligible members based on stage and uniqueness (same logic as SendSurveyToGroupJob)
-            $eligibleMembers = $this->getEligibleMembers($allMembers, $survey);
-            
-            $eligibleCount = $eligibleMembers->count();
-            $totalCount = $allMembers->count();
+            $memberCount = $members->count();
             
             // Calculate totals for this group
             $messagesPerMember = $questions->count(); // One message per question
-            $totalMessages = $eligibleCount * $messagesPerMember;
-            $totalCredits = $eligibleCount * $totalQuestionCredits;
+            $totalMessages = $memberCount * $messagesPerMember;
+            $totalCredits = $memberCount * $totalQuestionCredits;
 
             $groupResults[] = [
                 'group_id' => $group->id,
                 'group_name' => $group->name,
-                'total_members' => $totalCount,
-                'eligible_members' => $eligibleCount,
-                'ineligible_members' => $totalCount - $eligibleCount,
+                'members' => $memberCount,
                 'messages' => $totalMessages,
                 'credits' => $totalCredits,
             ];
 
-            $grandTotalMembers += $eligibleCount;
+            $grandTotalMembers += $memberCount;
             $grandTotalMessages += $totalMessages;
             $grandTotalCredits += $totalCredits;
         }
@@ -194,14 +189,12 @@ class EstimateSurveyCost extends Command
         // Display group breakdown
         $this->info("Group Breakdown:");
         $this->table(
-            ['Group ID', 'Group Name', 'Total Members', 'Eligible', 'Ineligible', 'Total Messages', 'Total Credits'],
+            ['Group ID', 'Group Name', 'Active Members', 'Total Messages', 'Total Credits'],
             collect($groupResults)->map(function ($g) {
                 return [
                     $g['group_id'],
                     $g['group_name'],
-                    $g['total_members'],
-                    $g['eligible_members'],
-                    $g['ineligible_members'],
+                    number_format($g['members']),
                     number_format($g['messages']),
                     number_format($g['credits']),
                 ];
@@ -212,11 +205,11 @@ class EstimateSurveyCost extends Command
         // Display summary
         $this->info("📈 Summary:");
         $this->line("   Total Groups: " . count($groupResults));
-        $this->line("   Total Eligible Members: " . number_format($grandTotalMembers));
+        $this->line("   Total Active Members: " . number_format($grandTotalMembers));
         $this->line("   Total Messages (if all complete): " . number_format($grandTotalMessages));
         $this->line("   Total Credits Required (maximum): " . number_format($grandTotalCredits));
         $this->newLine();
-        $this->comment("   Note: This is a maximum estimate assuming all eligible members complete the survey.");
+        $this->comment("   Note: This is a maximum estimate assuming all active members complete the survey.");
         $this->comment("   Initial send will only use " . number_format($grandTotalMembers) . " messages (first question).");
         $this->comment("   Additional messages are sent as members respond and progress through the survey.");
         $this->newLine();
@@ -234,50 +227,5 @@ class EstimateSurveyCost extends Command
         }
 
         return 0;
-    }
-
-    /**
-     * Get eligible members based on stage and uniqueness rules
-     */
-    protected function getEligibleMembers($members, Survey $survey)
-    {
-        $surveyOrder = $survey->order;
-        $eligible = collect();
-
-        foreach ($members as $member) {
-            // Stage check
-            if ($surveyOrder === 1) {
-                if ($member->stage !== 'New') {
-                    continue;
-                }
-            } else {
-                // Fetch previous survey by order
-                $previousSurvey = Survey::where('order', $surveyOrder - 1)->first();
-                if (!$previousSurvey) {
-                    continue;
-                }
-
-                $expectedStage = str_replace(' ', '', ucfirst($previousSurvey->title)) . 'Completed';
-                if ($member->stage !== $expectedStage) {
-                    continue;
-                }
-            }
-
-            // Participant uniqueness check
-            if ($survey->participant_uniqueness) {
-                $existingProgress = SurveyProgress::where('member_id', $member->id)
-                    ->where('survey_id', $survey->id)
-                    ->whereNull('completed_at')
-                    ->exists();
-                
-                if ($existingProgress) {
-                    continue;
-                }
-            }
-
-            $eligible->push($member);
-        }
-
-        return $eligible;
     }
 }
