@@ -31,9 +31,45 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
         foreach ($rows as $row) {
             try {
                 $groupName = trim($row['group_name'] ?? '');
-                $name = trim($row['name_of_participant'] ?? '');
+                $name = trim($row['name_of_participant'] ?? '') ?: 'XXXXX';
                 $phone = trim($row['phone_no'] ?? '');
                 $nationalId = trim($row['national_id'] ?? '');
+
+                // Check if fields are switched - Logic to fix switched Phone and ID columns
+                // Some records have the Phone Number in the ID field and the ID in the Phone field
+                $cleanPhone = preg_replace('/\D/', '', $phone);
+                $cleanId = preg_replace('/\D/', '', $nationalId);
+
+                $idLooksLikePhone = false;
+                // Check if National ID looks like a valid phone number
+                // 1. 12 digits starting with 254 (e.g., 254712345678)
+                // 2. 10 digits starting with 07 or 01 (e.g., 0712345678, 0123456789)
+                // 3. 9 digits starting with 7 or 1 (missing leading 0, e.g., 712345678)
+                if (
+                    (strlen($cleanId) === 12 && substr($cleanId, 0, 3) === '254') ||
+                    (strlen($cleanId) === 10 && (substr($cleanId, 0, 2) === '07' || substr($cleanId, 0, 2) === '01')) ||
+                    (strlen($cleanId) === 9 && (substr($cleanId, 0, 1) === '7' || substr($cleanId, 0, 1) === '1'))
+                ) {
+                    $idLooksLikePhone = true;
+                }
+
+                $phoneLooksLikeId = false;
+                // Check if Phone field looks like an ID (or is empty)
+                // National IDs are typically 7-8 digits in Kenya. 
+                // We assume if it's 8 digits or less, it's NOT a valid phone number (too short)
+                if (strlen($cleanPhone) <= 8) {
+                    $phoneLooksLikeId = true;
+                }
+
+                if ($idLooksLikePhone && $phoneLooksLikeId) {
+                    $temp = $phone;
+                    $phone = $nationalId;
+                    $nationalId = $temp;
+                }
+
+                // Apply default to nationalId if empty
+                $nationalId = $nationalId ?: '00000000';
+                
                 $gender = trim($row['gender'] ?? '');
                 // $dob = $row['year_birth'] ?? $row['year'] ?? null;
                 // Handle DOB (year only)
@@ -41,12 +77,6 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                 $countyName = trim($row['county_name'] ?? '');
 
                
-
-                // Skip invalid rows
-                if (empty($name) || empty($nationalId)) {
-                    $skippedCount++;
-                    continue;
-                }
 
                 // Normalize phone number - format all phone numbers to ensure they're valid
                 if (!empty($phone)) {
@@ -102,11 +132,12 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                         $phone = null;
                     } elseif ($originalPhone !== $phone) {
                         // Only log if the phone number was actually changed during normalization
-                        Log::info("Phone number normalized: {$originalPhone} -> {$phone}");
+                        // Log::info("Phone number normalized: {$originalPhone} -> {$phone}");
                     }
                 } else {
                     $phone = null;
                 }
+
 
                 // Create or get group
                 $group = Group::firstOrCreate(
@@ -199,11 +230,13 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                     }
                 });
             } catch (\Exception $e) {
-                Log::error('Import Error: ' . $e->getMessage());
+                Log::error('Import Error: ' . $e->getMessage() . ' | Skipped Row Data: ' . json_encode($row));
                 $skippedCount++;
                 continue;
             }
         }
+
+        Log::info("Import Process Completed. Imported: {$importedCount}, Updated: {$updatedCount}, Skipped: {$skippedCount}");
 
         // Flash results for user feedback
         session()->flash('import_results', [
