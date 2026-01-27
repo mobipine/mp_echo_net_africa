@@ -4,6 +4,7 @@ namespace App\Imports;
 
 use App\Models\Member;
 use App\Models\Group;
+use Propaganistas\LaravelPhone\PhoneNumber;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,7 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
         $updatedCount = 0;
         $skippedCount = 0;
 
-        foreach ($rows as $row) {
+            foreach ($rows as $index => $row) {
             try {
                 $groupName = trim($row['group_name'] ?? '');
                 $name = trim($row['name_of_participant'] ?? '') ?: 'XXXXX';
@@ -76,68 +77,6 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                 $dobYear = trim($row['year'] ?? null);
                 $countyName = trim($row['county_name'] ?? '');
 
-               
-
-                // Normalize phone number - format all phone numbers to ensure they're valid
-                if (!empty($phone)) {
-                    // Remove all non-digit characters
-                    $phone = preg_replace('/\D/', '', $phone);
-                    $originalPhone = $phone;
-                    
-                    // Handle different phone number formats
-                    // If it starts with 254 (country code), convert to 0 format
-                    if (substr($phone, 0, 3) === "254") {
-                        $phone = "0" . substr($phone, 3);
-                    }
-                    
-                    // If it's 13 digits starting with 0, it might be 0 + 254 + 9 digits
-                    // Remove the extra leading 0 and 254
-                    if (strlen($phone) === 13 && substr($phone, 0, 1) === "0" && substr($phone, 1, 3) === "254") {
-                        $phone = "0" . substr($phone, 4);
-                    }
-                    
-                    // If it's 12 digits starting with 0, it might be 0 + 254 + 8 digits
-                    // Remove the 254 part
-                    if (strlen($phone) === 12 && substr($phone, 0, 1) === "0" && substr($phone, 1, 3) === "254") {
-                        $phone = "0" . substr($phone, 4);
-                    }
-                    
-                    // If it's 11 digits starting with 0, take the last 10 digits (remove first digit)
-                    if (strlen($phone) === 11 && substr($phone, 0, 1) === "0") {
-                        $phone = "0" . substr($phone, 2);
-                    }
-                    
-                    // If it's 9 digits, add a leading 0 (assuming missing first digit)
-                    if (strlen($phone) === 9) {
-                        $phone = "0" . $phone;
-                    }
-                    
-                    // Ensure it starts with 0
-                    if (strlen($phone) > 0 && substr($phone, 0, 1) !== "0") {
-                        $phone = "0" . ltrim($phone, '0');
-                    }
-                    
-                    // If still not 10 digits, try to fix it
-                    if (strlen($phone) > 10) {
-                        // Take last 10 digits (ensuring it starts with 0)
-                        $phone = "0" . substr($phone, -9);
-                    } elseif (strlen($phone) < 10 && strlen($phone) > 0) {
-                        // Pad with leading zeros if less than 10 digits
-                        $phone = str_pad($phone, 10, "0", STR_PAD_LEFT);
-                    }
-                    
-                    // Final validation - if still not 10 digits, set to null but don't skip the row
-                    if (strlen($phone) !== 10) {
-                        Log::warning("Phone number could not be normalized properly (original: {$originalPhone}, normalized: {$phone}), setting to null");
-                        $phone = null;
-                    } elseif ($originalPhone !== $phone) {
-                        // Only log if the phone number was actually changed during normalization
-                        // Log::info("Phone number normalized: {$originalPhone} -> {$phone}");
-                    }
-                } else {
-                    $phone = null;
-                }
-
 
                 // Create or get group
                 $group = Group::firstOrCreate(
@@ -178,6 +117,17 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                 //         Log::warning("County not found: {$countyName}");
                 //     }
                 // }
+
+                // Normalize phone number using Laravel Phone - invalid phones become null but do not skip the row
+                $normalizedPhone = $this->normalizePhoneNumber($phone);
+                if ($phone && $normalizedPhone === null) {
+                    Log::warning("Phone number invalid after Laravel Phone normalization, setting to null", [
+                        'row_index' => $index,
+                        'original_phone' => $phone,
+                        'national_id' => $nationalId,
+                    ]);
+                }
+                $phone = $normalizedPhone;
 
                 // Use a transaction to ensure safe updates
                 DB::transaction(function () use (
@@ -230,7 +180,10 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                     }
                 });
             } catch (\Exception $e) {
-                Log::error('Import Error: ' . $e->getMessage() . ' | Skipped Row Data: ' . json_encode($row));
+                Log::error('Import Error: ' . $e->getMessage(), [
+                    'row_index' => $index,
+                    'row_data' => $row,
+                ]);
                 $skippedCount++;
                 continue;
             }
@@ -244,6 +197,33 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
             'updated' => $updatedCount,
             'skipped' => $skippedCount,
         ]);
+    }
+
+    /**
+     * Normalize and validate a phone number using Laravel Phone.
+     * Returns E.164 formatted string or null if invalid/empty.
+     */
+    private function normalizePhoneNumber(?string $phone): ?string
+    {
+        $phone = trim((string) $phone);
+
+        if ($phone === '') {
+            return null;
+        }
+
+        try {
+            // Assume Kenya as default region; adjust if you need another.
+            $phoneNumber = new PhoneNumber($phone, 'KE');
+
+            return $phoneNumber->formatE164();
+        } catch (\Throwable $e) {
+            Log::warning('Failed to normalize phone number with Laravel Phone', [
+                'phone' => $phone,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     private function normalizeGender($gender): string
