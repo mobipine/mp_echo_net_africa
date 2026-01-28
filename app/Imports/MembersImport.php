@@ -54,15 +54,19 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                     $idLooksLikePhone = true;
                 }
 
-                $phoneLooksLikeId = false;
-                // Check if Phone field looks like an ID (or is empty)
-                // National IDs are typically 7-8 digits in Kenya. 
-                // We assume if it's 8 digits or less, it's NOT a valid phone number (too short)
-                if (strlen($cleanPhone) <= 8) {
-                    $phoneLooksLikeId = true;
+                $phoneLooksLikePhone = false;
+                // Check if Phone field looks like a valid phone number
+                if (
+                    (strlen($cleanPhone) === 12 && substr($cleanPhone, 0, 3) === '254') ||
+                    (strlen($cleanPhone) === 10 && (substr($cleanPhone, 0, 2) === '07' || substr($cleanPhone, 0, 2) === '01')) ||
+                    (strlen($cleanPhone) === 9 && (substr($cleanPhone, 0, 1) === '7' || substr($cleanPhone, 0, 1) === '1'))
+                ) {
+                    $phoneLooksLikePhone = true;
                 }
 
-                if ($idLooksLikePhone && $phoneLooksLikeId) {
+                // If National ID looks like a valid phone number AND Phone field does NOT,
+                // assume they are swapped or the phone number is in the ID field.
+                if ($idLooksLikePhone && !$phoneLooksLikePhone) {
                     $temp = $phone;
                     $phone = $nationalId;
                     $nationalId = $temp;
