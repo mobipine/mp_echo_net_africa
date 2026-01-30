@@ -26,7 +26,7 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
      * 1. Triggered from Filament UI (manual survey dispatch)
      * 2. Handles 'all' groups OR specific group IDs
      * 3. For ALL groups: Creates group_survey assignments, dispatches if not automated
-     * 4. Fetches first question, checks member eligibility (stage + uniqueness)
+     * 4. Fetches first question, sends to all active members (participant uniqueness optional)
      * 5. Creates survey_progress records and queues SMS messages
      * 6. Does NOT send SMS directly - creates records for dispatch:sms command
      */
@@ -35,6 +35,12 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
      * The number of seconds the job's unique lock will be maintained.
      */
     public int $uniqueFor = 300;
+
+    /**
+     * The number of seconds the job can run before timing out.
+     * Survey dispatch to large groups can take several minutes.
+     */
+    public int $timeout = 3600;
 
     public function __construct(
         public array|string $groupIds, // Can be array of IDs or 'all'
@@ -173,10 +179,8 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
             return;
         }
 
-        $surveyOrder = $this->survey->order;
         $totalSent = 0;
-        
-        Log::info("Survey '{$this->survey->title}' has order: {$surveyOrder}");
+        $skipped = [];
 
         foreach ($groupIds as $groupId) {
             $group = Group::find($groupId);
@@ -185,51 +189,18 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                 continue;
             }
 
-            // Get all members first for debugging
-            $allMembers = $group->members()->get();
-            Log::info("Group '{$group->name}' (ID: {$group->id}) has {$allMembers->count()} total members");
-            
-            // Log member details for debugging
-            foreach ($allMembers as $m) {
-                Log::info("Member: {$m->name} (ID: {$m->id}), is_active: " . ($m->is_active ? 'true' : 'false') . ", stage: {$m->stage}, phone: {$m->phone}");
-            }
-            
             $members = $group->members()->where('is_active', true)->get();
             $sentCount = 0;
-            Log::info("Processing {$members->count()} active members in group '{$group->name}' (after filtering by is_active=true)");
+            Log::info("Group '{$group->name}' (ID: {$group->id}): processing {$members->count()} active members");
 
             foreach ($members as $member) {
+                $memberLabel = "{$member->name} (ID: {$member->id}, phone: " . ($member->phone ?: 'none') . ")";
+
                 // Check if member has a phone number
                 if (empty($member->phone)) {
+                    $skipped[] = ['member' => $memberLabel, 'group' => $group->name, 'reason' => 'No phone number'];
                     Log::warning("Skipping {$member->name} (ID: {$member->id}): no phone number");
                     continue;
-                }
-                
-                // --- Stage check and sequencing ---
-                // Allow members in 'New' stage to receive any survey (for testing/flexibility)
-                // For other stages, check if they've completed the previous survey
-                if ($member->stage === 'New') {
-                    // Members in 'New' stage can receive any survey
-                    Log::info("Member {$member->name} (ID: {$member->id}) is in 'New' stage - allowing dispatch of survey order {$surveyOrder}");
-                } elseif ($surveyOrder === 1) {
-                    // For order 1, only allow 'New' members (already handled above, but keeping for clarity)
-                    if ($member->stage !== 'New') {
-                        Log::info("Skipping {$member->name} (ID: {$member->id}): not in 'New' stage for first survey (current stage: '{$member->stage}')");
-                        continue;
-                    }
-                } else {
-                    // For surveys with order > 1, check if member completed previous survey
-                    $previousSurvey = Survey::where('order', $surveyOrder - 1)->first();
-                    if (!$previousSurvey) {
-                        Log::warning("Previous survey (order " . ($surveyOrder - 1) . ") not found. Skipping {$member->name} (ID: {$member->id}).");
-                        continue;
-                    }
-
-                    $expectedStage = str_replace(' ', '', ucfirst($previousSurvey->title)) . 'Completed';
-                    if ($member->stage !== $expectedStage) {
-                        Log::info("Skipping {$member->name} (ID: {$member->id}): stage '{$member->stage}' does not match expected '{$expectedStage}'.");
-                        continue;
-                    }
                 }
 
                 // --- Participant uniqueness check with row locking ---
@@ -240,6 +211,7 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                     ->first();
 
                 if ($progress && $this->survey->participant_uniqueness) {
+                    $skipped[] = ['member' => $memberLabel, 'group' => $group->name, 'reason' => 'Participant uniqueness is ON and survey already started'];
                     Log::info("Skipping {$member->name}: participant uniqueness is ON and survey already started.");
                     continue;
                 }
@@ -250,7 +222,6 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                         ->where('survey_id', $this->survey->id)
                         ->whereNull('completed_at')
                         ->update(['status' => 'CANCELLED']);
-                    Log::info("Cancelled previous incomplete progress for {$member->name}.");
                 }
 
                 // --- Double-check one more time before creating (defensive) ---
@@ -261,6 +232,7 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                     ->exists();
 
                 if ($doubleCheck) {
+                    $skipped[] = ['member' => $memberLabel, 'group' => $group->name, 'reason' => 'Survey progress already exists (ACTIVE/UPDATING_DETAILS)'];
                     Log::info("Double-check: SurveyProgress already exists for member {$member->id}. Skipping.");
                     continue;
                 }
@@ -279,7 +251,6 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                 $memberStage = str_replace(' ', '', ucfirst($this->survey->title)) . 'InProgress';
                 if ($member->stage !== $memberStage) {
                     $member->update(['stage' => $memberStage]);
-                    Log::info("Updated {$member->name}'s stage to {$memberStage}");
                 }
 
                 // --- Format and create SMSInbox record ---
@@ -292,9 +263,9 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                         'survey_progress_id' => $newProgress->id,
                         'channel' => $this->channel,
                     ]);
-                    Log::info("SMS queued for {$member->name}: '{$message}'");
                     $sentCount++;
                 } catch (\Exception $e) {
+                    $skipped[] = ['member' => $memberLabel, 'group' => $group->name, 'reason' => 'Failed to create SMS: ' . $e->getMessage()];
                     Log::error("Failed to create SMSInbox for {$member->name}: " . $e->getMessage());
                 }
             }
@@ -304,5 +275,14 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
         }
 
         Log::info("SendSurveyToGroupJob completed for survey '{$this->survey->title}': {$totalSent} total messages queued.");
+
+        if (!empty($skipped)) {
+            Log::info("Survey '{$this->survey->title}' – members not sent to (" . count($skipped) . "):", [
+                'skipped' => $skipped,
+            ]);
+            foreach ($skipped as $s) {
+                Log::info("  - {$s['member']} | Group: {$s['group']} | Reason: {$s['reason']}");
+            }
+        }
     }
 }

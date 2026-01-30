@@ -201,7 +201,7 @@ function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
 
         // Shorter instruction - reply with number or text (under 160 chars total)
         $message .= "\n\nReply {$numberText}";
-        Log::info("The message to be sent is {$message}");
+        // Log::info("The message to be sent is {$message}");
     }
     else {
         $message = $firstQuestion->question;
@@ -275,7 +275,7 @@ function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
 
         // Get the first group from the many-to-many relationship
         $group = $member?->groups()->first();
-        
+
         $placeholders = [
         '{member}' => $member?->name  ?? "Not recorded",
         '{group}' => $group?->name  ?? "Not recorded",
