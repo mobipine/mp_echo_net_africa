@@ -9,6 +9,7 @@ use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\GroupSurvey;
 use Filament\Forms;
+use Filament\Forms\Form;
 use Filament\Pages\Page;
 use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Select;
@@ -33,6 +34,7 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
     public $starts_at = null;
     public $ends_at = null;
     public $channel = null;
+    public $limit = null;
 
 
     public ?array $data = [];
@@ -48,65 +50,66 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
         $this->form->fill();
     }
 
-    protected function getFormSchema(): array
+    public function form(Form $form): Form
     {
-        return [
-            Grid::make(2)->schema([
-                Forms\Components\Group::make()->schema([
-                    Select::make('group_ids')
-                        ->label('Select Groups')
-                        ->options(['all' => 'ALL GROUPS'] + Group::all()->pluck('name', 'id')->toArray())
-                        ->multiple()
-                        ->required()
-                        ->searchable()
-                        ->native(false),
+        return $form
+            ->schema([
+                Grid::make(2)->schema([
+                    Forms\Components\Group::make()->schema([
+                        Select::make('group_ids')
+                            ->label('Select Groups')
+                            ->options(['all' => 'ALL GROUPS'] + Group::all()->pluck('name', 'id')->toArray())
+                            ->multiple()
+                            ->required()
+                            ->searchable()
+                            ->native(false),
 
-                    Select::make('survey_id')
-                        ->label('Select Survey')
-                        ->options(Survey::all()->pluck('title', 'id'))
-                        ->required()
-                        ->searchable()
-                        ->native(false),
-                ]),
+                        Select::make('survey_id')
+                            ->label('Select Survey')
+                            ->options(Survey::all()->pluck('title', 'id'))
+                            ->required()
+                            ->searchable()
+                            ->native(false),
+                    ]),
 
-                Forms\Components\Group::make()->schema([
-                    Forms\Components\Toggle::make('automated')
-                        ->label('Automated')
-                        ->default(false)
-                        ->helperText('Enable if you want to schedule the survey.')
-                        ->reactive(),
-                    Select::make('channel')
-                        ->label('Channel')
-                        ->options(ChannelType::options())
-                        ->required()
-                        ->default(ChannelType::SMS->value)
-                        ->native(false),
+                    Forms\Components\Group::make()->schema([
+                        Forms\Components\Toggle::make('automated')
+                            ->label('Automated')
+                            ->default(false)
+                            ->helperText('Enable if you want to schedule the survey.')
+                            ->reactive(),
+                        Select::make('channel')
+                            ->label('Channel')
+                            ->options(ChannelType::options())
+                            ->required()
+                            ->default(ChannelType::SMS->value)
+                            ->native(false),
+                        Forms\Components\TextInput::make('limit')
+                            ->label('Recipient limit (optional)')
+                            ->numeric()
+                            ->minValue(1)
+                            ->integer()
+                            ->placeholder('e.g. 2000')
+                            ->helperText('Max number of people to send the survey to across all selected groups. Leave empty for no limit.')
+                            ->nullable(),
+                    ]),
+                    Forms\Components\Group::make()->schema([
+                        Forms\Components\DateTimePicker::make('starts_at')
+                            ->label('Start Date')
+                            ->native(false)
+                            ->required(false)
+                            ->hidden(fn($get) => !$get('automated')),
 
-                ]),
-                Forms\Components\Group::make()->schema([
-                    Forms\Components\DateTimePicker::make('starts_at')
-                        ->label('Start Date')
-                        ->native(false)
-                        ->required(false)
-                        ->hidden(fn($get) => !$get('automated')),
-
-                    Forms\Components\DateTimePicker::make('ends_at')
-                        ->label('End Date')
-                        ->native(false)
-                        ->required(false)
-                        ->hidden(fn($get) => !$get('automated')),
+                        Forms\Components\DateTimePicker::make('ends_at')
+                            ->label('End Date')
+                            ->native(false)
+                            ->required(false)
+                            ->hidden(fn($get) => !$get('automated')),
+                    ]),
                 ]),
             ])
-        ];
+            ->statePath('data');
     }
-
-    protected function getFormModel(): string
-    {
-        return SMSInbox::class;
-    }
-
-    // The previous getForm() method is removed
-    // The state path is handled implicitly by the trait and the public $data property
 
     public function submit(): void
     {
@@ -128,7 +131,8 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
                 $channel,
                 $isAutomated,
                 $validated['starts_at'] ?? null,
-                $validated['ends_at'] ?? null
+                $validated['ends_at'] ?? null,
+                $validated['limit'] ?? null
             );
 
             Notification::make()
@@ -190,7 +194,15 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
             }
 
             // Send to groups
-            SendSurveyToGroupJob::dispatch($selectedGroups, $survey, $channel);
+            SendSurveyToGroupJob::dispatch(
+                $selectedGroups,
+                $survey,
+                $channel,
+                false,
+                null,
+                null,
+                $validated['limit'] ?? null
+            );
 
             Log::info("{$survey->title} dispatch job queued for selected groups.");
 

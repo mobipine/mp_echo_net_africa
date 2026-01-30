@@ -48,7 +48,8 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
         public $channel,
         public $automated = false,
         public $startsAt = null,
-        public $endsAt = null
+        public $endsAt = null,
+        public ?int $limit = null // Optional max recipients across all groups (e.g. 2000 for monitoring)
     ) {}
 
     /**
@@ -182,7 +183,15 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
         $totalSent = 0;
         $skipped = [];
 
+        if ($this->limit !== null) {
+            Log::info("SendSurveyToGroupJob: recipient limit set to {$this->limit}");
+        }
+
         foreach ($groupIds as $groupId) {
+            if ($this->limit !== null && $totalSent >= $this->limit) {
+                Log::info("SendSurveyToGroupJob: reached limit of {$this->limit} recipients. Stopping.");
+                break;
+            }
             $group = Group::find($groupId);
             if (!$group) {
                 Log::warning("Group with ID {$groupId} not found. Skipping.");
@@ -264,6 +273,13 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                         'channel' => $this->channel,
                     ]);
                     $sentCount++;
+
+                    // Enforce optional recipient limit across all groups
+                    if ($this->limit !== null && ($totalSent + $sentCount) >= $this->limit) {
+                        $totalSent += $sentCount;
+                        Log::info("SendSurveyToGroupJob: reached limit of {$this->limit} recipients. Stopping dispatch. Sent to {$totalSent} members.");
+                        break 2;
+                    }
                 } catch (\Exception $e) {
                     $skipped[] = ['member' => $memberLabel, 'group' => $group->name, 'reason' => 'Failed to create SMS: ' . $e->getMessage()];
                     Log::error("Failed to create SMSInbox for {$member->name}: " . $e->getMessage());
@@ -274,7 +290,7 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
             $totalSent += $sentCount;
         }
 
-        Log::info("SendSurveyToGroupJob completed for survey '{$this->survey->title}': {$totalSent} total messages queued.");
+        Log::info("SendSurveyToGroupJob completed for survey '{$this->survey->title}': {$totalSent} total messages queued." . ($this->limit !== null ? " (limit was {$this->limit})" : ''));
 
         if (!empty($skipped)) {
             Log::info("Survey '{$this->survey->title}' – members not sent to (" . count($skipped) . "):", [
