@@ -10,30 +10,29 @@ Artisan::command('inspire', function () {
 
 
 // SMS and Survey Processing Commands
-// These run every 5 seconds with overlap protection to prevent duplicate message sends
+// Run every minute (when cron runs schedule:run); withoutOverlapping prevents duplicate sends
 Schedule::command('dispatch:sms')
-    ->everyFiveSeconds()
+    ->everyMinute()
     ->withoutOverlapping()
     ->runInBackground();
 
-
 Schedule::command('process:surveys-progress')
-    ->everyFiveSeconds()
+    ->everyMinute()
     ->withoutOverlapping()
     ->runInBackground();
 
 Schedule::command('surveys:due-dispatch')
-    ->everyFiveSeconds()
+    ->everyMinute()
     ->withoutOverlapping()
     ->runInBackground();
 
 Schedule::command('send:whatsapp-text')
-    ->everyFiveSeconds()
+    ->everyMinute()
     ->withoutOverlapping()
     ->runInBackground();
 
 Schedule::command('sms:fetch-delivery')
-    ->everyFiveSeconds()
+    ->everyMinute()
     ->withoutOverlapping()
     ->runInBackground();
 
