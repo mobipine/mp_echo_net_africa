@@ -58,13 +58,17 @@ class FixCompletedSurveyProgressStatus extends Command
         $this->info("Found {$count} record(s) with completed_at set but status is not COMPLETED.");
         $this->newLine();
 
-        $rows = $progresses->map(fn ($p) => [
-            $p->id,
-            $p->survey_id,
-            $p->member_id,
-            $p->completed_at?->format('Y-m-d H:i:s') ?? 'N/A',
-            $p->status,
-        ])->toArray();
+        $rows = $progresses->map(function ($p) {
+            $completedAt = $p->completed_at;
+            $formatted = $completedAt ? \Carbon\Carbon::parse($completedAt)->format('Y-m-d H:i:s') : 'N/A';
+            return [
+                $p->id,
+                $p->survey_id,
+                $p->member_id,
+                $formatted,
+                $p->status,
+            ];
+        })->toArray();
 
         $this->table(
             ['Progress ID', 'Survey ID', 'Member ID', 'completed_at', 'Current status'],
