@@ -29,12 +29,18 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
      * 4. Fetches first question, sends to all active members (participant uniqueness optional)
      * 5. Creates survey_progress records and queues SMS messages
      * 6. Does NOT send SMS directly - creates records for dispatch:sms command
+     *
+     * IMPORTANT: uniqueFor must be >= timeout so that while this job runs, no second job
+     * with the same survey+groups can run (otherwise duplicate SurveyProgress and SMSInbox
+     * records are created and the recipient limit can be exceeded).
      */
 
     /**
      * The number of seconds the job's unique lock will be maintained.
+     * MUST be >= $timeout so a second job cannot start while this one is still running
+     * (otherwise duplicate SurveyProgress and SMSInbox records can be created).
      */
-    public int $uniqueFor = 300;
+    public int $uniqueFor = 7200;
 
     /**
      * The number of seconds the job can run before timing out.

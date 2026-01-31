@@ -4,8 +4,10 @@ namespace App\Console\Commands;
 
 use App\Models\Group;
 use App\Models\Member;
+use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
+use App\Models\SurveyResponse;
 use Illuminate\Console\Command;
 
 class CheckSurveyProgressDuplicates extends Command
@@ -13,7 +15,8 @@ class CheckSurveyProgressDuplicates extends Command
     protected $signature = 'survey:check-duplicate-progress
                             {survey_id : The survey ID (e.g. 7)}
                             {--group= : Limit to members of this group ID}
-                            {--fix : Delete the latest duplicate and set the kept progress to ACTIVE}';
+                            {--fix : Delete the latest duplicate and set the kept progress to ACTIVE}
+                            {--dry-run : With --fix, show what would be fixed without making changes}';
 
     protected $description = 'Check for duplicate survey progresses for a survey (optionally scoped to a group), show counts, and optionally fix by deleting the latest duplicate';
 
@@ -22,6 +25,7 @@ class CheckSurveyProgressDuplicates extends Command
         $surveyId = (int) $this->argument('survey_id');
         $groupId = $this->option('group') ? (int) $this->option('group') : null;
         $fix = $this->option('fix');
+        $dryRun = $this->option('dry-run');
 
         $survey = Survey::find($surveyId);
         if (!$survey) {
@@ -133,29 +137,88 @@ class CheckSurveyProgressDuplicates extends Command
             );
 
             if ($fix) {
-                if (!$this->confirm('Apply fix: for each duplicate member, keep the OLDEST progress (set ACTIVE) and DELETE the latest one(s)?', false)) {
-                    $this->info('Fix cancelled.');
-                    return 0;
-                }
-                $fixed = 0;
-                $deleted = 0;
-                foreach ($duplicateMemberIds as $mid) {
-                    $progresses = SurveyProgress::where('survey_id', $surveyId)
-                        ->where('member_id', $mid)
-                        ->orderBy('id')
-                        ->get();
-                    $keep = $progresses->first();
-                    $toDelete = $progresses->slice(1);
-                    $keep->update(['status' => 'ACTIVE']);
-                    $fixed++;
-                    foreach ($toDelete as $p) {
-                        $p->delete();
-                        $deleted++;
+                if ($dryRun) {
+                    $this->warn('--- DRY RUN: No changes will be made ---');
+                    $this->newLine();
+                    $dryRunRows = [];
+                    $totalWouldKeep = 0;
+                    $totalWouldDeleteProgress = 0;
+                    $totalWouldDeleteResponses = 0;
+                    $totalWouldDeleteSms = 0;
+                    foreach ($duplicateMemberIds as $mid) {
+                        $member = Member::find($mid);
+                        $progresses = SurveyProgress::where('survey_id', $surveyId)
+                            ->where('member_id', $mid)
+                            ->orderBy('id')
+                            ->get();
+                        $keep = $progresses->first();
+                        $toDelete = $progresses->slice(1);
+                        $wouldDeleteProgressIds = $toDelete->pluck('id')->toArray();
+                        $wouldDeleteResponses = (int) SurveyResponse::whereIn('session_id', $wouldDeleteProgressIds)->count();
+                        $wouldDeleteSms = (int) SMSInbox::whereIn('survey_progress_id', $wouldDeleteProgressIds)->count();
+                        $totalWouldKeep++;
+                        $totalWouldDeleteProgress += $toDelete->count();
+                        $totalWouldDeleteResponses += $wouldDeleteResponses;
+                        $totalWouldDeleteSms += $wouldDeleteSms;
+                        $dryRunRows[] = [
+                            $mid,
+                            $member ? $member->name : 'N/A',
+                            $keep->id,
+                            $toDelete->pluck('id')->join(', '),
+                            $wouldDeleteResponses,
+                            $wouldDeleteSms,
+                        ];
                     }
+                    $this->info('Would apply per member:');
+                    $this->table(
+                        ['Member ID', 'Name', 'Keep progress ID', 'Delete progress IDs', 'SurveyResponses to delete', 'SMSInbox to delete'],
+                        $dryRunRows
+                    );
+                    $this->newLine();
+                    $this->info('Dry run totals:');
+                    $this->table(
+                        ['Action', 'Count'],
+                        [
+                            ['Members to fix (keep oldest, set ACTIVE)', number_format($totalWouldKeep)],
+                            ['SurveyProgress records to delete', number_format($totalWouldDeleteProgress)],
+                            ['SurveyResponse records to delete', number_format($totalWouldDeleteResponses)],
+                            ['SMSInbox records to delete', number_format($totalWouldDeleteSms)],
+                        ]
+                    );
+                    $this->comment('Run without --dry-run to apply the fix.');
+                } else {
+                    if (!$this->confirm('Apply fix: for each duplicate member, keep the OLDEST progress (set ACTIVE), delete SMSInbox and SurveyResponse records for the duplicate(s), and DELETE the latest progress record(s)?', false)) {
+                        $this->info('Fix cancelled.');
+                        return 0;
+                    }
+                    $fixed = 0;
+                    $deletedProgress = 0;
+                    $deletedSms = 0;
+                    $deletedResponses = 0;
+                    foreach ($duplicateMemberIds as $mid) {
+                        $progresses = SurveyProgress::where('survey_id', $surveyId)
+                            ->where('member_id', $mid)
+                            ->orderBy('id')
+                            ->get();
+                        $keep = $progresses->first();
+                        $toDelete = $progresses->slice(1);
+                        $keep->update(['status' => 'ACTIVE']);
+                        $fixed++;
+                        foreach ($toDelete as $p) {
+                            // Delete SurveyResponse records linked to this duplicate progress (session_id = survey_progress.id)
+                            $responseCount = SurveyResponse::where('session_id', $p->id)->delete();
+                            $deletedResponses += $responseCount;
+                            // Delete SMSInbox records that reference this duplicate progress (extra SMS created for duplicate)
+                            $smsCount = SMSInbox::where('survey_progress_id', $p->id)->delete();
+                            $deletedSms += $smsCount;
+                            $p->delete();
+                            $deletedProgress++;
+                        }
+                    }
+                    $this->info("Fix applied: kept and set ACTIVE for {$fixed} member(s), deleted {$deletedProgress} duplicate progress record(s), deleted {$deletedResponses} related SurveyResponse record(s), deleted {$deletedSms} related SMSInbox record(s).");
                 }
-                $this->info("Fix applied: kept and set ACTIVE for {$fixed} member(s), deleted {$deleted} duplicate progress record(s).");
             } else {
-                $this->comment('Run with --fix to delete the latest duplicate(s) per member and set the kept progress to ACTIVE.');
+                $this->comment('Run with --fix to delete the latest duplicate(s) per member (and their SurveyResponse and SMSInbox records) and set the kept progress to ACTIVE. Use --fix --dry-run to preview changes.');
             }
         } else {
             $this->info('No duplicate progress records found. Nothing to fix.');
