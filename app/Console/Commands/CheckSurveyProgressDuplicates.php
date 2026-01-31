@@ -37,7 +37,7 @@ class CheckSurveyProgressDuplicates extends Command
                 $this->error("Group with ID {$groupId} not found.");
                 return 1;
             }
-            $memberIds = $group->members()->pluck('id')->toArray();
+            $memberIds = $group->members()->pluck('members.id')->toArray();
             $groupName = $group->name;
         }
 
