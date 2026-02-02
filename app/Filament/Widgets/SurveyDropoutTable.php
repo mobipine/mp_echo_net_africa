@@ -21,9 +21,9 @@ class SurveyDropoutTable extends TableWidget
 
     public static function canView(): bool
     {
-        // Returning false prevents the widget from being automatically displayed 
+        // Returning false prevents the widget from being automatically displayed
         // on the dashboard or resource pages.
-        return false; 
+        return false;
     }
 
     protected function getTableQuery(): Builder
@@ -40,8 +40,10 @@ class SurveyDropoutTable extends TableWidget
             )
             ->whereNull('completed_at')
             ->whereIn('status', ['ACTIVE', 'PENDING', 'UPDATING_DETAILS'])
-            ->groupBy('current_question_id');
-            
+            ->groupBy('current_question_id')
+            ->reorder()
+            ->orderByRaw('COUNT(*) DESC');
+
 
         if (!empty($surveyId)) {
             $query->where('survey_id', $surveyId);
@@ -58,7 +60,7 @@ class SurveyDropoutTable extends TableWidget
                 $q->where('county_id', $countyId);
             });
         }
-   
+
         Log::info($query->get());
 
         return $query;
