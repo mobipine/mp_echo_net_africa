@@ -19,6 +19,7 @@ use Carbon\Carbon;
  *
  * Features:
  * - --dry-run: Preview what would be sent without actually sending
+ * - --max-reminders=N: Only send to members who have received fewer than N reminders (e.g. 1=0 reminders, 2=0-1, 3=0-2)
  * - --limit: Limit number of reminders to send (optional, defaults to all)
  */
 class SendIncompleteRemindersCommand extends Command
@@ -30,6 +31,7 @@ class SendIncompleteRemindersCommand extends Command
      */
     protected $signature = 'surveys:send-incomplete-reminders
                             {--dry-run : Preview what would be sent without making changes}
+                            {--max-reminders= : Only send to members who have received fewer than N reminders (e.g. 1=only 0 reminders, 2=0-1, 3=0-2 reminders)}
                             {--limit= : Maximum number of reminders to send (optional, sends to all if not specified)}
                             {--chunk=1000 : Process reminders in chunks to avoid memory issues}';
 
@@ -47,6 +49,9 @@ class SendIncompleteRemindersCommand extends Command
     {
         $isDryRun = $this->option('dry-run');
         $limit = $this->option('limit') ? (int) $this->option('limit') : null;
+        $maxReminders = $this->option('max-reminders') !== null && $this->option('max-reminders') !== ''
+            ? (int) $this->option('max-reminders')
+            : null;
 
         // Check if survey messages are enabled
         if (!$isDryRun && !config('survey_settings.messages_enabled', true)) {
@@ -56,10 +61,13 @@ class SendIncompleteRemindersCommand extends Command
         }
 
         $this->info($isDryRun ? '🔍 DRY RUN MODE - No reminders will be sent' : '⚙️  NORMAL MODE - Reminders will be sent');
+        if ($maxReminders !== null) {
+            $this->info("📊 Filter: Only members who have received fewer than {$maxReminders} reminder(s)");
+        }
         if ($limit) {
             $this->info("📊 Limit: {$limit} reminders");
         } else {
-            $this->info("📊 Limit: Send to ALL incomplete surveys");
+            $this->info("📊 Limit: Send to ALL matching incomplete surveys");
         }
         $this->newLine();
 
@@ -70,21 +78,31 @@ class SendIncompleteRemindersCommand extends Command
             ->whereNotNull('current_question_id')
             ->orderBy('created_at', 'asc');
 
-        $totalIncomplete = $query->count();
+        $totalIncomplete = (clone $query)->count();
 
-        if ($totalIncomplete === 0) {
-            $this->info('✅ No incomplete surveys found.');
+        // Filter by max reminders: only send to those who have received fewer than N reminders
+        if ($maxReminders !== null) {
+            $query->where(function ($q) use ($maxReminders) {
+                $q->whereNull('number_of_reminders')
+                    ->orWhere('number_of_reminders', '<', $maxReminders);
+            });
+        }
+
+        $matchingCount = $query->count();
+
+        if ($matchingCount === 0) {
+            $this->info('✅ No incomplete surveys found' . ($maxReminders !== null ? " with fewer than {$maxReminders} reminder(s) received" : '') . '.');
             return Command::SUCCESS;
         }
 
-        $this->info("Found {$totalIncomplete} incomplete survey progress records");
+        $this->info("Found {$matchingCount} incomplete survey progress records" . ($totalIncomplete !== $matchingCount ? " (of {$totalIncomplete} total)" : ''));
         $this->newLine();
 
         // Get records based on limit
         $incompleteProgresses = $limit ? $query->limit($limit)->get() : $query->get();
 
         if ($isDryRun) {
-            $this->runDryMode($incompleteProgresses, $totalIncomplete);
+            $this->runDryMode($incompleteProgresses, $totalIncomplete, $matchingCount, $maxReminders);
         } else {
             $this->runNormalMode($incompleteProgresses);
         }
@@ -95,7 +113,7 @@ class SendIncompleteRemindersCommand extends Command
     /**
      * Run in dry-run mode - show what would be sent
      */
-    protected function runDryMode($progresses, $totalIncomplete)
+    protected function runDryMode($progresses, $totalIncomplete, $matchingCount, $maxReminders = null)
     {
         // Group by survey for summary
         $bySurvey = $progresses->groupBy('survey_id');
@@ -131,19 +149,16 @@ class SendIncompleteRemindersCommand extends Command
         $sampleProgresses = $progresses->take(20);
 
         $this->table(
-            ['Progress ID', 'Member', 'Phone', 'Survey', 'Current Question', 'Created', 'Days Old'],
+            ['Progress ID', 'Member', 'Phone', 'Survey', 'Reminders', 'Created', 'Days Old'],
             $sampleProgresses->map(function ($progress) {
                 $daysOld = Carbon::parse($progress->created_at)->diffInDays(now());
-                $questionPreview = $progress->currentQuestion
-                    ? substr($progress->currentQuestion->question, 0, 50) . '...'
-                    : 'N/A';
 
                 return [
                     $progress->id,
                     $progress->member?->name ?? 'N/A',
                     $progress->member?->phone ?? 'N/A',
                     $progress->survey?->title ?? 'N/A',
-                    $questionPreview,
+                    $progress->number_of_reminders ?? 0,
                     Carbon::parse($progress->created_at)->format('Y-m-d H:i'),
                     $daysOld,
                 ];
@@ -158,6 +173,9 @@ class SendIncompleteRemindersCommand extends Command
         $this->newLine();
         $this->info("📊 Summary:");
         $this->info("   • Total incomplete surveys in DB: {$totalIncomplete}");
+        if ($maxReminders !== null) {
+            $this->info("   • Matching filter (fewer than {$maxReminders} reminders): {$matchingCount}");
+        }
         $this->info("   • Reminders to be sent: {$progresses->count()}");
         $this->info("   • Unique surveys: {$bySurvey->count()}");
         $this->info("   • Unique members: {$byMember->count()}");
@@ -189,6 +207,15 @@ class SendIncompleteRemindersCommand extends Command
         foreach ($bySurvey as $surveyId => $surveyProgresses) {
             $survey = $surveyProgresses->first()->survey;
             $this->info("   • {$survey->title} (ID: {$surveyId}): {$surveyProgresses->count()} reminders");
+        }
+
+        // Show breakdown by reminders received
+        $this->newLine();
+        $this->info("🔔 Breakdown by Reminders Received:");
+        $byReminders = $progresses->groupBy(fn ($p) => $p->number_of_reminders ?? 0);
+        foreach ($byReminders->sortKeys() as $count => $group) {
+            $label = $count === 0 ? '0 (none yet)' : $count;
+            $this->info("   • {$label} reminder(s): {$group->count()} progress records");
         }
 
         // Show breakdown by age

@@ -218,6 +218,17 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                     continue;
                 }
 
+                // Never create duplicate for members who have COMPLETED this survey
+                $completedProgress = SurveyProgress::where('member_id', $member->id)
+                    ->where('survey_id', $this->survey->id)
+                    ->whereNotNull('completed_at')
+                    ->exists();
+                if ($completedProgress) {
+                    $skipped[] = ['member' => $memberLabel, 'group' => $group->name, 'reason' => 'Survey already completed'];
+                    Log::info("Skipping {$member->name}: survey already completed.");
+                    continue;
+                }
+
                 // --- Participant uniqueness check with row locking ---
                 $progress = SurveyProgress::where('member_id', $member->id)
                     ->where('survey_id', $this->survey->id)

@@ -113,10 +113,20 @@ class DispatchDueSurveysCommand extends Command
                             }
                         }
 
-                        // Check existing progress
+                        // Never create duplicate for members who have COMPLETED this survey
+                        $hasCompletedProgress = SurveyProgress::where('member_id', $member->id)
+                            ->where('survey_id', $survey->id)
+                            ->whereNotNull('completed_at')
+                            ->orWhere('status', 'COMPLETED')
+                            ->exists();
+                        if ($hasCompletedProgress) {
+                            Log::info("Skipping {$member->name}: survey already completed");
+                            continue;
+                        }
+
+                        // Check existing (incomplete) progress
                         $existingProgress = SurveyProgress::where('member_id', $member->id)
                             ->where('survey_id', $survey->id)
-                            ->whereNull('completed_at')
                             ->first();
 
                         if ($existingProgress && $survey->participant_uniqueness) {
