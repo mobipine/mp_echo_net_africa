@@ -109,7 +109,11 @@ class SendIncompleteRemindersCommand extends Command
             $query->where('survey_id', $surveyId);
         }
         if ($groupId !== null) {
-            $query->whereHas('member', fn ($q) => $q->where('group_id', $groupId));
+            // Use group_member pivot (primary) and legacy group_id for backward compatibility
+            $query->whereHas('member', function ($q) use ($groupId) {
+                $q->where('group_id', $groupId)
+                    ->orWhereHas('groups', fn ($gq) => $gq->where('groups.id', $groupId));
+            });
         }
 
         $totalIncomplete = (clone $query)->count();
