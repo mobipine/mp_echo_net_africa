@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Group;
 use App\Models\Member;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
@@ -19,6 +20,8 @@ use Carbon\Carbon;
  *
  * Features:
  * - --dry-run: Preview what would be sent without actually sending
+ * - --survey=ID: Filter by survey ID (optional)
+ * - --group=ID: Filter by group ID (optional)
  * - --max-reminders=N: Only send to members who have received fewer than N reminders (e.g. 1=0 reminders, 2=0-1, 3=0-2)
  * - --limit: Limit number of reminders to send (optional, defaults to all)
  */
@@ -31,6 +34,8 @@ class SendIncompleteRemindersCommand extends Command
      */
     protected $signature = 'surveys:send-incomplete-reminders
                             {--dry-run : Preview what would be sent without making changes}
+                            {--survey= : Filter by survey ID (optional)}
+                            {--group= : Filter by group ID (optional)}
                             {--max-reminders= : Only send to members who have received fewer than N reminders (e.g. 1=only 0 reminders, 2=0-1, 3=0-2 reminders)}
                             {--limit= : Maximum number of reminders to send (optional, sends to all if not specified)}
                             {--chunk=1000 : Process reminders in chunks to avoid memory issues}';
@@ -49,6 +54,12 @@ class SendIncompleteRemindersCommand extends Command
     {
         $isDryRun = $this->option('dry-run');
         $limit = $this->option('limit') ? (int) $this->option('limit') : null;
+        $surveyId = $this->option('survey') !== null && $this->option('survey') !== ''
+            ? (int) $this->option('survey')
+            : null;
+        $groupId = $this->option('group') !== null && $this->option('group') !== ''
+            ? (int) $this->option('group')
+            : null;
         $maxReminders = $this->option('max-reminders') !== null && $this->option('max-reminders') !== ''
             ? (int) $this->option('max-reminders')
             : null;
@@ -61,6 +72,22 @@ class SendIncompleteRemindersCommand extends Command
         }
 
         $this->info($isDryRun ? '🔍 DRY RUN MODE - No reminders will be sent' : '⚙️  NORMAL MODE - Reminders will be sent');
+        if ($surveyId !== null) {
+            $survey = Survey::find($surveyId);
+            if (!$survey) {
+                $this->error("❌ Survey with ID {$surveyId} not found.");
+                return Command::FAILURE;
+            }
+            $this->info("📊 Filter: Survey '{$survey->title}' (ID: {$surveyId})");
+        }
+        if ($groupId !== null) {
+            $group = Group::find($groupId);
+            if (!$group) {
+                $this->error("❌ Group with ID {$groupId} not found.");
+                return Command::FAILURE;
+            }
+            $this->info("📊 Filter: Group '{$group->name}' (ID: {$groupId})");
+        }
         if ($maxReminders !== null) {
             $this->info("📊 Filter: Only members who have received fewer than {$maxReminders} reminder(s)");
         }
@@ -77,6 +104,13 @@ class SendIncompleteRemindersCommand extends Command
             ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
             ->whereNotNull('current_question_id')
             ->orderBy('created_at', 'asc');
+
+        if ($surveyId !== null) {
+            $query->where('survey_id', $surveyId);
+        }
+        if ($groupId !== null) {
+            $query->whereHas('member', fn ($q) => $q->where('group_id', $groupId));
+        }
 
         $totalIncomplete = (clone $query)->count();
 
