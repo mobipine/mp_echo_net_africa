@@ -59,12 +59,22 @@ class CalculateSurveyDispatchCredits extends Command
         $this->newLine();
 
         // --- SENT (SMSInbox with survey_progress_id) ---
-        $messagesSent = $progressIds->isEmpty()
-            ? 0
-            : SMSInbox::whereIn('survey_progress_id', $progressIds)->count();
+        $sentQuery = SMSInbox::whereIn('survey_progress_id', $progressIds);
+        $messagesSent = $progressIds->isEmpty() ? 0 : $sentQuery->count();
         $creditsSent = $progressIds->isEmpty()
             ? 0
             : (int) (SMSInbox::whereIn('survey_progress_id', $progressIds)
+                ->selectRaw('SUM(COALESCE(NULLIF(credits_count, 0), CEIL(CHAR_LENGTH(COALESCE(message, "")) / 160))) as total')
+                ->value('total') ?? 0);
+
+        // --- REMINDERS (SMSInbox with is_reminder = true) ---
+        $remindersSent = $progressIds->isEmpty()
+            ? 0
+            : SMSInbox::whereIn('survey_progress_id', $progressIds)->where('is_reminder', true)->count();
+        $creditsReminders = $progressIds->isEmpty()
+            ? 0
+            : (int) (SMSInbox::whereIn('survey_progress_id', $progressIds)
+                ->where('is_reminder', true)
                 ->selectRaw('SUM(COALESCE(NULLIF(credits_count, 0), CEIL(CHAR_LENGTH(COALESCE(message, "")) / 160))) as total')
                 ->value('total') ?? 0);
 
@@ -87,9 +97,11 @@ class CalculateSurveyDispatchCredits extends Command
             [
                 ['Survey progress records', number_format($progressIds->count())],
                 ['Messages sent', number_format($messagesSent)],
+                ['Reminders sent', number_format($remindersSent)],
                 ['Messages received', number_format($messagesReceived)],
                 ['Total messages', number_format($totalMessages)],
                 ['Credits used (sending)', number_format($creditsSent)],
+                ['Credits used (reminders)', number_format($creditsReminders)],
                 ['Credits used (receiving)', number_format($creditsReceived)],
                 ['Total credits used', number_format($totalCredits)],
             ]
@@ -97,6 +109,9 @@ class CalculateSurveyDispatchCredits extends Command
 
         if ($messagesSent > 0) {
             $this->info("Average credits per sent message: " . round($creditsSent / $messagesSent, 2));
+        }
+        if ($remindersSent > 0) {
+            $this->info("Average credits per reminder: " . round($creditsReminders / $remindersSent, 2));
         }
         if ($messagesReceived > 0) {
             $this->info("Average credits per received message: " . round($creditsReceived / $messagesReceived, 2));
