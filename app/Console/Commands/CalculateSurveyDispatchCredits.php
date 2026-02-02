@@ -70,11 +70,15 @@ class CalculateSurveyDispatchCredits extends Command
         // --- REMINDERS (SMSInbox with is_reminder = true) ---
         $remindersSent = $progressIds->isEmpty()
             ? 0
-            : SMSInbox::whereIn('survey_progress_id', $progressIds)->where('is_reminder', true)->count();
+            : SMSInbox::whereIn('survey_progress_id', $progressIds)->where('is_reminder', true)->where('status', 'sent')->count();
+        $remindersFromProgress = $progressIds->isEmpty()
+            ? 0
+            : (int) SurveyProgress::whereIn('id', $progressIds)->sum('number_of_reminders');
         $creditsReminders = $progressIds->isEmpty()
             ? 0
             : (int) (SMSInbox::whereIn('survey_progress_id', $progressIds)
                 ->where('is_reminder', true)
+                ->where('status', 'sent')
                 ->selectRaw('SUM(COALESCE(NULLIF(credits_count, 0), CEIL(CHAR_LENGTH(COALESCE(message, "")) / 160))) as total')
                 ->value('total') ?? 0);
 
@@ -112,6 +116,13 @@ class CalculateSurveyDispatchCredits extends Command
         }
         if ($remindersSent > 0) {
             $this->info("Average credits per reminder: " . round($creditsReminders / $remindersSent, 2));
+        }
+        if ($remindersSent > 0 || $remindersFromProgress > 0) {
+            $this->newLine();
+            $this->comment("Reminder reconciliation: SMSInbox count = {$remindersSent}, SUM(number_of_reminders) = {$remindersFromProgress}");
+            if ($remindersSent !== $remindersFromProgress) {
+                $this->warn("Mismatch: SMSInbox and survey_progress.number_of_reminders are out of sync.");
+            }
         }
         if ($messagesReceived > 0) {
             $this->info("Average credits per received message: " . round($creditsReceived / $messagesReceived, 2));
