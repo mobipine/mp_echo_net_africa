@@ -3,9 +3,11 @@
 namespace App\Console\Commands;
 
 use App\Models\Group;
+use App\Models\Member;
 use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
+use App\Models\SurveyResponse;
 use Illuminate\Console\Command;
 
 class CalculateSurveyDispatchCredits extends Command
@@ -14,7 +16,7 @@ class CalculateSurveyDispatchCredits extends Command
                             {--group= : Group ID}
                             {--survey= : Survey ID}';
 
-    protected $description = 'Calculate total SMS credits used for a survey dispatch to a group (messages sent for survey progress records)';
+    protected $description = 'Calculate total SMS credits used for a survey dispatch to a group (messages sent and received)';
 
     public function handle(): int
     {
@@ -40,36 +42,64 @@ class CalculateSurveyDispatchCredits extends Command
             return Command::FAILURE;
         }
 
+        $memberIds = $group->members()
+            ->pluck('members.id')
+            ->merge(Member::where('group_id', $groupId)->pluck('id'))
+            ->unique()
+            ->values();
+
         $progressIds = SurveyProgress::where('survey_id', $surveyId)
-            ->whereHas('member', function ($q) use ($groupId) {
-                $q->where('group_id', $groupId)
-                    ->orWhereHas('groups', fn ($gq) => $gq->where('groups.id', $groupId));
-            })
+            ->whereIn('member_id', $memberIds)
             ->pluck('id');
 
-        if ($progressIds->isEmpty()) {
-            $this->warn("No survey progress records found for survey '{$survey->title}' and group '{$group->name}'.");
-            $this->info('Total messages: 0');
-            $this->info('Total credits: 0');
-            return Command::SUCCESS;
-        }
-
-        $totalMessages = SMSInbox::whereIn('survey_progress_id', $progressIds)->count();
-
-        $totalCredits = (int) SMSInbox::whereIn('survey_progress_id', $progressIds)
-            ->selectRaw('SUM(COALESCE(NULLIF(credits_count, 0), CEIL(CHAR_LENGTH(COALESCE(message, "")) / 160))) as total')
-            ->value('total') ?? 0;
+        $memberPhones = Member::whereIn('id', $memberIds)->pluck('phone')->filter()->values()->toArray();
 
         $this->info("Survey: {$survey->title} (ID: {$surveyId})");
         $this->info("Group: {$group->name} (ID: {$groupId})");
         $this->newLine();
-        $this->info("Survey progress records: " . number_format($progressIds->count()));
-        $this->info("Total messages sent: " . number_format($totalMessages));
-        $this->info("Total credits used: " . number_format($totalCredits));
 
-        if ($totalMessages > 0) {
-            $avgCreditsPerMessage = round($totalCredits / $totalMessages, 2);
-            $this->info("Average credits per message: {$avgCreditsPerMessage}");
+        // --- SENT (SMSInbox with survey_progress_id) ---
+        $messagesSent = $progressIds->isEmpty()
+            ? 0
+            : SMSInbox::whereIn('survey_progress_id', $progressIds)->count();
+        $creditsSent = $progressIds->isEmpty()
+            ? 0
+            : (int) (SMSInbox::whereIn('survey_progress_id', $progressIds)
+                ->selectRaw('SUM(COALESCE(NULLIF(credits_count, 0), CEIL(CHAR_LENGTH(COALESCE(message, "")) / 160))) as total')
+                ->value('total') ?? 0);
+
+        // --- RECEIVED (SurveyResponse from members in group) ---
+        $messagesReceived = empty($memberPhones)
+            ? 0
+            : SurveyResponse::where('survey_id', $surveyId)->whereIn('msisdn', $memberPhones)->count();
+        $creditsReceived = empty($memberPhones)
+            ? 0
+            : (int) (SurveyResponse::where('survey_id', $surveyId)
+                ->whereIn('msisdn', $memberPhones)
+                ->selectRaw('SUM(CEIL(CHAR_LENGTH(COALESCE(survey_response, "")) / 160)) as total')
+                ->value('total') ?? 0);
+
+        $totalMessages = $messagesSent + $messagesReceived;
+        $totalCredits = $creditsSent + $creditsReceived;
+
+        $this->table(
+            ['Metric', 'Count'],
+            [
+                ['Survey progress records', number_format($progressIds->count())],
+                ['Messages sent', number_format($messagesSent)],
+                ['Messages received', number_format($messagesReceived)],
+                ['Total messages', number_format($totalMessages)],
+                ['Credits used (sending)', number_format($creditsSent)],
+                ['Credits used (receiving)', number_format($creditsReceived)],
+                ['Total credits used', number_format($totalCredits)],
+            ]
+        );
+
+        if ($messagesSent > 0) {
+            $this->info("Average credits per sent message: " . round($creditsSent / $messagesSent, 2));
+        }
+        if ($messagesReceived > 0) {
+            $this->info("Average credits per received message: " . round($creditsReceived / $messagesReceived, 2));
         }
 
         return Command::SUCCESS;
