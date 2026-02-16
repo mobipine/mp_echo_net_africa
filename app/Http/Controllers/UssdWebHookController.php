@@ -32,6 +32,11 @@ class UssdWebHookController extends Controller
             $phoneNumber = $request->input('mobile_number');
             // $userInput = $request->input('user_input', '');
             $userInput = $request->input('message');
+            // USSD gateways often concatenate previous inputs with *; use only the latest input
+            if (is_string($userInput) && str_contains($userInput, '*')) {
+                $parts = explode('*', $userInput);
+                $userInput = trim(end($parts));
+            }
             $serviceCode = $request->input('service_code');
 
             // Validate required parameters
@@ -653,22 +658,31 @@ class UssdWebHookController extends Controller
             $session->save();
         }
 
-        // Perform search by National ID (exact or partial match)
+        // Member search is only for the group of the official who is dialing (session group_id set at auth)
+        if (!$groupId) {
+            $message = $this->appendNavigationOptions(
+                'Member search is only available for your group. Please start from the beginning and authenticate.',
+                $node
+            );
+            return [
+                'message' => $message,
+                'continue' => true
+            ];
+        }
+
+        // Perform search by National ID (exact or partial match) — only within the official's group
         $query = Member::query()
             ->select('id', 'name', 'phone', 'national_id')
-            ->where(function($q) use ($userInput) {
-                $q->where('national_id', $userInput)  // Exact match first
-                  ->orWhere('national_id', 'like', $userInput . '%');  // Partial match
+            ->whereHas('groups', function ($q) use ($groupId) {
+                $q->where('groups.id', $groupId);
+            })
+            ->where(function ($q) use ($userInput) {
+                $q->where('national_id', $userInput)
+                  ->orWhere('national_id', 'like', $userInput . '%');
             })
             ->orderByRaw("CASE WHEN national_id = ? THEN 0 ELSE 1 END", [$userInput])
             ->orderBy('name')
             ->limit($resultsLimit);
-
-        if ($groupId) {
-            $query->whereHas('groups', function ($q) use ($groupId) {
-                $q->where('groups.id', $groupId);
-            });
-        }
 
         $results = $query->get();
 
