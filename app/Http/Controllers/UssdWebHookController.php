@@ -981,7 +981,7 @@ class UssdWebHookController extends Controller
             $loanNumber = $index + 1;
 
             $output .= $loanNumber . ". ";
-            $output .= "Loan {$loan->loan_number} - (ACC-{$member->account_number}) - KES " . number_format($loan->principal_amount, 2) . "\n";
+            $output .= "Loan {$loan->loan_number} - ({$member->account_number}) - KES " . number_format($loan->principal_amount, 2) . "\n";
             $output .= "Balance: KES " . number_format($balance, 2) . "\n";
 
             if ($loan->due_date) {
