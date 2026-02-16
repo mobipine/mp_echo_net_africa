@@ -1149,6 +1149,9 @@ class UssdWebHookController extends Controller
             // dd($loan->remaining_balance, $amount);
 
             // Create the loan repayment record (same as Filament)
+            // Use the authenticated official's user id when available; null when official has no user account
+            $recordedBy = $session->authenticated_user_id;
+
             $repayment = \App\Models\LoanRepayment::create([
                 'loan_id' => $loan->id,
                 'member_id' => $memberId,
@@ -1157,7 +1160,7 @@ class UssdWebHookController extends Controller
                 'payment_method' => 'ussd',
                 'reference_number' => 'USSD_' . $session->session_id . '_' . time(),
                 'notes' => 'Recorded via USSD by official (National ID: ' . $authorizedNationalId . ')',
-                'recorded_by' => 1, // No user auth in USSD context
+                'recorded_by' => $recordedBy,
             ]);
 
             // dd($repayment);
