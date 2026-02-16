@@ -25,7 +25,7 @@ class OfficialsRelationManager extends RelationManager
                     ->relationship(
                         'member',
                         'name',
-                        fn ($query) => $query->where('group_id', $this->ownerRecord->id)
+                        fn ($query) => $query->whereHas('groups', fn ($q) => $q->where('groups.id', $this->ownerRecord->id))
                     )
                     ->required()
                     ->searchable()
@@ -88,7 +88,7 @@ class OfficialsRelationManager extends RelationManager
                             ->relationship(
                                 'member',
                                 'name',
-                                fn ($query) => $query->where('group_id', $this->ownerRecord->id)
+                                fn ($query) => $query->whereHas('groups', fn ($q) => $q->where('groups.id', $this->ownerRecord->id))
                             )
                             ->required()
                             ->searchable()
