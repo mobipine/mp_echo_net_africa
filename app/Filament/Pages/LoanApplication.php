@@ -694,14 +694,20 @@ class LoanApplication extends Page implements HasForms
             return [];
         }
 
-        // Share the principal amount equally among all group members
-        $equalAmount = $principalAmount / $members->count();
+        $count = $members->count();
+        // Distribute in smallest units (cents) so the sum equals the loan amount exactly (no remainder)
+        $totalCents = (int) round($principalAmount * 100);
+        $baseCents = (int) floor($totalCents / $count);
+        $remainderCents = $totalCents - ($baseCents * $count);
 
-        return $members->map(function ($member) use ($equalAmount) {
+        return $members->values()->map(function ($member, $index) use ($baseCents, $remainderCents) {
+            // First $remainderCents guarantors get 1 cent more so total adds up exactly
+            $cents = $baseCents + ($index < $remainderCents ? 1 : 0);
+            $amount = $cents / 100;
             return [
                 'member_id' => $member->id,
                 'name' => $member->name,
-                'amount' => number_format($equalAmount, 2, '.', ''),
+                'amount' => number_format($amount, 2, '.', ''),
             ];
         })->toArray();
     }
