@@ -39,9 +39,9 @@ class ViewLoan extends ViewRecord
             'collateralAttachments.documentType'
         ]);
 
-        // Populate the data array with loan record data
+        // Populate the data array with loan record data (handle loans with no linked member)
         $this->data = [
-            'group_name' => $this->record->member->groups()->first()?->name ?? $this->record->member->group?->name ?? 'N/A',
+            'group_name' => $this->record->member?->groups()->first()?->name ?? $this->record->member?->group?->name ?? 'N/A',
             'loan_number' => $this->record->loan_number,
             'status' => $this->record->status,
             'principal_amount' => $this->record->principal_amount,
@@ -72,10 +72,12 @@ class ViewLoan extends ViewRecord
         ];
 
         // $this->data['member_id'] = $this->record->member->id;
-        //loop through the member and add to the data
-        $memberDetails = $this->record->member->toArray();
-        foreach ($memberDetails as $key => $attribute) {
-            $this->data[$key] = $attribute;
+        // Loop through the member and add to the data (only when member exists)
+        if ($this->record->member) {
+            $memberDetails = $this->record->member->toArray();
+            foreach ($memberDetails as $key => $attribute) {
+                $this->data[$key] = $attribute;
+            }
         }
 
 
@@ -301,7 +303,7 @@ class ViewLoan extends ViewRecord
                                         ->label('Guarantor Name')
                                         ->formatStateUsing(function ($state) {
                                             $member = Member::find($state);
-                                            return $member->name;
+                                            return $member?->name ?? 'N/A';
                                         })
                                         ->disabled(),
 

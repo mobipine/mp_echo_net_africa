@@ -150,7 +150,7 @@ class LoanResource extends Resource implements HasShieldPermissions
             ->columns([
                 Tables\Columns\TextColumn::make('member.name')
                     ->label('Member Name')
-                    ->sortable()
+                    ->placeholder('N/A')
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('loanProduct.name')
