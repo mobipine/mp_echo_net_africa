@@ -1241,7 +1241,7 @@ class UssdWebHookController extends Controller
         $session->save();
 
         return [
-            'message' => $endMessage . "KILL",
+            'message' => $endMessage,
             'continue' => false
         ];
     }
