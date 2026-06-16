@@ -458,10 +458,13 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
         processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$survey,$channel);
     }
 
-    $inbox_id = SMSInbox::where('phone_number', $msisdn)
+    // Link to the most recent SMS we sent this member. Look it up by member_id
+    // (format-independent) and fall back to null when none is found, so a phone-format
+    // mismatch (e.g. SMS stored as +254 but reply normalized to 0...) can never crash
+    // the response handler before the response is saved.
+    $inbox_id = SMSInbox::where('member_id', $progress->member_id)
                 ->latest()
-                ->first()
-                ->id;
+                ->first()?->id;
     // Store the response
     $surveyResponse = SurveyResponse::create([
         'survey_id' => $survey->id,
