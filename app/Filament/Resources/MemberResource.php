@@ -5,12 +5,16 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\MemberResource\Pages;
 use App\Filament\Resources\MemberResource\RelationManagers;
 use App\Imports\MembersImport;
+use App\Imports\MembersImportPreview;
 use App\Models\Member;
 use Filament\Facades\Filament;
 use Filament\Forms;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\Wizard\Step;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Resources\Resource;
@@ -19,8 +23,10 @@ use Filament\Tables\Actions\Action;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\HtmlString;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Maatwebsite\Excel\Facades\Excel;
 use pxlrbt\FilamentExcel\Actions\Tables\ExportBulkAction;
@@ -167,6 +173,53 @@ class MemberResource extends Resource
         }
     }
 
+    /**
+     * Run a synchronous dry-run of the members import and return the summary.
+     * Cached briefly so navigating the wizard / re-renders don't re-parse the file.
+     *
+     * @param  string  $absolutePath  Absolute filesystem path to the uploaded file.
+     * @param  string|null  $extension  Original file extension, used to pick the reader.
+     * @return array<string,mixed>
+     */
+    public static function analyzeImportFile(string $absolutePath, ?string $extension = null): array
+    {
+        if (blank($absolutePath) || !is_file($absolutePath)) {
+            return ['total' => 0, 'unreadable' => true];
+        }
+
+        $readerType = match ($extension) {
+            'csv', 'txt' => \Maatwebsite\Excel\Excel::CSV,
+            'xls' => \Maatwebsite\Excel\Excel::XLS,
+            'xlsx', 'xlsm' => \Maatwebsite\Excel\Excel::XLSX,
+            default => null, // let the library auto-detect
+        };
+
+        $cacheKey = 'members_import_preview:' . md5($absolutePath . '|' . filemtime($absolutePath));
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($absolutePath, $readerType) {
+            $preview = new MembersImportPreview();
+            Excel::import($preview, $absolutePath, null, $readerType);
+            $result = $preview->result();
+
+            // If nothing was found, capture what the file actually looks like so the
+            // user can see whether headers are on the wrong row / wrong sheet.
+            if (($result['total'] ?? 0) === 0) {
+                try {
+                    $raw = Excel::toArray(new \stdClass(), $absolutePath, null, $readerType);
+                    $firstSheet = $raw[0] ?? [];
+                    $result['diagnostics'] = [
+                        'sheet_count' => count($raw),
+                        'first_rows' => array_slice($firstSheet, 0, 3),
+                    ];
+                } catch (\Throwable $e) {
+                    $result['diagnostics'] = ['error' => $e->getMessage()];
+                }
+            }
+
+            return $result;
+        });
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -174,18 +227,57 @@ class MemberResource extends Resource
                 Action::make('import')
                     ->label('Import Members')
                     ->icon('heroicon-o-arrow-up-tray')
-                    ->form([
-                        Forms\Components\FileUpload::make('file')
-                            ->label('Excel File')
-                            ->acceptedFileTypes([
-                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
-                                'application/vnd.ms-excel',
-                                'text/csv'
-                            ])
-                            ->required()
-                            ->disk('local')
-                            ->directory('imports')
-                            ->helperText('Download sample template first to ensure correct format')
+                    ->modalWidth('4xl')
+                    ->modalSubmitActionLabel('Import')
+                    ->steps([
+                        Step::make('Upload File')
+                            ->description('Choose your Excel/CSV file')
+                            ->icon('heroicon-o-arrow-up-tray')
+                            ->schema([
+                                Forms\Components\FileUpload::make('file')
+                                    ->label('Excel File')
+                                    ->acceptedFileTypes([
+                                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                        'application/vnd.ms-excel',
+                                        'text/csv'
+                                    ])
+                                    ->required()
+                                    ->disk('local')
+                                    ->directory('imports')
+                                    ->helperText('Make sure the first row contains the column headers (group_name, national_id, name_of_participant, phone_no, gender, year).'),
+                            ]),
+                        Step::make('Preview')
+                            ->description('Review before importing')
+                            ->icon('heroicon-o-magnifying-glass')
+                            ->schema([
+                                Placeholder::make('preview')
+                                    ->hiddenLabel()
+                                    ->content(function (Get $get): HtmlString {
+                                        $file = $get('file');
+
+                                        // FileUpload state is [uuid => value]; the value is a
+                                        // TemporaryUploadedFile while editing, or a stored path string.
+                                        $value = is_array($file) ? collect($file)->first() : $file;
+
+                                        if (blank($value)) {
+                                            return new HtmlString('<div class="text-sm text-gray-500 dark:text-gray-400">Upload a file in the previous step to see a preview.</div>');
+                                        }
+
+                                        if ($value instanceof TemporaryUploadedFile) {
+                                            $absolutePath = $value->getRealPath();
+                                            $extension = strtolower($value->getClientOriginalExtension());
+                                        } else {
+                                            $absolutePath = Storage::disk('local')->path($value);
+                                            $extension = strtolower(pathinfo((string) $value, PATHINFO_EXTENSION));
+                                        }
+
+                                        return new HtmlString(
+                                            view('filament.imports.members-preview', [
+                                                'preview' => static::analyzeImportFile($absolutePath, $extension),
+                                            ])->render()
+                                        );
+                                    }),
+                            ]),
                     ])
                     ->action(function (array $data) {
                         $filePath = Storage::disk('local')->path($data['file']);
