@@ -27,6 +27,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
+use Illuminate\Support\Str;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Maatwebsite\Excel\Facades\Excel;
 use pxlrbt\FilamentExcel\Actions\Tables\ExportBulkAction;
@@ -196,10 +197,31 @@ class MemberResource extends Resource
 
         $cacheKey = 'members_import_preview:' . md5($absolutePath . '|' . filemtime($absolutePath));
 
-        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($absolutePath, $readerType) {
-            $preview = new MembersImportPreview();
-            Excel::import($preview, $absolutePath, null, $readerType);
-            $result = $preview->result();
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($absolutePath, $readerType, $extension) {
+            $previewId = (string) Str::uuid();
+
+            Log::info('[MembersImport] Dry-run preview started', [
+                'preview_id' => $previewId,
+                'user_id' => auth()->id(),
+                'file' => basename($absolutePath),
+                'extension' => $extension,
+                'size_bytes' => @filesize($absolutePath) ?: null,
+            ]);
+
+            try {
+                $preview = new MembersImportPreview();
+                Excel::import($preview, $absolutePath, null, $readerType);
+                $result = $preview->result();
+            } catch (\Throwable $e) {
+                Log::error('[MembersImport] Dry-run preview failed', [
+                    'preview_id' => $previewId,
+                    'user_id' => auth()->id(),
+                    'file' => basename($absolutePath),
+                    'error' => $e->getMessage(),
+                ]);
+
+                throw $e;
+            }
 
             // If nothing was found, capture what the file actually looks like so the
             // user can see whether headers are on the wrong row / wrong sheet.
@@ -214,6 +236,25 @@ class MemberResource extends Resource
                 } catch (\Throwable $e) {
                     $result['diagnostics'] = ['error' => $e->getMessage()];
                 }
+
+                Log::warning('[MembersImport] Dry-run preview found no data rows', [
+                    'preview_id' => $previewId,
+                    'user_id' => auth()->id(),
+                    'file' => basename($absolutePath),
+                    'diagnostics' => $result['diagnostics'] ?? null,
+                ]);
+            } else {
+                Log::info('[MembersImport] Dry-run preview completed', [
+                    'preview_id' => $previewId,
+                    'user_id' => auth()->id(),
+                    'file' => basename($absolutePath),
+                    'total' => $result['total'] ?? 0,
+                    'will_create' => $result['create'] ?? 0,
+                    'will_update' => $result['update'] ?? 0,
+                    'errors' => $result['errors'] ?? 0,
+                    'with_warnings' => $result['with_warnings'] ?? 0,
+                    'new_groups' => $result['new_groups'] ?? [],
+                ]);
             }
 
             return $result;
@@ -280,16 +321,55 @@ class MemberResource extends Resource
                             ]),
                     ])
                     ->action(function (array $data) {
+                        $importId = (string) Str::uuid();
                         $filePath = Storage::disk('local')->path($data['file']);
-                        
-                        Excel::import(new MembersImport, $filePath);
-                        
+
+                        Log::info('[MembersImport] Import submitted from UI', [
+                            'import_id' => $importId,
+                            'user_id' => auth()->id(),
+                            'stored_path' => $data['file'],
+                            'size_bytes' => @filesize($filePath) ?: null,
+                        ]);
+
+                        try {
+                            Excel::import(new MembersImport($importId), $filePath);
+
+                            Log::info('[MembersImport] Import handed off to Excel (queued/processed)', [
+                                'import_id' => $importId,
+                                'user_id' => auth()->id(),
+                            ]);
+                        } catch (\Throwable $e) {
+                            Log::error('[MembersImport] Import failed to start', [
+                                'import_id' => $importId,
+                                'user_id' => auth()->id(),
+                                'error' => $e->getMessage(),
+                            ]);
+
+                            Notification::make()
+                                ->title('Import Failed')
+                                ->body('The file could not be imported: ' . $e->getMessage())
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
                         // Clean up the uploaded file
                         Storage::disk('local')->delete($data['file']);
-                        
+                        Log::info('[MembersImport] Uploaded file cleaned up', [
+                            'import_id' => $importId,
+                            'stored_path' => $data['file'],
+                        ]);
+
                         // Get import results from session
                         $results = session('import_results', ['imported' => 0, 'skipped' => 0,'updated' => 0]);
-                        
+
+                        Log::info('[MembersImport] Import results reported to user', [
+                            'import_id' => $importId,
+                            'user_id' => auth()->id(),
+                            'results' => $results,
+                        ]);
+
                         // Show success notification with results
                         Notification::make()
                             ->title('Import Completed')

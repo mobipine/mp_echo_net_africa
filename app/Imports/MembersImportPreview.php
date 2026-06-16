@@ -4,6 +4,7 @@ namespace App\Imports;
 
 use App\Imports\Support\MemberRowAnalyzer;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 
@@ -50,6 +51,10 @@ class MembersImportPreview implements ToCollection, WithHeadingRow
                         'message' => $e->getMessage(),
                     ];
                 }
+                Log::warning('[MembersImport] Dry-run row could not be analyzed', [
+                    'row' => $rowNumber,
+                    'error' => $e->getMessage(),
+                ]);
                 continue;
             }
 

@@ -12,9 +12,21 @@ use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Str;
 
 class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, ShouldQueue
 {
+    /**
+     * Correlation id shared with the UI logs so a single upload can be
+     * traced end-to-end across all of its (queued, chunked) jobs.
+     */
+    protected string $importId;
+
+    public function __construct(?string $importId = null)
+    {
+        $this->importId = $importId ?: (string) Str::uuid();
+    }
+
     public function chunkSize(): int
     {
         return 1000; // change to suit memory/throughput
@@ -25,6 +37,11 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
         $importedCount = 0;
         $updatedCount = 0;
         $skippedCount = 0;
+
+        Log::info('[MembersImport] Processing chunk', [
+            'import_id' => $this->importId,
+            'rows_in_chunk' => $rows->count(),
+        ]);
 
         $analyzer = new MemberRowAnalyzer();
 
@@ -84,8 +101,10 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                     }
                 });
             } catch (\Exception $e) {
-                Log::error('Import Error: ' . $e->getMessage(), [
+                Log::error('[MembersImport] Row import error', [
+                    'import_id' => $this->importId,
                     'row_index' => $index,
+                    'error' => $e->getMessage(),
                     'row_data' => $row,
                 ]);
                 $skippedCount++;
@@ -93,7 +112,12 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
             }
         }
 
-        Log::info("Import Process Completed. Imported: {$importedCount}, Updated: {$updatedCount}, Skipped: {$skippedCount}");
+        Log::info('[MembersImport] Chunk completed', [
+            'import_id' => $this->importId,
+            'imported' => $importedCount,
+            'updated' => $updatedCount,
+            'skipped' => $skippedCount,
+        ]);
 
         // Flash results for user feedback
         session()->flash('import_results', [
