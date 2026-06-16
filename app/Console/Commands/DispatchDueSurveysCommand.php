@@ -158,6 +158,23 @@ class DispatchDueSurveysCommand extends Command
                             'channel' => $assignment->channel ?? 'sms',
                         ]);
 
+                        // Cancel the member's OTHER incomplete survey progress so only this
+                        // newly dispatched survey is active (two surveys never compete for the
+                        // member's replies). Their unsent questions are neutralized too.
+                        $otherIncompleteIds = SurveyProgress::where('member_id', $member->id)
+                            ->where('id', '!=', $newProgress->id)
+                            ->whereNull('completed_at')
+                            ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
+                            ->pluck('id');
+                        if ($otherIncompleteIds->isNotEmpty()) {
+                            SMSInbox::whereIn('survey_progress_id', $otherIncompleteIds)
+                                ->where('status', 'pending')
+                                ->update(['status' => 'cancelled']);
+                            SurveyProgress::whereIn('id', $otherIncompleteIds)
+                                ->update(['status' => 'CANCELLED']);
+                            Log::info("Cancelled {$otherIncompleteIds->count()} other incomplete progress for member {$member->id} so only '{$survey->title}' stays active.");
+                        }
+
                         // Update member stage
                         $memberStage = str_replace(' ', '', ucfirst($survey->title)) . 'InProgress';
                         if ($member->stage !== $memberStage) {

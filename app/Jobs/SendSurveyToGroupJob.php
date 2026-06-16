@@ -277,6 +277,24 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                     'source' => 'manual',
                 ]);
 
+                // --- Cancel the member's OTHER incomplete survey progress ---
+                // Guarantees only this newly dispatched survey is active, so two surveys can
+                // never compete for the member's replies (the inbound matcher routes to the
+                // latest ACTIVE progress). Their unsent questions are neutralized too.
+                $otherIncompleteIds = SurveyProgress::where('member_id', $member->id)
+                    ->where('id', '!=', $newProgress->id)
+                    ->whereNull('completed_at')
+                    ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
+                    ->pluck('id');
+                if ($otherIncompleteIds->isNotEmpty()) {
+                    SMSInbox::whereIn('survey_progress_id', $otherIncompleteIds)
+                        ->where('status', 'pending')
+                        ->update(['status' => 'cancelled']);
+                    SurveyProgress::whereIn('id', $otherIncompleteIds)
+                        ->update(['status' => 'CANCELLED']);
+                    Log::info("Cancelled {$otherIncompleteIds->count()} other incomplete progress for member {$member->id} so only '{$this->survey->title}' stays active.");
+                }
+
                 // --- Update member stage to SurveyInProgress ---
                 $memberStage = str_replace(' ', '', ucfirst($this->survey->title)) . 'InProgress';
                 if ($member->stage !== $memberStage) {
