@@ -38,7 +38,7 @@ class MemberRowAnalyzer
      *     action: 'create'|'update',
      *     name: string,
      *     phone: ?string,
-     *     national_id: string,
+     *     national_id: ?string,
      *     gender: string,
      *     dob: ?Carbon,
      *     group_name: string,
@@ -68,8 +68,11 @@ class MemberRowAnalyzer
             $swapped = true;
         }
 
-        $idWasBlank = ($nationalId === '');
-        $nationalId = $nationalId ?: '00000000';
+        // A blank national ID becomes NULL (not a shared '00000000' sentinel).
+        // national_id is a nullable UNIQUE column, and MySQL permits many NULLs,
+        // so ID-less people are stored as distinct members instead of merging.
+        $nationalId = $nationalId !== '' ? $nationalId : null;
+        $idWasBlank = ($nationalId === null);
 
         $gender = trim((string) ($row['gender'] ?? ''));
 
@@ -100,16 +103,23 @@ class MemberRowAnalyzer
         $this->seenGroupNames[$groupKey] = true;
 
         // --- Member: create or update? ---
-        $seenBefore = $this->seenNationalIds[$nationalId] ?? false;
-        $existingMember = !$seenBefore ? Member::where('national_id', $nationalId)->exists() : true;
-        $action = $existingMember ? 'update' : 'create';
-        $duplicateInFile = $seenBefore;
-        $this->seenNationalIds[$nationalId] = true;
+        // Rows without a national ID are always created as new, distinct members
+        // (no dedup key to match on). Only ID-bearing rows are deduplicated.
+        if ($nationalId === null) {
+            $action = 'create';
+            $duplicateInFile = false;
+        } else {
+            $seenBefore = $this->seenNationalIds[$nationalId] ?? false;
+            $existingMember = $seenBefore ? true : Member::where('national_id', $nationalId)->exists();
+            $action = $existingMember ? 'update' : 'create';
+            $duplicateInFile = $seenBefore;
+            $this->seenNationalIds[$nationalId] = true;
+        }
 
         // --- Human-readable warnings for the preview ---
         $warnings = [];
         if ($idWasBlank) {
-            $warnings[] = 'No national ID — defaults to 00000000, so these rows may merge into one record';
+            $warnings[] = 'No national ID — will be imported as a separate member';
         }
         if ($swapped) {
             $warnings[] = 'Phone and National ID looked swapped — auto-corrected';

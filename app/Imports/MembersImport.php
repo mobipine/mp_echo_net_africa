@@ -62,8 +62,12 @@ class MembersImport implements ToCollection, WithHeadingRow, WithChunkReading, S
                     &$importedCount,
                     &$updatedCount
                 ) {
-                    // Check if member exists
-                    $existing = Member::where('national_id', $parsed['national_id'])->first();
+                    // Only ID-bearing rows are deduplicated. Rows without a national
+                    // ID are always created as new, distinct members (national_id is a
+                    // nullable UNIQUE column; MySQL allows many NULLs).
+                    $existing = $parsed['national_id'] !== null
+                        ? Member::where('national_id', $parsed['national_id'])->first()
+                        : null;
 
                     if ($existing) {
                         // Update only missing or outdated fields
