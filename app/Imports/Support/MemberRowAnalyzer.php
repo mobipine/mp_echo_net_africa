@@ -90,6 +90,7 @@ class MemberRowAnalyzer
         }
 
         // --- Phone normalization ---
+        $phoneInput = $phone; // raw value (post-swap) that we attempted to normalize
         $normalizedPhone = $this->normalizePhoneNumber($phone);
         $phoneInvalid = ($phone !== '' && $normalizedPhone === null);
         $phoneBlank = ($phone === '');
@@ -143,6 +144,9 @@ class MemberRowAnalyzer
             'action' => $action,
             'name' => $name,
             'phone' => $phone,
+            'phone_input' => $phoneInput,
+            'phone_invalid' => $phoneInvalid,
+            'phone_missing' => $phoneBlank,
             'national_id' => $nationalId,
             'gender' => $this->normalizeGender($gender),
             'dob' => $dobCarbon,

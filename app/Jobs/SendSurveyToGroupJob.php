@@ -230,9 +230,13 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                 }
 
                 // --- Participant uniqueness check with row locking ---
+                // A CANCELLED progress (completed_at NULL) is treated as inert: the member
+                // is considered NOT to have started this survey, so they are re-included in
+                // a fresh dispatch. Only ACTIVE/UPDATING_DETAILS progress blocks re-dispatch.
                 $progress = SurveyProgress::where('member_id', $member->id)
                     ->where('survey_id', $this->survey->id)
                     ->whereNull('completed_at')
+                    ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
                     ->lockForUpdate() // Prevent race conditions
                     ->first();
 

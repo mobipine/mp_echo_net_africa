@@ -125,8 +125,12 @@ class DispatchDueSurveysCommand extends Command
                         }
 
                         // Check existing (incomplete) progress
+                        // A CANCELLED progress is treated as inert (member counts as not
+                        // having started), so it never blocks a fresh dispatch. Completed or
+                        // active progress still blocks under participant uniqueness.
                         $existingProgress = SurveyProgress::where('member_id', $member->id)
                             ->where('survey_id', $survey->id)
+                            ->where('status', '!=', 'CANCELLED')
                             ->first();
 
                         if ($existingProgress && $survey->participant_uniqueness) {

@@ -16,7 +16,7 @@ class FinanceCancelStaleProgressCommand extends Command
                             {--before=2026-06-01 : Only cancel ACTIVE progress created strictly before this date}
                             {--dry-run : Report what would be cancelled without changing anything}';
 
-    protected $description = 'Cancel stale, never-completed survey progress (and its unsent SMS) so the survey can be re-dispatched to those members';
+    protected $description = 'Cancel stale, never-completed survey progress (and neutralize its unsent SMS) so the survey can be re-dispatched to those members under participant_uniqueness = ON';
 
     public function handle(): int
     {
@@ -38,10 +38,13 @@ class FinanceCancelStaleProgressCommand extends Command
             $this->warn('No --group given: this will scope to ALL members for the survey. Use --group to limit to a batch.');
         }
 
-        // Stale = ACTIVE, never completed, created before the cutoff.
+        // Stale = active/incomplete (ACTIVE or UPDATING_DETAILS, completed_at IS NULL)
+        // created before the cutoff. We CANCEL these (non-destructive): dispatch now treats
+        // a CANCELLED row as inert, so the member is re-included in a fresh dispatch, while
+        // the record is kept for history. (Already-cancelled rows are skipped by the status filter.)
         $progressQuery = SurveyProgress::where('survey_id', $surveyId)
-            ->where('status', 'ACTIVE')
             ->whereNull('completed_at')
+            ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
             ->whereDate('created_at', '<', $before);
         if ($memberIds !== null) {
             $progressQuery->whereIn('member_id', $memberIds);
@@ -53,7 +56,7 @@ class FinanceCancelStaleProgressCommand extends Command
             : SMSInbox::whereIn('survey_progress_id', $progressIds)->where('status', 'pending')->count();
 
         $this->newLine();
-        $this->info("Survey {$surveyId}: stale ACTIVE progress created before {$before}");
+        $this->info("Survey {$surveyId}: stale active progress (completed_at IS NULL) created before {$before}");
         $this->table(['Metric', 'Count'], [
             ['Stale progress records to CANCEL', number_format($progressIds->count())],
             ['Unsent (pending) SMS to neutralize', number_format($pendingSms)],
@@ -71,11 +74,15 @@ class FinanceCancelStaleProgressCommand extends Command
         }
 
         DB::transaction(function () use ($progressIds) {
-            // Neutralize unsent messages first so dispatch:sms never sends the old question.
+            // Neutralize unsent messages first: dispatch:sms sends any sms_inboxes row with
+            // status 'pending' regardless of its progress status, so the old question would
+            // otherwise still fire even though the progress is cancelled.
             SMSInbox::whereIn('survey_progress_id', $progressIds)
                 ->where('status', 'pending')
                 ->update(['status' => 'cancelled']);
 
+            // Cancel (don't delete) the stale progress. Dispatch treats CANCELLED as inert,
+            // so these members are re-included in a fresh dispatch under uniqueness = ON.
             SurveyProgress::whereIn('id', $progressIds)->update(['status' => 'CANCELLED']);
         });
 

@@ -159,7 +159,8 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
                 $incompleteCount = (clone $activeQuery)
                     ->whereNotNull('phone')->where('phone', '!=', '')
                     ->whereDoesntHave('surveyProgresses', fn ($q) => $q->where('survey_id', $survey->id)->whereNotNull('completed_at'))
-                    ->whereHas('surveyProgresses', fn ($q) => $q->where('survey_id', $survey->id)->whereNull('completed_at'))
+                    // CANCELLED progress is inert — only ACTIVE/UPDATING_DETAILS counts as "in progress" (matches dispatch).
+                    ->whereHas('surveyProgresses', fn ($q) => $q->where('survey_id', $survey->id)->whereNull('completed_at')->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS']))
                     ->count();
             }
 
@@ -191,7 +192,7 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
                     ->where('is_active', true)
                     ->whereNotNull('phone')->where('phone', '!=', '')
                     ->whereDoesntHave('surveyProgresses', fn ($q) => $q->where('survey_id', $survey->id)->whereNotNull('completed_at'))
-                    ->when($survey->participant_uniqueness, fn ($q) => $q->whereDoesntHave('surveyProgresses', fn ($sq) => $sq->where('survey_id', $survey->id)->whereNull('completed_at')))
+                    ->when($survey->participant_uniqueness, fn ($q) => $q->whereDoesntHave('surveyProgresses', fn ($sq) => $sq->where('survey_id', $survey->id)->whereNull('completed_at')->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])))
                     ->limit(self::PREVIEW_SAMPLE_SIZE - count($sampleForCredits))
                     ->get();
 
