@@ -171,7 +171,12 @@ class MemberRowAnalyzer
 
     /**
      * Normalize and validate a phone number using Laravel Phone.
-     * Returns E.164 formatted string or null if invalid/empty.
+     *
+     * Returns the number in the app's canonical LOCAL format (0XXXXXXXXX) or null if
+     * invalid/empty. The whole inbound/response pipeline (webhook matching, startSurvey,
+     * processSurveyResponse, SMS inbox lookups) matches members on the local 0XXX format,
+     * so storing E.164 (+254XXX) here silently breaks reply matching. We validate via
+     * Laravel Phone (which yields E.164) and then convert +254 -> 0 for storage.
      */
     public function normalizePhoneNumber(?string $phone): ?string
     {
@@ -182,7 +187,9 @@ class MemberRowAnalyzer
         }
 
         try {
-            return (new PhoneNumber($phone, 'KE'))->formatE164();
+            $e164 = (new PhoneNumber($phone, 'KE'))->formatE164(); // +2547XXXXXXXX
+
+            return preg_replace('/^\+254/', '0', $e164); // 07XXXXXXXX
         } catch (NumberParseException $e) {
             // Genuinely unparseable input for the KE region — treat as blank.
             Log::warning('Failed to normalize phone number with Laravel Phone', [
