@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Filament\Resources\SurveyRelationManagerResource\RelationManagers;
+namespace App\Filament\Resources\GroupResource\RelationManagers;
 
 use Filament\Forms;
 use Filament\Forms\Form;

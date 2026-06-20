@@ -83,6 +83,9 @@ async function saveFlow() {
 }
 
 function removeNode(nodeId) {
+  const removedEdges = edges.value.filter(edge => edge.source === nodeId || edge.target === nodeId)
+
+  removedEdges.forEach((edge) => clearLinkedFlowReference(edge))
   elements.value = elements.value.filter(el => el.id !== nodeId) // Remove node
   edges.value = edges.value.filter(edge => edge.source !== nodeId && edge.target !== nodeId) // Remove edges
   open.value = false
@@ -91,6 +94,7 @@ function removeNode(nodeId) {
 function removeConnection(flowId, sourceId, targetId) {
   console.log('Removing connection to:', targetId);
 
+  clearLinkedFlowReference({ id: flowId, source: sourceId, target: targetId })
   edges.value = edges.value.filter(edge => !(edge.source === sourceId && edge.target === targetId));
   open.value = false
 }
@@ -109,8 +113,7 @@ function getSelectedNode(id) {
 
 
 function getLinkedFlow(id) {
-  // br.type === 'default'
-  const filtered = elements.value.filter(br => br.source === id);
+  const filtered = edges.value.filter(edge => edge.source === id);
 
   if (filtered.length === 0) {
     return [];
@@ -118,6 +121,21 @@ function getLinkedFlow(id) {
 
   // console.log('Filtered Linked Flow:', filtered);
   return filtered;
+}
+
+function clearLinkedFlowReference(flow) {
+  const sourceNode = elements.value.find(node => node.id === flow.source)
+  const answers = sourceNode?.data?.possibleAnswers
+
+  if (!Array.isArray(answers)) {
+    return
+  }
+
+  answers.forEach((answer) => {
+    if (answer.linkedFlow === flow.id || answer.linkedFlow === flow.target) {
+      answer.linkedFlow = ''
+    }
+  })
 }
 
 function getNodeAnswers(id) {

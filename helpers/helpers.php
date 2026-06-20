@@ -18,18 +18,25 @@ function getNextQuestion($survey_id, $response = null, $current_question_id = nu
 {
     //get the flow data from the survey
     $survey = \App\Models\Survey::find($survey_id);
+    if (!$survey) {
+        return [
+            'status' => 'error',
+            'message' => "Survey {$survey_id} not found."
+        ];
+    }
+
     $flowData = $survey->flow_data;
     // dd($flowData);
 
-    if (!$flowData) {
+    if (!$flowData || !is_array($flowData)) {
         return [
             'status' => 'error',
             'message' => 'No flow data found for this survey.'
         ];
     }
 
-    $elements = $flowData['elements'];
-    $edges = $flowData['edges'];
+    $elements = $flowData['elements'] ?? [];
+    $edges = $flowData['edges'] ?? [];
 
     if(!$elements || !is_array($elements) || count($elements) == 0) {
         return [
@@ -38,16 +45,73 @@ function getNextQuestion($survey_id, $response = null, $current_question_id = nu
         ];
     }
 
+    if (!is_array($edges)) {
+        return [
+            'status' => 'error',
+            'message' => 'Invalid edges found in the flow data.'
+        ];
+    }
+
+    $findElementById = function ($elementId) use ($elements) {
+        foreach ($elements as $element) {
+            if (($element['id'] ?? null) == $elementId) {
+                return $element;
+            }
+        }
+
+        return null;
+    };
+
+    $resolveQuestionIdFromTarget = function ($targetElementId) use ($findElementById) {
+        if (!$targetElementId) {
+            return [
+                'status' => 'error',
+                'message' => 'The flow target is missing.'
+            ];
+        }
+
+        $targetElement = $findElementById($targetElementId);
+        if (!$targetElement) {
+            return [
+                'status' => 'error',
+                'message' => "The flow target '{$targetElementId}' could not be found."
+            ];
+        }
+
+        $label = trim((string) ($targetElement['label'] ?? ''));
+        $type = $targetElement['type'] ?? null;
+        if (strcasecmp($label, 'End') === 0 || $type === 'output') {
+            return null;
+        }
+
+        $questionId = $targetElement['data']['questionId'] ?? null;
+        if (!$questionId) {
+            return [
+                'status' => 'error',
+                'message' => "The flow target '{$targetElementId}' is not a valid survey question."
+            ];
+        }
+
+        return $questionId;
+    };
+
     if ($current_question_id == null) {
 
         //get the start element
         //this will be the element with a label of "Start"
         $startElement = null;
         foreach ($elements as $element) {
-            if ($element['label'] == 'Start') {
+            if (($element['label'] ?? null) == 'Start') {
                 $startElement = $element;
                 break;
             }
+        }
+
+        if (!$startElement) {
+            return [
+                'status' => 'error',
+                'message' => 'No Start node found in the flow data.'
+            ];
         }
 
         //get the first question element
@@ -62,73 +126,84 @@ function getNextQuestion($survey_id, $response = null, $current_question_id = nu
             }
         }
 
-        //get the target of the starting edge
-        $firstQuestionElementId = $startingEdge['target'];
-        $firstQuestionElement = null;
-        foreach ($elements as $element) {
-            if ($element['id'] == $firstQuestionElementId) {
-                $firstQuestionElement = $element;
-                break;
-            }
+        if (!$startingEdge) {
+            return [
+                'status' => 'error',
+                'message' => 'No starting edge found from the Start node.'
+            ];
         }
 
-        //get the question_id
-        $next_question_id = $firstQuestionElement['data']['questionId'];
+        $next_question_id = $resolveQuestionIdFromTarget($startingEdge['target'] ?? null);
     } else {
         //get the current question element
         $currentQuestionElement = null;
         foreach ($elements as $element) {
-            if ($element['data']['questionId'] == $current_question_id) {
+            if (($element['data']['questionId'] ?? null) == $current_question_id) {
                 $currentQuestionElement = $element;
                 break;
             }
         }
 
-        // dd($currentQuestionElement);
+        if (!$currentQuestionElement) {
+            return [
+                'status' => 'error',
+                'message' => "The current question ID {$current_question_id} was not found in the flow data."
+            ];
+        }
 
         //get all edges that have the current question element as the source
         $outgoingEdges = [];
         foreach ($edges as $edge) {
-            if ($edge['source'] == $currentQuestionElement['id']) {
+            if (($edge['source'] ?? null) == $currentQuestionElement['id']) {
                 $outgoingEdges[] = $edge;
             }
         }
 
         //first check the answer strictness
-        $answer_strictness = $currentQuestionElement['data']['answerStrictness'];
+        $answer_strictness = $currentQuestionElement['data']['answerStrictness'] ?? 'Open-Ended';
         if ($answer_strictness == "Open-Ended") {
-            // take the first array element of the outgoing edges and get its target
-            $nextQuestionElementId = $outgoingEdges[0]['target'];
-            $nextQuestionElement = null;
-            foreach ($elements as $element) {
-                if ($element['id'] == $nextQuestionElementId) {
-                    $nextQuestionElement = $element;
-                    break;
-                }
+            if (count($outgoingEdges) === 0) {
+                return null;
             }
-            //get the question_id
-            $next_question_id = $nextQuestionElement['data']['questionId'];
+
+            // take the first array element of the outgoing edges and get its target
+            $next_question_id = $resolveQuestionIdFromTarget($outgoingEdges[0]['target'] ?? null);
         } else {
             //get the possible answers and the flows they lead to
-            $possibleAnswers = $currentQuestionElement['data']['possibleAnswers'];
+            $possibleAnswers = $currentQuestionElement['data']['possibleAnswers'] ?? [];
+            if (!is_array($possibleAnswers) || count($possibleAnswers) === 0) {
+                return [
+                    'status' => 'error',
+                    'message' => "No possible answers configured for question ID {$current_question_id}."
+                ];
+            }
 
             //check if the response matches any of the possible answers
+            $matchedAnswer = null;
             $matchedFlow = null;
             foreach ($possibleAnswers as $answer) {
                 // Flexible text matching: normalize spaces, case-insensitive, trim
-                if (normalizeAnswerText($answer['answer']) === normalizeAnswerText($response)) {
-                    $matchedFlow = $answer['linkedFlow'];
+                if (normalizeAnswerText($answer['answer'] ?? '') === normalizeAnswerText($response)) {
+                    $matchedAnswer = $answer;
+                    $matchedFlow = $answer['linkedFlow'] ?? null;
                     break;
                 }
             }
 
             // dd($matchedFlow, $possibleAnswers, $response, $outgoingEdges);
 
+            if ($matchedAnswer && !$matchedFlow) {
+                return [
+                    'status' => 'error',
+                    'message' => "The matched answer '{$matchedAnswer['answer']}' does not have a linked flow."
+                ];
+            }
+
             if ($matchedFlow) {
                 //get the edge that matches the linked flow
                 $matchedEdge = null;
                 foreach ($outgoingEdges as $edge) {
-                    if ($edge['id'] == $matchedFlow) {
+                    if (($edge['id'] ?? null) == $matchedFlow || ($edge['target'] ?? null) == $matchedFlow) {
                         $matchedEdge = $edge;
                         break;
                     }
@@ -136,21 +211,18 @@ function getNextQuestion($survey_id, $response = null, $current_question_id = nu
 
                 // dd($matchedEdge, $outgoingEdges);
 
-                //get the target of the matched edge
-                $nextQuestionElementId = $matchedEdge['target'];
-                $nextQuestionElement = null;
-                foreach ($elements as $element) {
-                    if ($element['id'] == $nextQuestionElementId) {
-                        $nextQuestionElement = $element;
-                        break;
-                    }
+                if (!$matchedEdge) {
+                    return [
+                        'status' => 'error',
+                        'message' => "The linked flow '{$matchedFlow}' for answer '{$matchedAnswer['answer']}' could not be found."
+                    ];
                 }
 
-                //get the question_id
-                $next_question_id = $nextQuestionElement['data']['questionId'];
+                //get the target of the matched edge
+                $next_question_id = $resolveQuestionIdFromTarget($matchedEdge['target'] ?? null);
             } else {
                 //if no match, check if there is a violation response
-                $violationResponse = $currentQuestionElement['data']['violationResponse'];
+                $violationResponse = $currentQuestionElement['data']['violationResponse'] ?? null;
                 if ($violationResponse) {
                     //send the violation response
                     return [
@@ -168,8 +240,19 @@ function getNextQuestion($survey_id, $response = null, $current_question_id = nu
     }
 
     // dd($next_question_id, $next_question, $next_question->question );
+    if (is_array($next_question_id) || $next_question_id === null) {
+        return $next_question_id;
+    }
+
     if ($next_question_id) {
         $next_question = \App\Models\SurveyQuestion::find($next_question_id);
+        if (!$next_question) {
+            return [
+                'status' => 'error',
+                'message' => "Survey question {$next_question_id} could not be found."
+            ];
+        }
+
         return $next_question;
     }
 
