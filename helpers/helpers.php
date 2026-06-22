@@ -12,6 +12,7 @@ use App\Models\Survey;
 use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 function getNextQuestion($survey_id, $response = null, $current_question_id = null)
@@ -535,6 +536,11 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
     Log::info("The actual answer to be stored is  $actualAnswer");
     $member = $progress->member;
 
+    // Record the response and advance the survey atomically. A crash or error anywhere in
+    // here rolls everything back, so we can never leave an orphan SurveyResponse, a double
+    // credit deduction, or a half-advanced progress that a retried delivery would duplicate.
+    return DB::transaction(function () use ($msisdn, $progress, $response, $channel, $currentQuestion, $survey, $actualAnswer, $member) {
+
     if($currentQuestion->purpose !=="regular"){
         Log::info("This is not  regular question ");
         processQuestionPurpose($currentQuestion,$msisdn,$member,$actualAnswer,$survey,$channel);
@@ -656,12 +662,54 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
             'final_response' => $message
         ]);
     }
-    // The next question will be sent by the scheduled command.
+    // Fix B: advance the survey synchronously instead of waiting for the
+    // process:surveys-progress poller. The inbound reply already runs this code, so
+    // we send the next question right now; the poller stays as a safety net for any
+    // record we couldn't advance here.
+    if ($nextQuestion instanceof \App\Models\SurveyQuestion) {
+        $message = formartQuestion($nextQuestion, $member, $survey);
+        sendSMS($msisdn, $message, $channel, $member, false, $progress->id);
+        $progress->update([
+            'current_question_id' => $nextQuestion->id,
+            'last_dispatched_at'  => now(),
+            'has_responded'       => false,
+            'number_of_reminders' => 0,
+        ]);
+        Log::info("Next question sent immediately to {$msisdn} (synchronous advance)");
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Response received. Next question sent.',
+            'nxt'     => $nextQuestion->question,
+        ]);
+    }
+
+    // Flow returned a violation (answer didn't match any branch): tell the member and
+    // keep the survey on the current question so they can answer again.
+    if (is_array($nextQuestion) && ($nextQuestion['status'] ?? null) === 'violation') {
+        sendSMS($msisdn, $nextQuestion['message'], $channel, $member, false, $progress->id);
+        $progress->update([
+            'last_dispatched_at' => now(),
+            'has_responded'      => false,
+        ]);
+        Log::info("Sent flow violation message to {$msisdn}: {$nextQuestion['message']}");
+
+        return response()->json([
+            'status'  => 'violation',
+            'message' => $nextQuestion['message'],
+        ]);
+    }
+
+    // Anything else (flow error / unexpected): leave has_responded = true so the
+    // process:surveys-progress poller can pick it up as a safety net.
+    Log::warning("Could not advance survey synchronously for {$msisdn}; leaving to poller. Result: " . json_encode($nextQuestion));
     return response()->json([
         'status' => 'success',
         'message' => 'Response received. Thank you!',
         'nxt' => $nextQuestion
     ]);
+
+    }); // end DB::transaction — response recorded and survey advanced atomically
 }
 
 function parse_member_date_response(string $answer): ?Carbon

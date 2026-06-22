@@ -14,9 +14,11 @@ Artisan::command('inspire', function () {
 // withoutOverlapping() prevents a slow run from colliding with the next tick — it only
 // takes effect through the scheduler, NOT when commands are invoked directly from cron.
 
-// Outbound sender: light (only processes pending rows) — run frequently for low reply latency.
+// Outbound sender: light (only processes pending rows, returns immediately when empty) —
+// run every 5s so the next question (queued synchronously by the inbound webhook) goes out
+// almost immediately instead of waiting on a slow poll.
 Schedule::command('dispatch:sms')
-    ->everyFifteenSeconds()
+    ->everyFiveSeconds()
     ->withoutOverlapping();
 
 // Advances members to their next question / sends reminders. Heavier (scans active

@@ -12,7 +12,9 @@ use App\Models\MemberEditRequest;
 use App\Models\SMSInbox;
 use App\Models\SmsCredit;
 use App\Services\UjumbeSMS;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -82,10 +84,51 @@ class WebHookController extends Controller
             }
         }
 
+        if (!$msisdn) {
+            Log::warning('Webhook had no resolvable phone number. Ignoring.');
+            return response()->json(['status' => 'ignored', 'message' => 'No phone number.']);
+        }
+
+        $uniqueId = $this->extractMessageId($data);
+        $lockKey = 'survey-inbound:' . normalizePhoneNumber($msisdn);
+
+        // Serialize all inbound processing per phone number. Duplicate or concurrent
+        // deliveries (gateway retries, members double-texting) must never double-charge
+        // credits, create duplicate responses, or send the next question twice. The survey
+        // poller takes this same lock before it advances a member, so the two can never act
+        // on one member at the same time.
+        try {
+            return Cache::lock($lockKey, 20)->block(8, function () use ($msisdn, $message, $uniqueId) {
+                // Idempotency: drop a delivery we have already fully processed.
+                if ($uniqueId && Cache::has('inbound-msg:' . $uniqueId)) {
+                    Log::info("Duplicate inbound message {$uniqueId} from {$msisdn} ignored.");
+                    return response()->json(['status' => 'ignored', 'message' => 'Duplicate message.']);
+                }
+
+                $result = $this->routeInbound($msisdn, $message);
+
+                // Mark processed only AFTER success, so a transient failure can still retry.
+                if ($uniqueId) {
+                    Cache::put('inbound-msg:' . $uniqueId, true, now()->addHours(6));
+                }
+
+                return $result;
+            });
+        } catch (LockTimeoutException $e) {
+            Log::warning("Could not acquire inbound lock for {$msisdn} within 8s; not processed: {$message}");
+            return response()->json(['status' => 'busy', 'message' => 'Another message is being processed.']);
+        }
+    }
+
+    /**
+     * Route an inbound message: survey trigger word, active-survey response, or generic SMS.
+     * Always runs inside the per-phone lock acquired by handleWebhook().
+     */
+    private function routeInbound(string $msisdn, ?string $message)
+    {
         // Check if the message is a trigger word for any survey
         $survey = Survey::where('trigger_word', $message)->first();
 
-        //TODO: CHECK IF THE member has an active survey
         if ($survey) {
             // Deduct credits for trigger word message
             if ($message) {
@@ -126,9 +169,25 @@ class WebHookController extends Controller
             Log::info("Credits deducted for received SMS (non-survey): {$creditsRequired} (from {$msisdn})");
         }
 
-
         Log::info("No active survey or trigger word found for message: $message");
 
         return response()->json(['status' => 'ignored', 'message' => 'No active survey or trigger word found.']);
+    }
+
+    /**
+     * Extract a stable provider message id, used for idempotency to drop duplicate
+     * deliveries. Returns null when the payload carries no usable id.
+     */
+    private function extractMessageId(array $data): ?string
+    {
+        $id = $data['traceUniqueID']
+            ?? $data['tid']
+            ?? $data['linkID']
+            ?? ($data['messages'][0]['id'] ?? null)
+            ?? $data['id']
+            ?? $data['message_id']
+            ?? null;
+
+        return $id !== null ? (string) $id : null;
     }
 }

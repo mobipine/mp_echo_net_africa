@@ -102,128 +102,144 @@ class ProcessSurveyProgressCommand extends Command
                 // Log::info("The survey ends on $endDate");
                 //check if endDate has passed. If it has, continue to the next record
 
-                // Check if the time since the last dispatch has exceeded the defined interval
-                $lastDispatched = Carbon::parse($progress->last_dispatched_at);
-                $nextDue = $lastDispatched->copy()->add($interval, $unit);
-                $isDue = $nextDue->lessThanOrEqualTo(now());
-
-                if (!$isDue) {
-                    continue;
-                }
-
-                // Message is due - start logging
-                // Log::info("Processing survey progress for member {$member->name} (ID: {$member->id})");
-                // Log::info("Survey: {$survey->title}, Last Dispatched: $lastDispatched, Next Due: $nextDue");
-
-                $reminder_interval = $survey->continue_confirmation_interval;
-                $reminder_interval_unit = $survey->continue_confirmation_interval_unit;
-
-                $confirmationDue = $lastDispatched->copy()->add($reminder_interval, $reminder_interval_unit);
-                $isconfirmationDue = $confirmationDue->lessThanOrEqualTo(now());
-
-                // Check if the user has responded since the last dispatch
+                // Decide from current state whether this record might need action. Most
+                // active records are idle (waiting on a reply, no reminder yet due), so we
+                // avoid taking a lock for them.
                 $hasResponded = SurveyProgress::where('member_id', $member->id)
                     ->where('survey_id', $survey->id)
                     ->where('has_responded', true)
                     ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
                     ->exists();
 
-                if ($hasResponded) {
-                    Log::info("Member has responded - sending next question");
-                    $progress = SurveyProgress::where('member_id', $member->id)
+                $lastDispatched = Carbon::parse($progress->last_dispatched_at);
+                $confirmationDue = $lastDispatched->copy()
+                    ->add($survey->continue_confirmation_interval, $survey->continue_confirmation_interval_unit);
+                $isconfirmationDue = $confirmationDue->lessThanOrEqualTo(now());
+
+                if (!$hasResponded && !$isconfirmationDue) {
+                    continue; // nothing to do — don't bother locking
+                }
+
+                // Serialize against the inbound webhook, which advances surveys
+                // synchronously and takes this same per-phone lock. Non-blocking: if a
+                // webhook is currently handling this member, skip and retry next cycle. This
+                // guarantees the webhook and the poller can never act on one member at the
+                // same time — no duplicate sends, no duplicate DB writes.
+                $memberLock = \Illuminate\Support\Facades\Cache::lock('survey-inbound:' . normalizePhoneNumber($member->phone), 20);
+                if (!$memberLock->get()) {
+                    continue;
+                }
+
+                try {
+                    // Re-read fresh state under the lock — the bulk load above may be stale
+                    // (a webhook may have advanced this member in the meantime).
+                    $progress = SurveyProgress::with('currentQuestion')
+                        ->where('member_id', $member->id)
                         ->where('survey_id', $survey->id)
-                        ->where('has_responded', true)
                         ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
+                        ->whereNull('completed_at')
                         ->latest()
                         ->first();
 
-                    $channel = $progress?->channel ?? 'sms'; // default to sms if null
+                    if (!$progress) {
+                        continue;
+                    }
 
-                    //get the response
-                    $latestResponse = SurveyResponse::where('session_id', $progress->id)
-                        ->where('survey_id', $survey->id)
-                        ->where('question_id', $currentQuestion->id)
-                        ->latest()
-                        ->first();
-                    $response = $latestResponse ? $latestResponse->survey_response : null;
+                    $currentQuestion = $progress->currentQuestion;
+                    if (!$currentQuestion) {
+                        continue;
+                    }
 
-                    // User has responded, send the next question
-                    $nextQuestion = getNextQuestion($survey->id, $response, $currentQuestion->id);
+                    $channel = $progress->channel ?? 'sms';
 
-                    // Check if nextQuestion is an error/violation array or a valid question object
-                    if (is_array($nextQuestion)) {
-                        // Handle error or violation response
-                        Log::error("Error getting next question for member {$member->id}: " . ($nextQuestion['message'] ?? 'Unknown error'));
+                    if ($progress->has_responded) {
+                        // Get the latest response for the current question.
+                        $latestResponse = SurveyResponse::where('session_id', $progress->id)
+                            ->where('survey_id', $survey->id)
+                            ->where('question_id', $currentQuestion->id)
+                            ->latest()
+                            ->first();
+                        $response = $latestResponse ? $latestResponse->survey_response : null;
 
-                        if (($nextQuestion['status'] ?? null) === 'violation') {
-                            // Send violation message to member
-                            $violationMessage = $nextQuestion['message'];
-                            $this->sendSMS($member->phone, $violationMessage, $channel, false, $member, $progress->id);
-                            Log::info("Sent violation message to member {$member->id}: {$violationMessage}");
+                        // Safety-net guard: only step in if the reply is old enough that the
+                        // webhook clearly failed to handle it (>30s). Fresh replies belong to
+                        // the webhook, which advances them synchronously.
+                        if ($latestResponse && $latestResponse->created_at->greaterThan(now()->subSeconds(30))) {
+                            continue;
+                        }
 
-                            // CRITICAL: Reset has_responded to prevent loop
-                            // Member must respond again before we process further
+                        Log::info("Safety-net: advancing survey for {$member->phone} (webhook missed this reply)");
+
+                        $nextQuestion = getNextQuestion($survey->id, $response, $currentQuestion->id);
+
+                        // Check if nextQuestion is an error/violation array or a valid question object
+                        if (is_array($nextQuestion)) {
+                            Log::error("Error getting next question for member {$member->id}: " . ($nextQuestion['message'] ?? 'Unknown error'));
+
+                            if (($nextQuestion['status'] ?? null) === 'violation') {
+                                // Send violation message and require a new response.
+                                $this->sendSMS($member->phone, $nextQuestion['message'], $channel, false, $member, $progress->id);
+                                $progress->update([
+                                    'last_dispatched_at' => now(),
+                                    'has_responded' => false,
+                                ]);
+                                Log::info("Sent violation message to member {$member->id}: {$nextQuestion['message']}");
+                            } else {
+                                Log::error("Survey flow error for member {$member->id}, survey {$survey->id}. Marking as completed.");
+                                $progress->update([
+                                    'completed_at' => now(),
+                                    'status' => 'error',
+                                ]);
+                            }
+                            continue;
+                        }
+
+                        if ($nextQuestion instanceof \App\Models\SurveyQuestion) {
+                            $message = formartQuestion($nextQuestion, $member, $survey);
+                            $this->sendSMS($member->phone, $message, $channel, false, $member, $progress->id);
                             $progress->update([
+                                'current_question_id' => $nextQuestion->id,
                                 'last_dispatched_at' => now(),
-                                'has_responded' => false, // Require new response
+                                'has_responded' => false,
+                                'number_of_reminders' => 0,
                             ]);
+                            Log::info("Next question sent to {$member->phone}");
                         } else {
-                            // Error - mark survey as completed with error status
-                            Log::error("Survey flow error for member {$member->id}, survey {$survey->id}. Marking as completed.");
+                            // All questions answered, mark as complete.
                             $progress->update([
                                 'completed_at' => now(),
-                                'status' => 'error',
+                                'status' => 'COMPLETED',
+                                'number_of_reminders' => 0,
                             ]);
+                            $stage = str_replace(' ', '', ucfirst($survey->title)) . 'Completed';
+                            $member->update(['stage' => $stage]);
+                            Log::info("Survey completed by {$member->phone}, stage updated to {$stage}");
                         }
-                        continue; // Skip to next progress record
-                    }
-
-                    if ($nextQuestion && $nextQuestion instanceof \App\Models\SurveyQuestion) {
-                        //Formatting the question
-                        $message = formartQuestion($nextQuestion, $member, $survey);
-
-                        $this->sendSMS($member->phone, $message, $channel, false, $member, $progress->id);
-                        $progress->update([
-                            'current_question_id' => $nextQuestion->id,
-                            'last_dispatched_at' => now(),
-                            'has_responded' => false,
-                            // Reset reminders count
-                            'number_of_reminders' => 0,
-                        ]);
-                        Log::info("Next question sent to {$member->phone}");
                     } else {
-                        // All questions answered, mark as complete
-                        $progress->update([
-                            'completed_at' => now(),
-                            'status' => 'COMPLETED',
-                            'number_of_reminders' => 0,
-                        ]);
-                        $stage = str_replace(' ', '', ucfirst($survey->title)) . 'Completed';
-                        $member->update([
-                            'stage' => $stage
-                        ]);
-                        Log::info("Survey completed by {$member->phone}, stage updated to {$stage}");
-                    }
-                } elseif ($isconfirmationDue) {
-                    // Check if user has already received 3 reminders
-                    if ($progress->number_of_reminders >= 3) {
-                        // Log::info("Max reminders (3) reached for {$member->phone}");
-                        continue; // Skip sending
-                    }
+                        // No unprocessed reply — consider a reminder, recomputing the due
+                        // check from the FRESH last_dispatched_at so we never remind right
+                        // after a webhook just advanced this member.
+                        $confirmationDue = Carbon::parse($progress->last_dispatched_at)->copy()
+                            ->add($survey->continue_confirmation_interval, $survey->continue_confirmation_interval_unit);
 
-                    Log::info("No response from member - sending reminder #{$progress->number_of_reminders}");
-                    $message = formartQuestion($currentQuestion, $member, $survey, true);
+                        if ($confirmationDue->lessThanOrEqualTo(now()) && $progress->number_of_reminders < 3) {
+                            Log::info("No response from member - sending reminder #{$progress->number_of_reminders}");
+                            $message = formartQuestion($currentQuestion, $member, $survey, true);
 
-                    try {
-                        $this->sendSMS($member->phone, $message, $progress?->channel ?? 'sms', true, $member, $progress->id);
-                        $progress->update([
-                            'last_dispatched_at' => now(),
-                        ]);
-                        $progress->increment('number_of_reminders');
-                        Log::info("Reminder sent to {$member->phone}");
-                    } catch (\Exception $e) {
-                        Log::error("Failed to send reminder to {$member->phone}: " . $e->getMessage());
+                            try {
+                                $this->sendSMS($member->phone, $message, $channel, true, $member, $progress->id);
+                                $progress->update([
+                                    'last_dispatched_at' => now(),
+                                ]);
+                                $progress->increment('number_of_reminders');
+                                Log::info("Reminder sent to {$member->phone}");
+                            } catch (\Exception $e) {
+                                Log::error("Failed to send reminder to {$member->phone}: " . $e->getMessage());
+                            }
+                        }
                     }
+                } finally {
+                    $memberLock->release();
                 }
             }
         } finally {

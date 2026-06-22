@@ -9,8 +9,10 @@ use App\Models\MemberEditRequest;
 use App\Models\SMSInbox;
 use App\Models\SurveyResponse;
 use App\Services\WhatsAppService;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
@@ -54,8 +56,31 @@ class WhatsAppController extends Controller
             $normalizedPhone = normalizePhoneNumber($messageData['from']);
             Log::info("Processing message from: {$normalizedPhone}");
 
-            // Process the message
-            return $this->processIncomingMessage($normalizedPhone, $messageData['message']);
+            $uniqueId = $messageData['message_id'] ?? null;
+            $lockKey = 'survey-inbound:' . $normalizedPhone;
+
+            // Serialize per phone — shared with the SMS webhook and the survey poller — and
+            // drop duplicate deliveries so a WhatsApp message can never be double-processed,
+            // double-charged, or trigger a duplicate next question.
+            try {
+                return Cache::lock($lockKey, 20)->block(8, function () use ($normalizedPhone, $messageData, $uniqueId) {
+                    if ($uniqueId && Cache::has('inbound-msg:' . $uniqueId)) {
+                        Log::info("Duplicate inbound WhatsApp message {$uniqueId} from {$normalizedPhone} ignored.");
+                        return response()->json(['status' => 'ignored', 'message' => 'Duplicate message.']);
+                    }
+
+                    $result = $this->processIncomingMessage($normalizedPhone, $messageData['message']);
+
+                    if ($uniqueId) {
+                        Cache::put('inbound-msg:' . $uniqueId, true, now()->addHours(6));
+                    }
+
+                    return $result;
+                });
+            } catch (LockTimeoutException $e) {
+                Log::warning("Could not acquire inbound lock for {$normalizedPhone} within 8s; not processed.");
+                return response()->json(['status' => 'busy', 'message' => 'Another message is being processed.']);
+            }
 
         } catch (\Exception $e) {
             Log::error('Webhook processing error: ' . $e->getMessage(), [
