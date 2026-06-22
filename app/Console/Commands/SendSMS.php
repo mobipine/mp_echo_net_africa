@@ -96,8 +96,16 @@ class SendSMS extends Command
             $skippedNoCredits = 0;
 
             foreach ($pendingSms as $smsInbox) {
-                // Mark as processing to prevent duplicate processing
-                $smsInbox->update(['status' => 'processing']);
+                // Atomically claim the row (pending -> processing) so this batch and an
+                // inline webhook send (SmsDispatcher::sendOne) can never send the same
+                // message twice.
+                $claimed = SMSInbox::where('id', $smsInbox->id)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'processing']);
+
+                if ($claimed === 0) {
+                    continue; // already claimed/sent by the inline dispatcher
+                }
 
                 try {
                     // Handle individual phone number

@@ -107,10 +107,18 @@ class WebHookController extends Controller
 
                 $result = $this->routeInbound($msisdn, $message);
 
-                // Mark processed only AFTER success, so a transient failure can still retry.
+                // Mark processed as soon as the response has committed, so a duplicate
+                // delivery is dropped even if the best-effort send below fails. (If
+                // routeInbound itself threw, the transaction rolled back and we never reach
+                // here, so a retry reprocesses cleanly.)
                 if ($uniqueId) {
                     Cache::put('inbound-msg:' . $uniqueId, true, now()->addHours(6));
                 }
+
+                // Push anything we just queued (e.g. the next survey question) straight to
+                // the gateway so delivery doesn't wait for the next dispatch:sms tick. The
+                // scheduled dispatch:sms remains the fallback for anything not flushed here.
+                $this->flushPendingSms($msisdn);
 
                 return $result;
             });
@@ -172,6 +180,41 @@ class WebHookController extends Controller
         Log::info("No active survey or trigger word found for message: $message");
 
         return response()->json(['status' => 'ignored', 'message' => 'No active survey or trigger word found.']);
+    }
+
+    /**
+     * Send any SMS rows we just queued for this member straight to the gateway, so the
+     * next question is delivered immediately instead of waiting for the next dispatch:sms
+     * tick. Best-effort: SmsDispatcher atomically claims each row, so this never collides
+     * with the scheduled batch, and any row it doesn't send stays for the fallback.
+     */
+    private function flushPendingSms(string $msisdn): void
+    {
+        // Purely a delivery optimization — never let it break the (already committed)
+        // webhook, or a retry would reprocess the reply against the advanced survey state.
+        try {
+            $member = Member::where('phone', $msisdn)->first();
+            if (!$member) {
+                return;
+            }
+
+            $pending = SMSInbox::where('member_id', $member->id)
+                ->where('channel', 'sms')
+                ->where('status', 'pending')
+                ->orderBy('id')
+                ->get();
+
+            if ($pending->isEmpty()) {
+                return;
+            }
+
+            $dispatcher = app(\App\Services\SmsDispatcher::class);
+            foreach ($pending as $sms) {
+                $dispatcher->sendOne($sms);
+            }
+        } catch (\Throwable $e) {
+            Log::error("Inline SMS flush failed for {$msisdn}: " . $e->getMessage() . ". Falling back to dispatch:sms.");
+        }
     }
 
     /**
