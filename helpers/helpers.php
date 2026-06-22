@@ -289,7 +289,12 @@ function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
     }
     else {
         $message = $firstQuestion->question;
-        if ($firstQuestion->answer_data_type === 'Strictly Number') {
+        if ($firstQuestion->purpose === 'loan_received_date') {
+            // This question wants a month + year. The generic data-type hint
+            // ("Letters & numbers only") contradicts that and implies the natural "06/2026"
+            // answer is invalid, so show a clear example instead.
+            $message .= "\n(Reply month & year, e.g. 06/2026)";
+        } elseif ($firstQuestion->answer_data_type === 'Strictly Number') {
             $message .= "\n(Number only)";
         } elseif ($firstQuestion->answer_data_type === 'Alphanumeric') {
             $message .= "\n(Letters & numbers only)";
@@ -513,10 +518,12 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
             $actualAnswer = $parsedDate;
             Log::info("Successfully parsed and saved loan_date: " . $actualAnswer->toDateString());
         } else {
-            // Parsing failed: tell the member how to answer and keep the survey on this
-            // question (mirrors the data-type validation path) so they aren't left stuck.
+            // Parsing failed: tell the member the exact format and keep the survey on this
+            // question so they aren't left stuck. We use a date-specific message rather than
+            // the generic data_type_violation_response, which doesn't explain Month/Year.
             Log::warning("Failed to parse loan date answer '{$actualAnswer}' from {$msisdn}. Resending question.");
-            sendSMS($msisdn, $currentQuestion->data_type_violation_response, $channel, $member, false, $progress->id);
+            $correction = "Sorry, we couldn't read that date. Please reply with the month and year you received the money, e.g. 06/2026 or June 2026.";
+            sendSMS($msisdn, $correction, $channel, $member, false, $progress->id);
             return response()->json([
                 "status" => "failed",
                 "message" => "Failed to parse loan date answer"
