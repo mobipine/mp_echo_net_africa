@@ -506,17 +506,16 @@ function processSurveyResponse($msisdn, SurveyProgress $progress, $response, $ch
          // CRITICAL: Handle the Loan Date (Anchor for Future Scheduling)
         Log::info("Processing loan_date purpose. Answer: " . $actualAnswer);
 
-        // 1. Parse and Validate the Date
-        // Assume you have a helper function to safely convert the string answer into a Carbon instance.
-        $actualAnswer = parse_member_date_response($actualAnswer);
-        if ($actualAnswer instanceof Carbon) {
-
+        // 1. Parse and Validate the Date (keep the raw answer so we can log/return it).
+        $parsedDate = parse_member_date_response($actualAnswer);
+        if ($parsedDate instanceof Carbon) {
+            $actualAnswer = $parsedDate;
             Log::info("Successfully parsed and saved loan_date: " . $actualAnswer->toDateString());
-
         } else {
-            // Log failure or send a correction SMS back to the user (depending on your service flow)
-            Log::warning("Failed to parse loan date answer: " . $actualAnswer);
-            // Optionally, resend the question or provide an error message here.
+            // Parsing failed: tell the member how to answer and keep the survey on this
+            // question (mirrors the data-type validation path) so they aren't left stuck.
+            Log::warning("Failed to parse loan date answer '{$actualAnswer}' from {$msisdn}. Resending question.");
+            sendSMS($msisdn, $currentQuestion->data_type_violation_response, $channel, $member, false, $progress->id);
             return response()->json([
                 "status" => "failed",
                 "message" => "Failed to parse loan date answer"
@@ -695,6 +694,22 @@ function parse_member_date_response(string $answer): ?Carbon
         }
         if ($cleanedAnswer === 'yesterday') {
             return Carbon::yesterday();
+        }
+
+        // Handle explicit "Month/Year" answers (e.g. "06/2026", "6/2026", "06-2026", "06.2026").
+        // These are exactly what this question asks for, but Carbon::parse reads the "/" as a
+        // US m/d/y date and fails, so match them here and map to the first day of that month.
+        if (preg_match('#^(\d{1,2})\s*[/\-.]\s*(\d{4})$#', $cleanedAnswer, $m)) {
+            $month = (int) $m[1];
+            $year  = (int) $m[2];
+            if ($month >= 1 && $month <= 12) {
+                $date = Carbon::create($year, $month, 1)->startOfDay();
+                if ($date->isFuture()) {
+                    Log::warning("Date Parsing failed for answer '{$answer}': Date is in the future.");
+                    return null;
+                }
+                return $date;
+            }
         }
 
         // The parse() method is smart and often handles many common formats.
