@@ -166,11 +166,14 @@ class AuditReminderDispatch extends Command
                 $keep = $rows->sortBy('id')->first();
             }
 
-            $toDelete = $rows->reject(fn ($r) => $r->id === $keep->id);
-            if (!$deleteSent) {
-                // By default never delete a row that actually went out.
-                $toDelete = $toDelete->reject(fn ($r) => $r->status === 'sent');
-            }
+            // Statuses we are allowed to delete. NEVER delete 'processing' (a row the SMS
+            // dispatcher is sending right now) — that would race the live dispatcher. 'sent'
+            // is only deletable when the operator explicitly opts in with --delete-sent.
+            $deletableStatuses = $deleteSent ? ['pending', 'failed', 'sent'] : ['pending', 'failed'];
+
+            $toDelete = $rows
+                ->reject(fn ($r) => $r->id === $keep->id)
+                ->filter(fn ($r) => in_array($r->status, $deletableStatuses, true));
 
             if ($toDelete->isEmpty()) {
                 continue;
@@ -315,8 +318,13 @@ class AuditReminderDispatch extends Command
                 $this->info('Skipped duplicate deletion.');
             } else {
                 $changed = true;
-                $deleted = $this->deleteSurplus($surplusIds, $progressesWithDupes);
-                $this->info("Deleted {$deleted} surplus reminder SMS and reconciled number_of_reminders for affected progress rows.");
+                $allowedStatuses = $deleteSent ? ['pending', 'failed', 'sent'] : ['pending', 'failed'];
+                $result = $this->deleteSurplus($surplusIds, $progressesWithDupes, $allowedStatuses);
+                $this->info("Deleted {$result['deleted']} surplus reminder SMS and reconciled number_of_reminders for affected progress rows.");
+                if ($result['skipped'] > 0) {
+                    $this->comment("Skipped {$result['skipped']} row(s) that were no longer deletable "
+                        . '(the dispatcher sent/claimed them between the audit and the delete) — left untouched.');
+                }
             }
             $this->newLine();
         }
@@ -346,30 +354,43 @@ class AuditReminderDispatch extends Command
     /**
      * Delete surplus reminder SMS in chunks and reset number_of_reminders on each affected
      * progress to the number of reminder SMS that survive for it (whole table, any status).
+     *
+     * The DELETE re-checks status against $allowedStatuses so a row the live dispatcher
+     * sent/claimed between the audit snapshot and this delete is left untouched (no race).
+     *
+     * @return array{deleted:int, skipped:int}
      */
-    protected function deleteSurplus(array $surplusIds, array $progressesWithDupes): int
+    protected function deleteSurplus(array $surplusIds, array $progressesWithDupes, array $allowedStatuses): array
     {
         $deleted = 0;
         $affectedProgressIds = array_column($progressesWithDupes, 'progress_id');
 
-        DB::transaction(function () use ($surplusIds, $affectedProgressIds, &$deleted) {
-            foreach (array_chunk($surplusIds, 500) as $chunk) {
-                $deleted += SMSInbox::whereIn('id', $chunk)->delete();
-            }
+        // Deletes in chunks — each chunk DELETE is atomic on its own. We deliberately avoid
+        // one big transaction: holding survey_progress locks across thousands of rows would
+        // contend with the live inbound webhook handler. The reconcile below is idempotent,
+        // so an interrupted run is fully recovered by simply re-running the audit with --fix.
+        foreach (array_chunk($surplusIds, 500) as $chunk) {
+            $deleted += SMSInbox::whereIn('id', $chunk)
+                ->whereIn('status', $allowedStatuses)
+                ->delete();
+        }
 
-            // Reconcile the counter to what actually remains for each progress.
-            foreach ($affectedProgressIds as $pid) {
+        // Reconcile number_of_reminders to what actually survives for each progress.
+        foreach (array_chunk($affectedProgressIds, 500) as $chunk) {
+            foreach ($chunk as $pid) {
                 $remaining = SMSInbox::where('survey_progress_id', $pid)
                     ->where('is_reminder', true)
                     ->count();
                 SurveyProgress::where('id', $pid)->update(['number_of_reminders' => $remaining]);
             }
-        });
+        }
+
+        $skipped = count($surplusIds) - $deleted;
 
         Log::info("AuditReminderDispatch: deleted {$deleted} surplus reminder SMS across "
-            . count($affectedProgressIds) . ' progress rows.');
+            . count($affectedProgressIds) . " progress rows ({$skipped} skipped as no longer deletable).");
 
-        return $deleted;
+        return ['deleted' => $deleted, 'skipped' => $skipped];
     }
 
     /**
