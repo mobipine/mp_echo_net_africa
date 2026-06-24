@@ -302,7 +302,7 @@ function formartQuestion($firstQuestion,$member,$survey,$reminder=false){
     }
     if ($reminder) {
         // Shorter reminder prefix instead of full continue_confirmation_question
-        $reminderPrefix = "REMINDER: {$member->name}";
+        $reminderPrefix = "REMINDER:";
         $message = "{$reminderPrefix}\n{$message}";
         Log::info("The formarted reminder message to be sent");
     }
