@@ -43,6 +43,7 @@ class AuditReminderDispatch extends Command
                             {--survey= : Survey ID the reminder run targeted (required)}
                             {--since= : Only consider reminder SMS created at/after this datetime (e.g. "2026-06-24 09:00"). Scopes to the bad batch.}
                             {--fix : Delete surplus duplicate reminder SMS and reconcile number_of_reminders}
+                            {--cancel-stale : With --fix, also cancel pending reminders whose progress is no longer eligible (cancelled/completed)}
                             {--send-missed : With --fix, also queue one reminder to eligible members who received nothing (costs credits)}
                             {--delete-sent : Also delete already-SENT duplicate rows (default keeps sent rows for the audit/credit trail)}
                             {--limit=30 : Rows to show per detail table}';
@@ -54,6 +55,7 @@ class AuditReminderDispatch extends Command
         $groupId = $this->option('group') ? (int) $this->option('group') : null;
         $surveyId = $this->option('survey') ? (int) $this->option('survey') : null;
         $fix = (bool) $this->option('fix');
+        $cancelStale = (bool) $this->option('cancel-stale');
         $sendMissed = (bool) $this->option('send-missed');
         $deleteSent = (bool) $this->option('delete-sent');
         $limit = max(1, (int) $this->option('limit'));
@@ -143,6 +145,43 @@ class AuditReminderDispatch extends Command
         $missed = $eligible->filter(fn ($p) => !isset($byProgress[$p->id]));
         $missedMemberIds = $missed->pluck('member_id')->unique();
 
+        // --- Reminder SMS sitting on a progress that is NO LONGER eligible ---
+        // A 'pending' reminder here will still be delivered by the dispatcher even though the
+        // member has cancelled or completed the survey (SmsDispatcher does not check progress
+        // status). Those pending rows should be cancelled, not sent.
+        $progressById = $allProgress->keyBy('id');
+        $effectiveStatus = function ($pid) use ($progressById, $eligible) {
+            $p = $progressById->get($pid);
+            if (!$p) {
+                return 'no-progress';
+            }
+            if ($eligible->has($pid)) {
+                return 'ELIGIBLE';
+            }
+            if (!is_null($p->completed_at)) {
+                return 'completed';
+            }
+            if (is_null($p->current_question_id)) {
+                return $p->status . ' (no current question)';
+            }
+            return $p->status; // e.g. CANCELLED
+        };
+
+        // Break every in-scope reminder down by the CURRENT status of its progress.
+        $reminderByProgressStatus = $smsRows
+            ->groupBy(fn ($r) => $effectiveStatus($r->survey_progress_id))
+            ->map->count();
+
+        // Pending reminders whose progress is no longer eligible -> should be cancelled.
+        $stalePending = $smsRows->filter(
+            fn ($r) => $r->status === 'pending' && !$eligible->has($r->survey_progress_id)
+        );
+        $stalePendingIds = $stalePending->pluck('id')->all();
+        $stalePendingByStatus = $stalePending
+            ->groupBy(fn ($r) => $effectiveStatus($r->survey_progress_id))
+            ->map->count();
+        $stalePendingCredits = (int) $stalePending->sum(fn ($r) => (int) ($r->credits_count ?? 0));
+
         // --- Surplus duplicate reminder SMS per progress (root cause #1) ---
         // For each progress with >1 reminder SMS, everything beyond the one we keep is surplus.
         $surplusIds = [];          // sms ids that would be deleted
@@ -207,8 +246,10 @@ class AuditReminderDispatch extends Command
             ['Reminder SMS in scope', number_format($totalReminderSms)],
             ['Progress rows with duplicate reminder SMS', number_format(count($progressesWithDupes))],
             ['Surplus reminder SMS to delete', number_format(count($surplusIds))],
+            ['PENDING reminders on cancelled/completed progress', number_format(count($stalePendingIds))],
             ['Eligible members who got NO reminder (missed)', number_format($missed->count())],
             ['SMS credits reclaimed by deleting surplus', number_format($surplusCredits)],
+            ['SMS credits saved by cancelling stale pending', number_format($stalePendingCredits)],
         ]);
         $this->newLine();
 
@@ -218,6 +259,26 @@ class AuditReminderDispatch extends Command
         } else {
             $this->table(['Status', 'Count'],
                 $statusBreakdown->map(fn ($c, $s) => [$s, number_format($c)])->values()->toArray());
+        }
+        $this->newLine();
+
+        // Reminders grouped by the CURRENT status of the progress they belong to.
+        $this->info('=== Reminder SMS by current progress status ===');
+        $this->table(['Progress status', 'Reminder SMS'],
+            $reminderByProgressStatus->map(fn ($c, $s) => [$s, number_format($c)])->values()->toArray());
+        $this->newLine();
+
+        // The actionable problem: pending reminders that will still be sent to people who
+        // have cancelled or completed the survey.
+        $this->info('=== PENDING reminders on cancelled/completed (non-eligible) progress ===');
+        if (empty($stalePendingIds)) {
+            $this->line('None — every pending reminder belongs to a still-eligible progress.');
+        } else {
+            $this->line(count($stalePendingIds) . ' pending reminder(s) will be sent to members who are no longer eligible '
+                . '(they have cancelled/completed). These should be cancelled:');
+            $this->table(['Progress status', 'Pending reminders'],
+                $stalePendingByStatus->map(fn ($c, $s) => [$s, number_format($c)])->values()->toArray());
+            $this->comment('➡  These can be neutralized (status=pending → cancelled) with --fix --cancel-stale.');
         }
         $this->newLine();
 
@@ -287,6 +348,10 @@ class AuditReminderDispatch extends Command
             $recs[] = 'Delete ' . count($surplusIds) . ' surplus reminder SMS (reclaims '
                 . $surplusCredits . ' credits) and reconcile number_of_reminders  →  re-run with --fix';
         }
+        if (!empty($stalePendingIds)) {
+            $recs[] = 'Cancel ' . count($stalePendingIds) . ' pending reminder(s) queued for cancelled/completed members (saves '
+                . $stalePendingCredits . ' credits)  →  re-run with --fix --cancel-stale';
+        }
         if (!$membersWithMultipleProgress->isEmpty()) {
             $recs[] = 'Resolve ' . $membersWithMultipleProgress->count()
                 . ' members with multiple active progress  →  php artisan surveys:dedupe-active-progress';
@@ -305,7 +370,7 @@ class AuditReminderDispatch extends Command
         $this->newLine();
 
         if (!$fix) {
-            $this->comment('Read-only audit complete. Re-run with --fix (and optionally --send-missed) to apply.');
+            $this->comment('Read-only audit complete. Re-run with --fix (optionally --cancel-stale / --send-missed) to apply.');
             return Command::SUCCESS;
         }
 
@@ -329,7 +394,25 @@ class AuditReminderDispatch extends Command
             $this->newLine();
         }
 
-        // 2) Queue reminders to missed members.
+        // 2) Cancel pending reminders queued for cancelled/completed members.
+        if (!empty($stalePendingIds)) {
+            if (!$cancelStale) {
+                $this->comment('Note: ' . count($stalePendingIds) . ' pending reminder(s) are queued for cancelled/completed members. '
+                    . 'Add --cancel-stale to neutralize them.');
+            } elseif (!$this->confirm('Cancel ' . count($stalePendingIds) . ' pending reminder(s) on cancelled/completed progress?', false)) {
+                $this->info('Skipped cancelling stale pending reminders.');
+            } else {
+                $changed = true;
+                $cancelled = $this->cancelStalePending($stalePendingIds);
+                $this->info("Cancelled {$cancelled} pending reminder(s) (status=pending → cancelled); they will not be sent.");
+                if ($cancelled < count($stalePendingIds)) {
+                    $this->comment('Skipped ' . (count($stalePendingIds) - $cancelled) . ' row(s) the dispatcher had already claimed/sent.');
+                }
+            }
+            $this->newLine();
+        }
+
+        // 3) Queue reminders to missed members.
         if ($sendMissed && $missed->isNotEmpty()) {
             $this->warn('About to QUEUE ' . $missed->count() . ' reminder SMS to missed members. This will cost SMS credits once dispatched.');
             if (!$this->confirm('Queue ' . $missed->count() . ' reminders now?', false)) {
@@ -391,6 +474,25 @@ class AuditReminderDispatch extends Command
             . count($affectedProgressIds) . " progress rows ({$skipped} skipped as no longer deletable).");
 
         return ['deleted' => $deleted, 'skipped' => $skipped];
+    }
+
+    /**
+     * Neutralize pending reminders (pending -> cancelled) so the dispatcher won't send them.
+     * Re-checks status='pending' so a row the dispatcher already claimed/sent is left alone.
+     */
+    protected function cancelStalePending(array $stalePendingIds): int
+    {
+        $cancelled = 0;
+
+        foreach (array_chunk($stalePendingIds, 500) as $chunk) {
+            $cancelled += SMSInbox::whereIn('id', $chunk)
+                ->where('status', 'pending')
+                ->update(['status' => 'cancelled']);
+        }
+
+        Log::info("AuditReminderDispatch: cancelled {$cancelled} stale pending reminder(s) on non-eligible progress.");
+
+        return $cancelled;
     }
 
     /**
