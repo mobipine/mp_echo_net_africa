@@ -245,7 +245,8 @@ class AuditReminderDispatch extends Command
             ['Members with >1 eligible progress (root cause)', number_format($membersWithMultipleProgress->count())],
             ['Reminder SMS in scope', number_format($totalReminderSms)],
             ['Progress rows with duplicate reminder SMS', number_format(count($progressesWithDupes))],
-            ['Surplus reminder SMS to delete', number_format(count($surplusIds))],
+            ['Surplus reminder SMS to delete (deletable)', number_format(count($surplusIds))],
+            ['Members with 2+ reminders already SENT (cannot undo)', number_format(count($sentDuplicateProgressIds))],
             ['PENDING reminders on cancelled/completed progress', number_format(count($stalePendingIds))],
             ['Eligible members who got NO reminder (missed)', number_format($missed->count())],
             ['SMS credits reclaimed by deleting surplus', number_format($surplusCredits)],
@@ -282,12 +283,12 @@ class AuditReminderDispatch extends Command
         }
         $this->newLine();
 
-        // Root cause #1: duplicate SMS per progress
-        $this->info('=== Duplicate reminder SMS per progress (job looped/over-created) ===');
+        // Root cause #1: duplicate SMS per progress (rows we can still clean up).
+        $this->info('=== Deletable duplicate reminder SMS per progress (job looped/over-created) ===');
         if (empty($progressesWithDupes)) {
-            $this->line('None — every progress has at most one reminder SMS in scope.');
+            $this->line('None — no progress has surplus reminder SMS that can be deleted.');
         } else {
-            $this->line(count($progressesWithDupes) . ' progress rows have more than one reminder SMS:');
+            $this->line(count($progressesWithDupes) . ' progress rows have surplus reminder SMS to delete:');
             $this->table(
                 ['Progress ID', 'Member ID', 'Total SMS', 'Keep SMS ID', 'Delete', 'Statuses'],
                 array_map(fn ($d) => [
@@ -298,13 +299,21 @@ class AuditReminderDispatch extends Command
             if (count($progressesWithDupes) > $limit) {
                 $this->comment('... and ' . (count($progressesWithDupes) - $limit) . ' more.');
             }
-            if (!empty($sentDuplicateProgressIds)) {
-                $this->newLine();
-                $this->warn(count($sentDuplicateProgressIds) . ' progress row(s) had MORE THAN ONE reminder actually SENT '
-                    . '(members received multiple texts). These sent rows are kept for the audit trail by default; '
-                    . 'progress IDs: ' . collect($sentDuplicateProgressIds)->take(20)->join(', ')
-                    . (count($sentDuplicateProgressIds) > 20 ? ' ...' : ''));
-            }
+        }
+        $this->newLine();
+
+        // Already-delivered double sends — reported independently because they have NO deletable
+        // surplus (both rows are 'sent') yet still mean the member received multiple texts. This
+        // is why the per-progress reminder count can exceed the eligible-progress count.
+        $this->info('=== Members who received MORE THAN ONE reminder (already delivered) ===');
+        if (empty($sentDuplicateProgressIds)) {
+            $this->line('None.');
+        } else {
+            $this->warn(count($sentDuplicateProgressIds) . ' progress row(s) have 2+ reminders that were actually SENT '
+                . '(those members received multiple texts). Nothing to delete — the sends already happened and the '
+                . 'rows are kept for the audit/credit trail. Sample progress IDs: '
+                . collect($sentDuplicateProgressIds)->take(20)->join(', ')
+                . (count($sentDuplicateProgressIds) > 20 ? ' ...' : ''));
         }
         $this->newLine();
 
