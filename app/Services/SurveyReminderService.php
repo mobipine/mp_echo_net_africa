@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Carbon\Carbon;
 use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
@@ -16,7 +17,12 @@ class SurveyReminderService
     {
     }
 
-    public function eligibleProgressQuery(?int $groupId = null, ?int $surveyId = null, ?int $maxReminders = null): Builder
+    public function eligibleProgressQuery(
+        ?int $groupId = null,
+        ?int $surveyId = null,
+        ?int $maxReminders = null,
+        ?string $lastDispatchedBefore = null
+    ): Builder
     {
         $query = SurveyProgress::with(['survey', 'member', 'currentQuestion'])
             ->whereNull('completed_at')
@@ -42,12 +48,23 @@ class SurveyReminderService
             });
         }
 
+        if ($lastDispatchedBefore !== null) {
+            $query->whereNotNull('last_dispatched_at')
+                ->where('last_dispatched_at', '<=', Carbon::parse($lastDispatchedBefore));
+        }
+
         return $query;
     }
 
-    public function loadEligibleProgresses(?int $groupId = null, ?int $surveyId = null, ?int $maxReminders = null, ?int $limit = null): Collection
+    public function loadEligibleProgresses(
+        ?int $groupId = null,
+        ?int $surveyId = null,
+        ?int $maxReminders = null,
+        ?int $limit = null,
+        ?string $lastDispatchedBefore = null
+    ): Collection
     {
-        $query = $this->eligibleProgressQuery($groupId, $surveyId, $maxReminders);
+        $query = $this->eligibleProgressQuery($groupId, $surveyId, $maxReminders, $lastDispatchedBefore);
 
         return $limit ? $query->limit($limit)->get() : $query->get();
     }

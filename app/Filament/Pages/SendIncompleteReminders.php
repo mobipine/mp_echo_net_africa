@@ -12,6 +12,7 @@ use Filament\Actions\Action;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Components\Grid;
+use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -37,9 +38,7 @@ class SendIncompleteReminders extends Page implements Forms\Contracts\HasForms
     public function mount(): void
     {
         abort_unless(static::shouldRegisterNavigation(), 403);
-        $this->form->fill([
-            'max_reminders' => 1,
-        ]);
+        $this->form->fill();
     }
 
     public function form(Form $form): Form
@@ -69,19 +68,11 @@ class SendIncompleteReminders extends Page implements Forms\Contracts\HasForms
                         ->searchable()
                         ->disabled(fn (Forms\Get $get) => !$get('group_id')),
 
-                    Select::make('max_reminders')
-                        ->label('Send to members who have received fewer than')
-                        ->options([
-                            1 => '0 reminders (none yet)',
-                            2 => '0–1 reminders',
-                            3 => '0–2 reminders',
-                            4 => '0–3 reminders',
-                            5 => '0–4 reminders',
-                            10 => '0–9 reminders',
-                            999 => 'All incomplete (no filter)',
-                        ])
-                        ->default(1)
-                        ->required(),
+                    DateTimePicker::make('last_dispatched_before')
+                        ->label('Only include members last contacted on or before (optional)')
+                        ->native(false)
+                        ->seconds(false)
+                        ->helperText('Leave empty to include all incomplete survey progresses. If set, only members whose last survey question or reminder was sent on or before this date and time will be included.'),
 
                     TextInput::make('limit')
                         ->label('Limit (optional)')
@@ -107,8 +98,8 @@ class SendIncompleteReminders extends Page implements Forms\Contracts\HasForms
         $validated = $this->form->getState();
         $groupId = (int) $validated['group_id'];
         $surveyId = (int) $validated['survey_id'];
-        $maxReminders = (int) $validated['max_reminders'];
         $limit = !empty($validated['limit']) ? (int) $validated['limit'] : null;
+        $lastDispatchedBefore = !empty($validated['last_dispatched_before']) ? Carbon::parse($validated['last_dispatched_before']) : null;
 
         $baseQuery = SurveyProgress::with(['survey', 'member', 'currentQuestion'])
             ->whereNull('completed_at')
@@ -123,10 +114,10 @@ class SendIncompleteReminders extends Page implements Forms\Contracts\HasForms
 
         $totalIncomplete = (clone $baseQuery)->count();
 
-        $baseQuery->where(function ($q) use ($maxReminders) {
-            $q->whereNull('number_of_reminders')
-                ->orWhere('number_of_reminders', '<', $maxReminders);
-        });
+        if ($lastDispatchedBefore) {
+            $baseQuery->whereNotNull('last_dispatched_at')
+                ->where('last_dispatched_at', '<=', $lastDispatchedBefore);
+        }
 
         $matchingCount = $baseQuery->count();
 
@@ -215,6 +206,7 @@ class SendIncompleteReminders extends Page implements Forms\Contracts\HasForms
         $this->previewData = [
             'group_name' => $group?->name ?? 'N/A',
             'survey_title' => $survey?->title ?? 'N/A',
+            'last_dispatched_before' => $lastDispatchedBefore?->format('Y-m-d H:i'),
             'total_incomplete' => $totalIncomplete,
             'matching_count' => $matchingCount,
             'to_send' => $toSend,
@@ -265,7 +257,11 @@ class SendIncompleteReminders extends Page implements Forms\Contracts\HasForms
             return 'Please run Preview first to see who will receive reminders.';
         }
 
-        return "You are about to send {$this->previewData['to_send']} reminder(s) to members in '{$this->previewData['group_name']}' for survey '{$this->previewData['survey_title']}'. This will use approximately {$this->previewData['total_credits']} SMS credits. Messages will be queued and sent by the dispatch:sms command. Continue?";
+        $cutoff = $this->previewData['last_dispatched_before']
+            ? " Cutoff: last contacted on or before {$this->previewData['last_dispatched_before']}."
+            : '';
+
+        return "You are about to send {$this->previewData['to_send']} reminder(s) to members in '{$this->previewData['group_name']}' for survey '{$this->previewData['survey_title']}'.{$cutoff} This will use approximately {$this->previewData['total_credits']} SMS credits. Messages will be queued and sent by the dispatch:sms command. Continue?";
     }
 
     public function sendReminders(): void
@@ -283,8 +279,10 @@ class SendIncompleteReminders extends Page implements Forms\Contracts\HasForms
         $validated = $this->form->getState();
         $groupId = (int) $validated['group_id'];
         $surveyId = (int) $validated['survey_id'];
-        $maxReminders = (int) $validated['max_reminders'];
         $limit = !empty($validated['limit']) ? (int) $validated['limit'] : null;
+        $lastDispatchedBefore = !empty($validated['last_dispatched_before'])
+            ? Carbon::parse($validated['last_dispatched_before'])->toDateTimeString()
+            : null;
 
         if (!config('survey_settings.messages_enabled', true)) {
             Notification::make()
@@ -295,7 +293,7 @@ class SendIncompleteReminders extends Page implements Forms\Contracts\HasForms
             return;
         }
 
-        SendIncompleteRemindersJob::dispatch($groupId, $surveyId, $maxReminders, $limit);
+        SendIncompleteRemindersJob::dispatch($groupId, $surveyId, null, $limit, $lastDispatchedBefore);
 
         Notification::make()
             ->success()

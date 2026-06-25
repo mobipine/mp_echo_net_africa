@@ -16,7 +16,10 @@
                             <li>• Group: <span class="font-medium">{{ $previewData['group_name'] }}</span></li>
                             <li>• Survey: <span class="font-medium">{{ $previewData['survey_title'] }}</span></li>
                             <li>• Total incomplete in DB: {{ number_format($previewData['total_incomplete']) }}</li>
-                            <li>• Matching filter: {{ number_format($previewData['matching_count']) }}</li>
+                            @if($previewData['last_dispatched_before'])
+                                <li>• Last contacted on or before: {{ $previewData['last_dispatched_before'] }}</li>
+                            @endif
+                            <li>• Matching incomplete records: {{ number_format($previewData['matching_count']) }}</li>
                             <li>• Reminders to be sent: <span class="font-semibold">{{ number_format($previewData['to_send']) }}</span></li>
                             <li>• Unique members: {{ number_format($previewData['unique_members']) }}</li>
                         </ul>
@@ -52,7 +55,7 @@
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">ID</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Member</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Phone</th>
-                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Reminders</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Already sent</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Created</th>
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Days old</th>
                                     </tr>
@@ -79,10 +82,10 @@
                     {{-- Reminders breakdown --}}
                     @if(!empty($previewData['reminders_breakdown']))
                         <div class="rounded-lg bg-gray-50 dark:bg-gray-800/50 p-4">
-                            <p class="text-sm font-medium text-gray-700 dark:text-white mb-2">Breakdown by reminders received</p>
+                            <p class="text-sm font-medium text-gray-700 dark:text-white mb-2">Breakdown by reminders already sent</p>
                             <ul class="text-sm text-gray-600 dark:text-gray-300 space-y-1">
                                 @foreach($previewData['reminders_breakdown'] as $label => $count)
-                                    <li>• {{ $label }} reminder(s): {{ $count }} progress records</li>
+                                    <li>• {{ $label }} already sent: {{ $count }} progress records</li>
                                 @endforeach
                             </ul>
                         </div>
