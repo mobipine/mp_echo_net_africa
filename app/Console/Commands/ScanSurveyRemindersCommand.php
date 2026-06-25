@@ -6,8 +6,8 @@ use App\Models\Member;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
 use App\Models\SMSInbox;
+use App\Services\SurveyReminderService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
@@ -174,6 +174,7 @@ class ScanSurveyRemindersCommand extends Command
         $sent = 0;
         $failed = 0;
         $skipped = 0;
+        $reminderService = app(SurveyReminderService::class);
 
         foreach ($reminders as $progress) {
             try {
@@ -202,34 +203,15 @@ class ScanSurveyRemindersCommand extends Command
                     continue;
                 }
 
-                DB::beginTransaction();
+                $result = $reminderService->queueReminderForProgress($progress->id, $survey);
 
-                // Format reminder message
-                $message = formartQuestion($currentQuestion, $member, $survey, true);
-
-                // Create SMS inbox record with is_reminder = true
-                SMSInbox::create([
-                    'phone_number' => $member->phone,
-                    'message' => $message,
-                    'channel' => $progress->channel ?? 'sms',
-                    'is_reminder' => true, // Mark as reminder
-                    'member_id' => $member->id,
-                    'survey_progress_id' => $progress->id,
-                ]);
-
-                // Update progress
-                $progress->update([
-                    'last_dispatched_at' => now(),
-                ]);
-                $progress->increment('number_of_reminders');
-
-                $sent++;
-
-                Log::info("Reminder sent: Member {$member->id} ({$member->name}), Survey {$survey->id} ({$survey->title}), Progress ID {$progress->id}");
-
-                DB::commit();
+                if ($result['status'] === 'queued') {
+                    $sent++;
+                    Log::info("Reminder sent: Member {$member->id} ({$member->name}), Survey {$survey->id} ({$survey->title}), Progress ID {$progress->id}");
+                } else {
+                    $skipped++;
+                }
             } catch (\Exception $e) {
-                DB::rollBack();
                 $failed++;
                 Log::error("Failed to send reminder for progress ID {$progress->id}: " . $e->getMessage());
                 $this->newLine();
@@ -258,4 +240,3 @@ class ScanSurveyRemindersCommand extends Command
         Log::info("ScanSurveyRemindersCommand completed: {$sent} sent, {$skipped} skipped, {$failed} failed");
     }
 }
-

@@ -2,13 +2,14 @@
 
 namespace App\Services;
 
+use App\Contracts\SmsTransport;
 use App\Models\SMSInbox;
 use App\Models\SmsCredit;
 use Illuminate\Support\Facades\Log;
 
 class SmsDispatcher
 {
-    public function __construct(protected BongaSMS $bonga)
+    public function __construct(protected SmsTransport $bonga)
     {
     }
 

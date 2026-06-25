@@ -4,10 +4,10 @@ namespace App\Jobs;
 
 use App\Models\Group;
 use App\Models\GroupSurvey;
-use App\Models\SMSInbox;
+use App\Models\Member;
 use App\Models\Survey;
-use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
+use App\Services\SurveyDispatchService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -15,6 +15,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
 {
@@ -55,8 +56,15 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
         public $automated = false,
         public $startsAt = null,
         public $endsAt = null,
-        public ?int $limit = null // Optional max recipients across all groups (e.g. 2000 for monitoring)
-    ) {}
+        public ?int $limit = null, // Optional max recipients across all groups (e.g. 2000 for monitoring)
+        public ?string $dispatchBatchUuid = null
+    ) {
+        if (!$this->automated && $this->startsAt === null) {
+            $this->startsAt = now()->startOfSecond()->toDateTimeString();
+        }
+
+        $this->dispatchBatchUuid ??= Str::uuid()->toString();
+    }
 
     /**
      * Get the unique ID for the job.
@@ -68,28 +76,29 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
             return "send-survey-all-groups-{$this->survey->id}-{$startsAtStr}-{$this->channel}";
         }
 
-        $groupIdsStr = implode('-', $this->groupIds);
+        $normalizedGroupIds = app(SurveyDispatchService::class)->normalizeGroupIds($this->groupIds);
+        $groupIdsStr = implode('-', $normalizedGroupIds);
         return "send-survey-{$this->survey->id}-groups-{$groupIdsStr}-{$this->channel}";
     }
 
-    public function handle(): void
+    public function handle(SurveyDispatchService $dispatchService): void
     {
         Log::info("Starting SendSurveyToGroupJob for survey '{$this->survey->title}'");
 
         // Handle "ALL GROUPS" case
         if ($this->groupIds === 'all') {
-            $this->processAllGroups();
+            $this->processAllGroups($dispatchService);
             return;
         }
 
         // Handle specific groups case
-        $this->processSpecificGroups();
+        $this->processSpecificGroups($dispatchService);
     }
 
     /**
      * Process ALL groups in the system
      */
-    protected function processAllGroups(): void
+    protected function processAllGroups(SurveyDispatchService $dispatchService): void
     {
         Log::info("Processing ALL groups for survey '{$this->survey->title}'");
 
@@ -122,13 +131,13 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
 
         // If not automated, process all groups now
         $groupIds = Group::pluck('id')->toArray();
-        $this->processGroupIds($groupIds);
+        $this->processGroupIds($dispatchService->normalizeGroupIds($groupIds), $dispatchService);
     }
 
     /**
      * Process specific groups
      */
-    protected function processSpecificGroups(): void
+    protected function processSpecificGroups(SurveyDispatchService $dispatchService): void
     {
         Log::info("Processing specific groups for survey '{$this->survey->title}'");
 
@@ -164,13 +173,13 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
         }
 
         // If not automated, process the groups now
-        $this->processGroupIds($this->groupIds);
+        $this->processGroupIds($dispatchService->normalizeGroupIds($this->groupIds), $dispatchService);
     }
 
     /**
      * Process array of group IDs and send survey to members
      */
-    protected function processGroupIds(array $groupIds): void
+    protected function processGroupIds(array $groupIds, SurveyDispatchService $dispatchService): void
     {
         // Fetch the first question
         $firstQuestion = getNextQuestion($this->survey->id, null, null);
@@ -186,157 +195,57 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
             return;
         }
 
-        $totalSent = 0;
+        $totalQueued = 0;
         $skipped = [];
 
         if ($this->limit !== null) {
             Log::info("SendSurveyToGroupJob: recipient limit set to {$this->limit}");
         }
 
-        foreach ($groupIds as $groupId) {
-            if ($this->limit !== null && $totalSent >= $this->limit) {
+        $memberIds = $dispatchService->eligibleMembersQuery($groupIds)->pluck('members.id')->all();
+        $members = Member::whereIn('id', $memberIds)->orderBy('id')->get()->keyBy('id');
+
+        foreach ($memberIds as $memberId) {
+            if ($this->limit !== null && $totalQueued >= $this->limit) {
                 Log::info("SendSurveyToGroupJob: reached limit of {$this->limit} recipients. Stopping.");
                 break;
             }
-            $group = Group::find($groupId);
-            if (!$group) {
-                Log::warning("Group with ID {$groupId} not found. Skipping.");
+
+            $member = $members->get($memberId);
+            if (!$member) {
+                $skipped[] = ['member' => "ID {$memberId}", 'reason' => 'Member record not found'];
                 continue;
             }
 
-            $members = $group->members()->where('is_active', true)->get();
-            $sentCount = 0;
-            Log::info("Group '{$group->name}' (ID: {$group->id}): processing {$members->count()} active members");
+            $result = $dispatchService->dispatchToMember(
+                $member,
+                $this->survey,
+                $firstQuestion,
+                $this->channel,
+                $this->automated ? 'automated' : 'manual',
+                $this->dispatchBatchUuid
+            );
 
-            foreach ($members as $member) {
-                $memberLabel = "{$member->name} (ID: {$member->id}, phone: " . ($member->phone ?: 'none') . ")";
-
-                // Check if member has a phone number
-                if (empty($member->phone)) {
-                    $skipped[] = ['member' => $memberLabel, 'group' => $group->name, 'reason' => 'No phone number'];
-                    Log::warning("Skipping {$member->name} (ID: {$member->id}): no phone number");
-                    continue;
-                }
-
-                // Never create duplicate for members who have COMPLETED this survey
-                $completedProgress = SurveyProgress::where('member_id', $member->id)
-                    ->where('survey_id', $this->survey->id)
-                    ->whereNotNull('completed_at')
-                    ->exists();
-                if ($completedProgress) {
-                    $skipped[] = ['member' => $memberLabel, 'group' => $group->name, 'reason' => 'Survey already completed'];
-                    Log::info("Skipping {$member->name}: survey already completed.");
-                    continue;
-                }
-
-                // --- Participant uniqueness check with row locking ---
-                // A CANCELLED progress (completed_at NULL) is treated as inert: the member
-                // is considered NOT to have started this survey, so they are re-included in
-                // a fresh dispatch. Only ACTIVE/UPDATING_DETAILS progress blocks re-dispatch.
-                $progress = SurveyProgress::where('member_id', $member->id)
-                    ->where('survey_id', $this->survey->id)
-                    ->whereNull('completed_at')
-                    ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
-                    ->lockForUpdate() // Prevent race conditions
-                    ->first();
-
-                if ($progress && $this->survey->participant_uniqueness) {
-                    $skipped[] = ['member' => $memberLabel, 'group' => $group->name, 'reason' => 'Participant uniqueness is ON and survey already started'];
-                    Log::info("Skipping {$member->name}: participant uniqueness is ON and survey already started.");
-                    continue;
-                }
-
-                // Cancel any previous incomplete progress if uniqueness is off
-                if ($progress) {
-                    SurveyProgress::where('member_id', $member->id)
-                        ->where('survey_id', $this->survey->id)
-                        ->whereNull('completed_at')
-                        ->update(['status' => 'CANCELLED']);
-                }
-
-                // --- Double-check one more time before creating (defensive) ---
-                $doubleCheck = SurveyProgress::where('member_id', $member->id)
-                    ->where('survey_id', $this->survey->id)
-                    ->whereNull('completed_at')
-                    ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
-                    ->exists();
-
-                if ($doubleCheck) {
-                    $skipped[] = ['member' => $memberLabel, 'group' => $group->name, 'reason' => 'Survey progress already exists (ACTIVE/UPDATING_DETAILS)'];
-                    Log::info("Double-check: SurveyProgress already exists for member {$member->id}. Skipping.");
-                    continue;
-                }
-
-                // --- Create new progress record ---
-                $newProgress = SurveyProgress::create([
-                    'survey_id' => $this->survey->id,
-                    'member_id' => $member->id,
-                    'current_question_id' => $firstQuestion->id,
-                    'last_dispatched_at' => now(),
-                    'has_responded' => false,
-                    'source' => 'manual',
-                ]);
-
-                // --- Cancel the member's OTHER incomplete survey progress ---
-                // Guarantees only this newly dispatched survey is active, so two surveys can
-                // never compete for the member's replies (the inbound matcher routes to the
-                // latest ACTIVE progress). Their unsent questions are neutralized too.
-                $otherIncompleteIds = SurveyProgress::where('member_id', $member->id)
-                    ->where('id', '!=', $newProgress->id)
-                    ->whereNull('completed_at')
-                    ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
-                    ->pluck('id');
-                if ($otherIncompleteIds->isNotEmpty()) {
-                    SMSInbox::whereIn('survey_progress_id', $otherIncompleteIds)
-                        ->where('status', 'pending')
-                        ->update(['status' => 'cancelled']);
-                    SurveyProgress::whereIn('id', $otherIncompleteIds)
-                        ->update(['status' => 'CANCELLED']);
-                    Log::info("Cancelled {$otherIncompleteIds->count()} other incomplete progress for member {$member->id} so only '{$this->survey->title}' stays active.");
-                }
-
-                // --- Update member stage to SurveyInProgress ---
-                $memberStage = str_replace(' ', '', ucfirst($this->survey->title)) . 'InProgress';
-                if ($member->stage !== $memberStage) {
-                    $member->update(['stage' => $memberStage]);
-                }
-
-                // --- Format and create SMSInbox record ---
-                $message = formartQuestion($firstQuestion, $member, $this->survey);
-                try {
-                    SMSInbox::create([
-                        'message' => $message,
-                        'phone_number' => $member->phone,
-                        'member_id' => $member->id,
-                        'survey_progress_id' => $newProgress->id,
-                        'channel' => $this->channel,
-                    ]);
-                    $sentCount++;
-
-                    // Enforce optional recipient limit across all groups
-                    if ($this->limit !== null && ($totalSent + $sentCount) >= $this->limit) {
-                        $totalSent += $sentCount;
-                        Log::info("SendSurveyToGroupJob: reached limit of {$this->limit} recipients. Stopping dispatch. Sent to {$totalSent} members.");
-                        break 2;
-                    }
-                } catch (\Exception $e) {
-                    $skipped[] = ['member' => $memberLabel, 'group' => $group->name, 'reason' => 'Failed to create SMS: ' . $e->getMessage()];
-                    Log::error("Failed to create SMSInbox for {$member->name}: " . $e->getMessage());
-                }
+            if ($result['status'] === 'queued') {
+                $totalQueued++;
+                continue;
             }
 
-            Log::info("Survey '{$this->survey->title}' dispatched to {$sentCount} members in group '{$group->name}'.");
-            $totalSent += $sentCount;
+            $memberLabel = "{$member->name} (ID: {$member->id}, phone: " . ($member->phone ?: 'none') . ")";
+            $skipped[] = [
+                'member' => $memberLabel,
+                'reason' => $result['reason'] ?? 'Skipped',
+            ];
         }
 
-        Log::info("SendSurveyToGroupJob completed for survey '{$this->survey->title}': {$totalSent} total messages queued." . ($this->limit !== null ? " (limit was {$this->limit})" : ''));
+        Log::info("SendSurveyToGroupJob completed for survey '{$this->survey->title}': {$totalQueued} total messages queued." . ($this->limit !== null ? " (limit was {$this->limit})" : ''));
 
         if (!empty($skipped)) {
             Log::info("Survey '{$this->survey->title}' – members not sent to (" . count($skipped) . "):", [
                 'skipped' => $skipped,
             ]);
             foreach ($skipped as $s) {
-                Log::info("  - {$s['member']} | Group: {$s['group']} | Reason: {$s['reason']}");
+                Log::info("  - {$s['member']} | Reason: {$s['reason']}");
             }
         }
     }

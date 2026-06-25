@@ -82,7 +82,10 @@ class FixCompletedSurveyProgressStatus extends Command
         }
 
         $ids = $progresses->pluck('id')->toArray();
-        $updated = SurveyProgress::whereIn('id', $ids)->update(['status' => 'COMPLETED']);
+        $updated = SurveyProgress::whereIn('id', $ids)->update([
+            'status' => 'COMPLETED',
+            'open_progress_guard' => null,
+        ]);
         $this->info("Updated {$updated} SurveyProgress record(s) to status COMPLETED.");
 
         return 0;

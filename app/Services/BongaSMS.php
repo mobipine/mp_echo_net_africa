@@ -2,10 +2,11 @@
 
 namespace App\Services;
 
+use App\Contracts\SmsTransport;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class BongaSMS
+class BongaSMS implements SmsTransport
 {
     protected $baseUrl;
     protected $clientId;
@@ -23,8 +24,10 @@ class BongaSMS
         $this->serviceId = $config['service_id'];
     }
 
-    public function send($phoneNumber, $message, $serviceId = null)
+    public function send(string $phoneNumber, string $message, ?string $serviceId = null): array
     {
+        $this->guardRealDelivery();
+
         $payload = [
             'apiClientID' => $this->clientId,
             'key' => $this->key,
@@ -49,5 +52,29 @@ class BongaSMS
         }
 
         return $response->json();
+    }
+
+    public function fetchDeliveryStatus(string $uniqueId): ?array
+    {
+        $this->guardRealDelivery();
+
+        $response = Http::timeout(10)->get('https://app.bongasms.co.ke/api/fetch-delivery', [
+            'apiClientID' => config('bongasms.client_id'),
+            'key' => config('bongasms.key'),
+            'unique_id' => $uniqueId,
+        ]);
+
+        if (!$response->successful()) {
+            throw new \Exception("SMS delivery fetch failed: " . $response->body());
+        }
+
+        return $response->json();
+    }
+
+    private function guardRealDelivery(): void
+    {
+        if (!config('sms.allow_real_delivery')) {
+            throw new \RuntimeException('Real SMS delivery is disabled in this environment.');
+        }
     }
 }

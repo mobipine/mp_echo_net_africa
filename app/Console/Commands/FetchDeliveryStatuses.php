@@ -2,13 +2,18 @@
 
 namespace App\Console\Commands;
 
+use App\Contracts\SmsTransport;
 use Illuminate\Console\Command;
 use App\Models\SMSInbox;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class FetchDeliveryStatuses extends Command
 {
+    public function __construct(protected SmsTransport $transport)
+    {
+        parent::__construct();
+    }
+
     protected $signature = 'sms:fetch-delivery';
     protected $description = 'Fetch SMS delivery statuses for pending messages from BongaSMS';
 
@@ -36,18 +41,12 @@ class FetchDeliveryStatuses extends Command
                     $processedCount++;
 
                     try {
-                        $response = Http::timeout(10)->get('https://app.bongasms.co.ke/api/fetch-delivery', [
-                            'apiClientID' => config('bongasms.client_id'),
-                            'key' => config('bongasms.key'),
-                            'unique_id' => $sms->unique_id,
-                        ]);
+                        $data = $this->transport->fetchDeliveryStatus($sms->unique_id);
 
-                        if (!$response->successful()) {
+                        if (!$data) {
                             Log::error("Failed API call for SMS {$sms->id}");
                             continue;
                         }
-
-                        $data = $response->json();
 
                         if (($data['status'] ?? null) == 222) {
                             $desc = $data['delivery_status_desc'] ?? null;

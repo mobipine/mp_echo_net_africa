@@ -7,8 +7,8 @@ use App\Models\Member;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
 use App\Models\SMSInbox;
+use App\Services\SurveyReminderService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
@@ -311,9 +311,10 @@ class SendIncompleteRemindersCommand extends Command
         $failed = 0;
         $skipped = 0;
         $totalCredits = 0;
+        $reminderService = app(SurveyReminderService::class);
 
         // Process in chunks to avoid memory issues
-        $progresses->chunk($chunkSize)->each(function ($chunk) use (&$sent, &$failed, &$skipped, &$totalCredits, $bar) {
+        $progresses->chunk($chunkSize)->each(function ($chunk) use (&$sent, &$failed, &$skipped, &$totalCredits, $bar, $reminderService) {
             foreach ($chunk as $progress) {
                 try {
                     // Refresh to ensure we have latest data
@@ -337,39 +338,19 @@ class SendIncompleteRemindersCommand extends Command
                         continue;
                     }
 
-                    DB::beginTransaction();
-
-                    // Format reminder message
                     $message = formartQuestion($currentQuestion, $member, $survey, true);
-
-                    // Calculate credits for this message
                     $messageLength = strlen($message);
                     $credits = ceil($messageLength / 160);
-                    $totalCredits += $credits;
+                    $result = $reminderService->queueReminderForProgress($progress->id, $survey);
 
-                    // Create SMS inbox record with is_reminder = true
-                    SMSInbox::create([
-                        'phone_number' => $member->phone,
-                        'message' => $message,
-                        'channel' => $progress->channel ?? 'sms',
-                        'is_reminder' => true,
-                        'member_id' => $member->id,
-                        'survey_progress_id' => $progress->id,
-                    ]);
-
-                    // Update progress
-                    $progress->update([
-                        'last_dispatched_at' => now(),
-                    ]);
-                    $progress->increment('number_of_reminders');
-
-                    $sent++;
-
-                    Log::info("Incomplete survey reminder sent: Member {$member->id} ({$member->name}), Survey {$survey->id} ({$survey->title}), Progress ID {$progress->id}, Credits: {$credits}");
-
-                    DB::commit();
+                    if ($result['status'] === 'queued') {
+                        $totalCredits += $credits;
+                        $sent++;
+                        Log::info("Incomplete survey reminder sent: Member {$member->id} ({$member->name}), Survey {$survey->id} ({$survey->title}), Progress ID {$progress->id}, Credits: {$credits}");
+                    } else {
+                        $skipped++;
+                    }
                 } catch (\Exception $e) {
-                    DB::rollBack();
                     $failed++;
                     Log::error("Failed to send reminder for progress ID {$progress->id}: " . $e->getMessage());
                     $this->newLine();
@@ -416,4 +397,3 @@ class SendIncompleteRemindersCommand extends Command
         Log::info("SendIncompleteRemindersCommand completed: {$sent} sent, {$skipped} skipped, {$failed} failed, {$totalCredits} credits used");
     }
 }
-

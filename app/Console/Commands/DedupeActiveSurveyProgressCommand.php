@@ -109,7 +109,10 @@ class DedupeActiveSurveyProgressCommand extends Command
                     ->where('status', 'pending')
                     ->update(['status' => 'cancelled']);
                 $cancelled += SurveyProgress::whereIn('id', $batch)
-                    ->update(['status' => 'CANCELLED']);
+                    ->update([
+                        'status' => 'CANCELLED',
+                        'open_progress_guard' => null,
+                    ]);
             });
         }
 

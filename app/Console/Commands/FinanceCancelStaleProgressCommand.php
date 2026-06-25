@@ -83,7 +83,10 @@ class FinanceCancelStaleProgressCommand extends Command
 
             // Cancel (don't delete) the stale progress. Dispatch treats CANCELLED as inert,
             // so these members are re-included in a fresh dispatch under uniqueness = ON.
-            SurveyProgress::whereIn('id', $progressIds)->update(['status' => 'CANCELLED']);
+            SurveyProgress::whereIn('id', $progressIds)->update([
+                'status' => 'CANCELLED',
+                'open_progress_guard' => null,
+            ]);
         });
 
         $this->newLine();

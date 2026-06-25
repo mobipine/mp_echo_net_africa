@@ -27,6 +27,8 @@ class SMSInbox extends Model
         'credits_count',
         'amended',
         'survey_progress_id',
+        'dispatch_batch_uuid',
+        'dedupe_key',
     ];
 
     protected $casts = [

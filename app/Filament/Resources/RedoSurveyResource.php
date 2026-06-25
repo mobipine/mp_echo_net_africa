@@ -99,7 +99,7 @@ class RedoSurveyResource extends Resource
                             // Cancel all existing uncompleted progress for this member
                             SurveyProgress::where('member_id', $member->id)
                                 ->whereNull('completed_at')
-                                ->update(['status' => 'CANCELLED']);
+                                ->update(['status' => 'CANCELLED', 'open_progress_guard' => null]);
 
                             // Create new survey progress
                             $newProgress = SurveyProgress::create([

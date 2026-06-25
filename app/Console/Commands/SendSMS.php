@@ -2,10 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Contracts\SmsTransport;
 use App\Models\Group;
 use App\Models\SMSInbox;
 use App\Models\SmsCredit;
-use App\Services\BongaSMS;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -24,7 +24,7 @@ class SendSMS extends Command
 
     public $bonga_sms;
 
-    public function __construct(BongaSMS $bonga_sms)
+    public function __construct(SmsTransport $bonga_sms)
     {
         parent::__construct();
         $this->bonga_sms = $bonga_sms;
@@ -241,6 +241,5 @@ class SendSMS extends Command
         );
     }
 }
-
 
 

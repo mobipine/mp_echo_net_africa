@@ -5,9 +5,12 @@ namespace App\Filament\Pages;
 use App\Enums\ChannelType;
 use App\Jobs\SendSurveyToGroupJob;
 use App\Models\Group;
-use App\Models\SMSInbox;
+use App\Models\Member;
 use App\Models\Survey;
 use App\Models\GroupSurvey;
+use App\Models\SurveyProgress;
+use App\Services\SurveyDispatchService;
+use App\Support\SurveyProgressState;
 use Filament\Actions\Action;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -128,20 +131,13 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
             return;
         }
 
-        $groupIds = in_array('all', $selectedGroups)
-            ? Group::pluck('id')->toArray()
-            : array_map('intval', $selectedGroups);
+        $dispatchService = app(SurveyDispatchService::class);
+        $groupIds = in_array('all', $selectedGroups, true)
+            ? Group::pluck('id')->all()
+            : $dispatchService->normalizeGroupIds(array_map('intval', $selectedGroups));
 
-        $groups = Group::whereIn('id', $groupIds)->orderBy('name')->get();
+        $groups = Group::whereIn('id', $groupIds)->orderBy('name')->get()->keyBy('id');
         $groupBreakdown = [];
-        $totalEligible = 0;
-        $totalActive = 0;
-        $totalSkippedNoPhone = 0;
-        $totalSkippedCompleted = 0;
-        $totalSkippedIncomplete = 0;
-        $sampleRows = [];
-        $sampleForCredits = collect();
-        $remainingLimit = $limit;
 
         foreach ($groups as $group) {
             $activeQuery = $group->members()->where('is_active', true);
@@ -159,57 +155,110 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
                 $incompleteCount = (clone $activeQuery)
                     ->whereNotNull('phone')->where('phone', '!=', '')
                     ->whereDoesntHave('surveyProgresses', fn ($q) => $q->where('survey_id', $survey->id)->whereNotNull('completed_at'))
-                    // CANCELLED progress is inert — only ACTIVE/UPDATING_DETAILS counts as "in progress" (matches dispatch).
-                    ->whereHas('surveyProgresses', fn ($q) => $q->where('survey_id', $survey->id)->whereNull('completed_at')->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS']))
+                    ->whereHas('surveyProgresses', fn ($q) => $q
+                        ->where('survey_id', $survey->id)
+                        ->whereNull('completed_at')
+                        ->whereIn('status', SurveyProgressState::OPEN_STATUSES))
                     ->count();
             }
 
-            $eligible = $withPhoneCount - $completedCount - $incompleteCount;
-            $toSend = $remainingLimit !== null ? min($eligible, $remainingLimit) : $eligible;
-            if ($remainingLimit !== null) {
-                $remainingLimit = max(0, $remainingLimit - $toSend);
-            }
-
-            $groupBreakdown[] = [
+            $groupBreakdown[$group->id] = [
                 'name' => $group->name,
                 'active' => $activeCount,
                 'with_phone' => $withPhoneCount,
                 'no_phone' => $noPhoneCount,
                 'completed' => $completedCount,
                 'incomplete_skipped' => $incompleteCount,
-                'eligible' => $eligible,
-                'to_send' => $toSend,
+                'to_send' => 0,
             ];
-
-            $totalActive += $activeCount;
-            $totalSkippedNoPhone += $noPhoneCount;
-            $totalSkippedCompleted += $completedCount;
-            $totalSkippedIncomplete += $incompleteCount;
-            $totalEligible += $eligible;
-
-            if (count($sampleForCredits) < self::PREVIEW_SAMPLE_SIZE && $toSend > 0) {
-                $members = $group->members()
-                    ->where('is_active', true)
-                    ->whereNotNull('phone')->where('phone', '!=', '')
-                    ->whereDoesntHave('surveyProgresses', fn ($q) => $q->where('survey_id', $survey->id)->whereNotNull('completed_at'))
-                    ->when($survey->participant_uniqueness, fn ($q) => $q->whereDoesntHave('surveyProgresses', fn ($sq) => $sq->where('survey_id', $survey->id)->whereNull('completed_at')->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])))
-                    ->limit(self::PREVIEW_SAMPLE_SIZE - count($sampleForCredits))
-                    ->get();
-
-                foreach ($members as $member) {
-                    $sampleForCredits->push($member);
-                    if (count($sampleRows) < 20) {
-                        $sampleRows[] = [
-                            'member' => $member->name,
-                            'phone' => $member->phone,
-                            'group' => $group->name,
-                        ];
-                    }
-                }
-            }
         }
 
-        $toSendTotal = $limit ? min($totalEligible, $limit) : $totalEligible;
+        $memberIds = $dispatchService->eligibleMembersQuery($groupIds)->pluck('members.id')->all();
+        $members = Member::with(['groups' => fn ($query) => $query->whereIn('groups.id', $groupIds)])
+            ->whereIn('id', $memberIds)
+            ->orderBy('id')
+            ->get();
+
+        $completedMemberIds = SurveyProgress::query()
+            ->where('survey_id', $survey->id)
+            ->whereIn('member_id', $memberIds)
+            ->whereNotNull('completed_at')
+            ->distinct()
+            ->pluck('member_id')
+            ->flip();
+
+        $incompleteMemberIds = collect();
+        if ($survey->participant_uniqueness) {
+            $incompleteMemberIds = SurveyProgress::query()
+                ->where('survey_id', $survey->id)
+                ->whereIn('member_id', $memberIds)
+                ->whereNull('completed_at')
+                ->whereIn('status', SurveyProgressState::OPEN_STATUSES)
+                ->distinct()
+                ->pluck('member_id')
+                ->flip();
+        }
+
+        $totalActive = count($memberIds);
+        $totalEligible = 0;
+        $totalSkippedNoPhone = 0;
+        $totalSkippedCompleted = 0;
+        $totalSkippedIncomplete = 0;
+        $toSendTotal = 0;
+        $sampleRows = [];
+        $sampleForCredits = collect();
+        $selectedGroupOrder = array_flip($groupIds);
+        $overlappingMembersCount = 0;
+
+        foreach ($members as $member) {
+            $memberGroupIds = $member->groups
+                ->pluck('id')
+                ->filter(fn ($id) => isset($selectedGroupOrder[$id]))
+                ->sortBy(fn ($id) => $selectedGroupOrder[$id])
+                ->values();
+
+            if ($memberGroupIds->count() > 1) {
+                $overlappingMembersCount++;
+            }
+
+            if (empty($member->phone)) {
+                $totalSkippedNoPhone++;
+                continue;
+            }
+
+            if ($completedMemberIds->has($member->id)) {
+                $totalSkippedCompleted++;
+                continue;
+            }
+
+            if ($survey->participant_uniqueness && $incompleteMemberIds->has($member->id)) {
+                $totalSkippedIncomplete++;
+                continue;
+            }
+
+            $totalEligible++;
+            if ($limit !== null && $toSendTotal >= $limit) {
+                continue;
+            }
+
+            $assignedGroupId = $memberGroupIds->first();
+            if ($assignedGroupId && isset($groupBreakdown[$assignedGroupId])) {
+                $groupBreakdown[$assignedGroupId]['to_send']++;
+            }
+
+            $toSendTotal++;
+            if ($sampleForCredits->count() < self::PREVIEW_SAMPLE_SIZE) {
+                $sampleForCredits->push($member);
+            }
+
+            if (count($sampleRows) < 20) {
+                $sampleRows[] = [
+                    'member' => $member->name,
+                    'phone' => $member->phone,
+                    'group' => $assignedGroupId ? $groups[$assignedGroupId]->name : 'Unassigned',
+                ];
+            }
+        }
 
         if ($toSendTotal === 0) {
             Notification::make()
@@ -254,7 +303,8 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
             'to_send' => $toSendTotal,
             'estimated_credits' => $estimatedCredits,
             'participant_uniqueness' => $survey->participant_uniqueness,
-            'group_breakdown' => $groupBreakdown,
+            'group_breakdown' => array_values($groupBreakdown),
+            'overlapping_members_count' => $overlappingMembersCount,
             'sample_rows' => $sampleRows,
             'sample_message' => $sampleMessage,
             'more_count' => max(0, $toSendTotal - 20),
@@ -369,23 +419,7 @@ class DispatchSurveyToMultipleGroups extends Page implements Forms\Contracts\Has
 
             $this->previewData = null;
         } else {
-            // Manual dispatch - use firstOrCreate to prevent duplicates
             Log::info("{$survey->title} manual dispatch started for specific groups.");
-
-            foreach ($selectedGroups as $groupId) {
-                GroupSurvey::firstOrCreate(
-                    [
-                        'group_id'       => $groupId,
-                        'survey_id'      => $survey->id,
-                        'starts_at'      => now(), // Use current time as unique key for manual dispatch
-                    ],
-                    [
-                        'automated'      => false,
-                        'was_dispatched' => true,
-                        'channel'        => $channel,
-                    ]
-                );
-            }
 
             // Send to groups
             SendSurveyToGroupJob::dispatch(

@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use App\Contracts\SmsTransport;
+use App\Services\BongaSMS;
+use App\Services\FakeSmsTransport;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
@@ -12,7 +15,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(SmsTransport::class, function ($app) {
+            return match (config('sms.driver')) {
+                'fake' => $app->make(FakeSmsTransport::class),
+                default => $app->make(BongaSMS::class),
+            };
+        });
     }
 
     /**
@@ -20,8 +28,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot()
     {
-        if (config('app.env') == 'local') {
-            URL::forceScheme('https'); // Force HTTPS
+        $appUrl = (string) config('app.url', '');
+        if (str_starts_with($appUrl, 'https://')) {
+            URL::forceScheme('https');
         }
         
         // Register observers

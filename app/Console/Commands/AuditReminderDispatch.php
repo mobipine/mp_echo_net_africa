@@ -7,6 +7,7 @@ use App\Models\Member;
 use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
+use App\Services\SurveyReminderService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -524,22 +525,10 @@ class AuditReminderDispatch extends Command
                     continue;
                 }
 
-                DB::transaction(function () use ($progress, $survey, &$queued) {
-                    $message = formartQuestion($progress->currentQuestion, $progress->member, $survey, true);
-
-                    SMSInbox::create([
-                        'phone_number' => $progress->member->phone,
-                        'message' => $message,
-                        'channel' => $progress->channel ?? 'sms',
-                        'is_reminder' => true,
-                        'member_id' => $progress->member->id,
-                        'survey_progress_id' => $progress->id,
-                    ]);
-
-                    $progress->update(['last_dispatched_at' => now()]);
-                    $progress->increment('number_of_reminders');
+                $result = app(SurveyReminderService::class)->queueReminderForProgress($progress->id, $survey);
+                if ($result['status'] === 'queued') {
                     $queued++;
-                });
+                }
             } catch (\Throwable $e) {
                 Log::error("AuditReminderDispatch: failed to queue reminder for progress {$pid}: {$e->getMessage()}");
                 $this->warn("  Failed to queue reminder for progress {$pid}: {$e->getMessage()}");

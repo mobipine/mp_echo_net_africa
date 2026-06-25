@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\SurveyProgressState;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -31,8 +32,21 @@ class SurveyProgress extends Model
         'completed_at',
         'status',
         'source',
-        'number_of_reminders'
+        'number_of_reminders',
+        'channel',
+        'dispatch_batch_uuid',
+        'open_progress_guard',
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (SurveyProgress $progress) {
+            $progress->open_progress_guard = SurveyProgressState::guardFor(
+                $progress->status,
+                $progress->completed_at
+            );
+        });
+    }
 
     /**
      * Get the survey associated with the progress.

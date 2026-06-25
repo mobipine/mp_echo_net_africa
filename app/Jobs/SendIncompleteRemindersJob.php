@@ -2,54 +2,56 @@
 
 namespace App\Jobs;
 
-use App\Models\Group;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
-use App\Models\SMSInbox;
+use App\Services\SurveyReminderService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
-class SendIncompleteRemindersJob implements ShouldQueue
+class SendIncompleteRemindersJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    public int $uniqueFor = 3600;
     public int $timeout = 3600;
 
     public function __construct(
         public int $groupId,
         public int $surveyId,
         public ?int $maxReminders = null,
-        public ?int $limit = null
-    ) {}
+        public ?int $limit = null,
+        public ?string $dispatchBatchUuid = null
+    ) {
+        $this->dispatchBatchUuid ??= Str::uuid()->toString();
+    }
 
-    public function handle(): void
+    public function uniqueId(): string
+    {
+        return implode(':', [
+            'send-incomplete-reminders',
+            $this->groupId,
+            $this->surveyId,
+            $this->maxReminders ?? 'all',
+            $this->limit ?? 'all',
+        ]);
+    }
+
+    public function handle(SurveyReminderService $reminderService): void
     {
         Log::info("SendIncompleteRemindersJob started: group={$this->groupId}, survey={$this->surveyId}, maxReminders={$this->maxReminders}, limit={$this->limit}");
 
-        $query = SurveyProgress::with(['survey', 'member', 'currentQuestion'])
-            ->whereNull('completed_at')
-            ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
-            ->whereNotNull('current_question_id')
-            ->where('survey_id', $this->surveyId)
-            ->whereHas('member', function ($q) {
-                $q->where('group_id', $this->groupId)
-                    ->orWhereHas('groups', fn ($gq) => $gq->where('groups.id', $this->groupId));
-            })
-            ->orderBy('created_at', 'asc');
-
-        if ($this->maxReminders !== null) {
-            $query->where(function ($q) {
-                $q->whereNull('number_of_reminders')
-                    ->orWhere('number_of_reminders', '<', $this->maxReminders);
-            });
-        }
-
-        $progresses = $this->limit ? $query->limit($this->limit)->get() : $query->get();
+        $progresses = $reminderService->loadEligibleProgresses(
+            $this->groupId,
+            $this->surveyId,
+            $this->maxReminders,
+            $this->limit
+        );
 
         $sent = 0;
         $failed = 0;
@@ -57,43 +59,18 @@ class SendIncompleteRemindersJob implements ShouldQueue
 
         foreach ($progresses as $progress) {
             try {
-                $progress->refresh();
+                $result = $reminderService->queueReminderForProgress(
+                    $progress->id,
+                    $progress->survey,
+                    $this->dispatchBatchUuid
+                );
 
-                if ($progress->completed_at || !$progress->currentQuestion) {
+                if ($result['status'] === 'queued') {
+                    $sent++;
+                } else {
                     $skipped++;
-                    continue;
                 }
-
-                $member = $progress->member;
-                $survey = $progress->survey;
-                $currentQuestion = $progress->currentQuestion;
-
-                if (!$member || !$survey || !$currentQuestion) {
-                    $skipped++;
-                    Log::warning("SendIncompleteRemindersJob: Skipping progress ID {$progress->id} - missing member/survey/question");
-                    continue;
-                }
-
-                DB::beginTransaction();
-
-                $message = formartQuestion($currentQuestion, $member, $survey, true);
-
-                SMSInbox::create([
-                    'phone_number' => $member->phone,
-                    'message' => $message,
-                    'channel' => $progress->channel ?? 'sms',
-                    'is_reminder' => true,
-                    'member_id' => $member->id,
-                    'survey_progress_id' => $progress->id,
-                ]);
-
-                $progress->update(['last_dispatched_at' => now()]);
-                $progress->increment('number_of_reminders');
-
-                $sent++;
-                DB::commit();
             } catch (\Exception $e) {
-                DB::rollBack();
                 $failed++;
                 Log::error("SendIncompleteRemindersJob: Failed progress ID {$progress->id}: {$e->getMessage()}");
             }

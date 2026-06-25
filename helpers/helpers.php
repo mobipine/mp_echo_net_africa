@@ -409,7 +409,7 @@ function startSurvey($msisdn, Survey $survey,$channel)
     Log::info("Cancelling all active uncompleted progress for member ID: {$member->id}");
     SurveyProgress::where('member_id', $member->id)
         ->whereNull('completed_at')
-        ->update(['status' => 'CANCELLED']);
+        ->update(['status' => 'CANCELLED', 'open_progress_guard' => null]);
 
     // Check existing progress for this survey
     $existingProgress = SurveyProgress::where('member_id', $member->id)
@@ -1039,7 +1039,7 @@ function sendSMS($msisdn, $message,$channel,$member, $is_reminder = false, $surv
 {
     Log::info($member->id);
     try {
-        SMSInbox::create([
+        app(\App\Services\SurveyMessageQueueService::class)->queue([
             'phone_number' => $msisdn, // Store the phone number in group_ids for tracking
             'message' => $message,
             'channel' => $channel,

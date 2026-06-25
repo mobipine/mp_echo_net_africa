@@ -25,7 +25,10 @@
                                 <li>• Recipient limit: {{ number_format($previewData['limit']) }}</li>
                             @endif
                             <li>• Groups: {{ $previewData['group_count'] }}</li>
-                            <li>• Total active members: {{ number_format($previewData['total_active']) }}</li>
+                            <li>• Unique active members in selected groups: {{ number_format($previewData['total_active']) }}</li>
+                            @if(($previewData['overlapping_members_count'] ?? 0) > 0)
+                                <li>• Members appearing in multiple selected groups: {{ number_format($previewData['overlapping_members_count']) }}</li>
+                            @endif
                             @if($previewData['total_skipped_no_phone'] > 0)
                                 <li>• Skipped (no phone): {{ number_format($previewData['total_skipped_no_phone']) }}</li>
                             @endif
@@ -43,6 +46,9 @@
                     {{-- Group breakdown --}}
                     <div>
                         <p class="text-sm font-medium text-gray-700 dark:text-white mb-2">Breakdown by group</p>
+                        @if(($previewData['overlapping_members_count'] ?? 0) > 0)
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">Members in multiple selected groups are counted once overall. The "To send" column attributes each recipient to one selected group so totals stay aligned with actual queueing.</p>
+                        @endif
                         <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
                             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
                                 <thead class="bg-gray-50 dark:bg-gray-800">

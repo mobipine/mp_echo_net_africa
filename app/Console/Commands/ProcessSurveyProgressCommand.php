@@ -7,6 +7,7 @@ use App\Models\SMSInbox;
 use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
+use App\Services\SurveyReminderService;
 // use App\Services\UjumbeSMS;
 use Illuminate\Console\Command;
 use Carbon\Carbon;
@@ -224,15 +225,12 @@ class ProcessSurveyProgressCommand extends Command
 
                         if ($confirmationDue->lessThanOrEqualTo(now()) && $progress->number_of_reminders < 3) {
                             Log::info("No response from member - sending reminder #{$progress->number_of_reminders}");
-                            $message = formartQuestion($currentQuestion, $member, $survey, true);
 
                             try {
-                                $this->sendSMS($member->phone, $message, $channel, true, $member, $progress->id);
-                                $progress->update([
-                                    'last_dispatched_at' => now(),
-                                ]);
-                                $progress->increment('number_of_reminders');
-                                Log::info("Reminder sent to {$member->phone}");
+                                $result = app(SurveyReminderService::class)->queueReminderForProgress($progress->id, $survey);
+                                if ($result['status'] === 'queued') {
+                                    Log::info("Reminder sent to {$member->phone}");
+                                }
                             } catch (\Exception $e) {
                                 Log::error("Failed to send reminder to {$member->phone}: " . $e->getMessage());
                             }
@@ -250,7 +248,7 @@ class ProcessSurveyProgressCommand extends Command
     public function sendSMS($msisdn, $message, $channel, $is_reminder, $member, $survey_progress_id = null)
     {
         try {
-            SMSInbox::create([
+            app(\App\Services\SurveyMessageQueueService::class)->queue([
                 'phone_number' => $msisdn,
                 'message' => $message,
                 'channel' => $channel,
