@@ -79,6 +79,7 @@ class ResumeIncompleteRemindersCommand extends Command
         $query = SurveyProgress::with(['survey', 'member', 'currentQuestion'])
             ->whereNull('completed_at')
             ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
+            ->where('has_responded', false)
             ->whereNotNull('current_question_id')
             ->orderBy('created_at', 'asc');
 

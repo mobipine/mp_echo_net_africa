@@ -108,7 +108,7 @@ class AuditReminderDispatch extends Command
         // scope which SMS rows "belong" to this group/survey.
         $allProgress = SurveyProgress::where('survey_id', $surveyId)
             ->whereIn('member_id', $memberIds)
-            ->get(['id', 'member_id', 'status', 'completed_at', 'current_question_id', 'number_of_reminders']);
+            ->get(['id', 'member_id', 'status', 'completed_at', 'current_question_id', 'number_of_reminders', 'has_responded']);
         $allProgressIds = $allProgress->pluck('id');
 
         if ($allProgressIds->isEmpty()) {
@@ -121,6 +121,7 @@ class AuditReminderDispatch extends Command
         $eligible = $allProgress->filter(function ($p) {
             return is_null($p->completed_at)
                 && in_array($p->status, ['ACTIVE', 'UPDATING_DETAILS'], true)
+                && !$p->has_responded
                 && !is_null($p->current_question_id);
         })->keyBy('id');
 

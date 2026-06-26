@@ -24,7 +24,6 @@ class SendIncompleteRemindersJob implements ShouldQueue, ShouldBeUnique
         public int $surveyId,
         public ?int $maxReminders = null,
         public ?int $limit = null,
-        public ?string $lastDispatchedBefore = null,
         public ?string $dispatchBatchUuid = null
     ) {
         $this->dispatchBatchUuid ??= Str::uuid()->toString();
@@ -36,22 +35,18 @@ class SendIncompleteRemindersJob implements ShouldQueue, ShouldBeUnique
             'send-incomplete-reminders',
             $this->groupId,
             $this->surveyId,
-            $this->maxReminders ?? 'all',
-            $this->limit ?? 'all',
-            $this->lastDispatchedBefore ?? 'any-time',
         ]);
     }
 
     public function handle(SurveyReminderService $reminderService): void
     {
-        Log::info("SendIncompleteRemindersJob started: group={$this->groupId}, survey={$this->surveyId}, maxReminders={$this->maxReminders}, limit={$this->limit}, lastDispatchedBefore={$this->lastDispatchedBefore}");
+        Log::info("SendIncompleteRemindersJob started: group={$this->groupId}, survey={$this->surveyId}, maxReminders={$this->maxReminders}, limit={$this->limit}");
 
         $progresses = $reminderService->loadEligibleProgresses(
             $this->groupId,
             $this->surveyId,
             $this->maxReminders,
-            $this->limit,
-            $this->lastDispatchedBefore
+            $this->limit
         );
 
         $sent = 0;

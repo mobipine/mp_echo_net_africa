@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use Carbon\Carbon;
 use App\Models\SMSInbox;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
@@ -20,13 +19,13 @@ class SurveyReminderService
     public function eligibleProgressQuery(
         ?int $groupId = null,
         ?int $surveyId = null,
-        ?int $maxReminders = null,
-        ?string $lastDispatchedBefore = null
+        ?int $maxReminders = null
     ): Builder
     {
         $query = SurveyProgress::with(['survey', 'member', 'currentQuestion'])
             ->whereNull('completed_at')
             ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS'])
+            ->where('has_responded', false)
             ->whereNotNull('current_question_id')
             ->orderBy('created_at', 'asc');
 
@@ -48,11 +47,6 @@ class SurveyReminderService
             });
         }
 
-        if ($lastDispatchedBefore !== null) {
-            $query->whereNotNull('last_dispatched_at')
-                ->where('last_dispatched_at', '<=', Carbon::parse($lastDispatchedBefore));
-        }
-
         return $query;
     }
 
@@ -60,11 +54,10 @@ class SurveyReminderService
         ?int $groupId = null,
         ?int $surveyId = null,
         ?int $maxReminders = null,
-        ?int $limit = null,
-        ?string $lastDispatchedBefore = null
+        ?int $limit = null
     ): Collection
     {
-        $query = $this->eligibleProgressQuery($groupId, $surveyId, $maxReminders, $lastDispatchedBefore);
+        $query = $this->eligibleProgressQuery($groupId, $surveyId, $maxReminders);
 
         return $limit ? $query->limit($limit)->get() : $query->get();
     }
@@ -83,6 +76,19 @@ class SurveyReminderService
 
             if (!SurveyProgressState::isOpen($progress->status, $progress->completed_at)) {
                 return ['status' => 'skipped', 'reason' => 'Progress is no longer open'];
+            }
+
+            if ($progress->has_responded) {
+                return ['status' => 'skipped', 'reason' => 'Progress already has a response waiting to be advanced'];
+            }
+
+            $inFlightReminder = SMSInbox::where('survey_progress_id', $progress->id)
+                ->where('is_reminder', true)
+                ->whereIn('status', ['pending', 'processing'])
+                ->exists();
+
+            if ($inFlightReminder) {
+                return ['status' => 'skipped', 'reason' => 'Reminder is already pending or processing for this progress'];
             }
 
             $targetSurvey = $survey ?? $progress->survey;

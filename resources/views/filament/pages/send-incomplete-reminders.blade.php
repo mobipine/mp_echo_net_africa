@@ -15,11 +15,8 @@
                         <ul class="text-sm text-gray-600 dark:text-gray-300 space-y-1">
                             <li>• Group: <span class="font-medium">{{ $previewData['group_name'] }}</span></li>
                             <li>• Survey: <span class="font-medium">{{ $previewData['survey_title'] }}</span></li>
-                            <li>• Total incomplete in DB: {{ number_format($previewData['total_incomplete']) }}</li>
-                            @if($previewData['last_dispatched_before'])
-                                <li>• Last contacted on or before: {{ $previewData['last_dispatched_before'] }}</li>
-                            @endif
-                            <li>• Matching incomplete records: {{ number_format($previewData['matching_count']) }}</li>
+                            <li>• Total incomplete awaiting response in DB: {{ number_format($previewData['total_incomplete']) }}</li>
+                            <li>• Matching incomplete records awaiting a reminder: {{ number_format($previewData['matching_count']) }}</li>
                             <li>• Reminders to be sent: <span class="font-semibold">{{ number_format($previewData['to_send']) }}</span></li>
                             <li>• Unique members: {{ number_format($previewData['unique_members']) }}</li>
                         </ul>
