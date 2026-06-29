@@ -20,11 +20,12 @@ class ExportSurveyReport implements WithMultipleSheets
     protected string $diskName;
     protected string $filePath;
     protected ?string $progressKey = null;
+    protected ?int $groupId = null;
     protected ?Survey $survey = null;
     protected array $englishQuestions = [];
     protected array $headings = [];
 
-    public function __construct(int $surveyId, int $userId, string $diskName, string $filePath, ?string $progressKey = null)
+    public function __construct(int $surveyId, int $userId, string $diskName, string $filePath, ?string $progressKey = null, ?int $groupId = null)
     {
         // Only store IDs - don't do heavy queries here (runs synchronously before queuing)
         $this->surveyId = $surveyId;
@@ -32,6 +33,7 @@ class ExportSurveyReport implements WithMultipleSheets
         $this->diskName = $diskName;
         $this->filePath = $filePath;
         $this->progressKey = $progressKey;
+        $this->groupId = $groupId;
     }
 
     /**
@@ -66,7 +68,6 @@ class ExportSurveyReport implements WithMultipleSheets
 
             // Build headings: Member details + English question texts
             $this->headings = [
-                'Group Name',
                 'Name',
                 'Email',
                 'Phone Number',
@@ -91,9 +92,11 @@ class ExportSurveyReport implements WithMultipleSheets
         // Initialize data when sheets() is called (when job runs, not during queuing)
         $this->initializeData();
 
-        // Only pass userId and filePath to the first sheet to avoid duplicate notifications
+        // Only pass userId and filePath to the data sheet to avoid duplicate notifications
         return [
-            new SurveyReportSheetAll($this->surveyId, $this->englishQuestions, $this->headings, $this->userId, $this->filePath, $this->progressKey),
+            // Summary funnel first, then the full response data.
+            new SurveyDispatchFunnelSheet($this->surveyId, $this->groupId),
+            new SurveyReportSheetAll($this->surveyId, $this->englishQuestions, $this->headings, $this->userId, $this->filePath, $this->progressKey, $this->groupId),
             // new SurveyReportSheetCompleted($this->surveyId, $this->englishQuestions, $this->headings, null, null, null),
             // new SurveyReportSheetIncomplete($this->surveyId, $this->englishQuestions, $this->headings, null, null, null),
         ];

@@ -6,6 +6,7 @@ namespace App\Filament\Pages;
 use App\Filament\Widgets\SmsResponsesStatsOverview;
 use Filament\Pages\Page;
 use App\Models\Survey;
+use App\Models\Group;
 use Filament\Pages\Dashboard\Concerns\HasFiltersForm;
 use Filament\Forms\Form;
 use Filament\Forms\Components\Select;
@@ -40,6 +41,14 @@ class SmsResponseReports extends Page
                                 $set('question_id', null);
                             })
                             ->nullable(),
+
+                        Select::make('group_id')
+                            ->label('Filter by Group')
+                            ->options(Group::orderBy('name')->pluck('name', 'id'))
+                            ->placeholder('All Groups')
+                            ->searchable()
+                            ->nullable()
+                            ->reactive(),
 
                         Select::make('question_id')
                             ->label('Filter by Question')
@@ -80,47 +89,51 @@ class SmsResponseReports extends Page
 
     protected function getActions(): array
     {
-        // Get survey_id from filters (HasFiltersForm provides $this->filters)
+        // Get filters (HasFiltersForm provides $this->filters)
         $surveyId = $this->filters['survey_id'] ?? null;
+        $groupId = $this->filters['group_id'] ?? null;
 
-        // Only show download button if a survey is selected
-        if (!$surveyId) {
+        // Only show download button once BOTH a survey and a group are selected.
+        // The complete report exports every question as a column for the members
+        // of the chosen group, so both filters are required.
+        if (!$surveyId || !$groupId) {
             return [];
         }
 
         $survey = Survey::find($surveyId);
-        if (!$survey) {
+        $group = Group::find($groupId);
+        if (!$survey || !$group) {
             return [];
         }
 
-        // Sanitize survey title for filename
+        // Sanitize survey + group names for the filename
         $sanitizedTitle = preg_replace('/[^a-zA-Z0-9_-]/', '_', $survey->title);
-        $sanitizedTitle = str_replace(' ', '_', $sanitizedTitle);
+        $sanitizedGroup = preg_replace('/[^a-zA-Z0-9_-]/', '_', $group->name);
 
         return [
             Action::make('download_survey_report')
-                ->label("Generate {$survey->title} Report")
+                ->label("Export {$group->name} Complete Survey Report")
                 ->icon('heroicon-o-document-arrow-down')
                 ->color('success')
-                ->action(function () use ($surveyId, $sanitizedTitle, $survey) {
+                ->action(function () use ($surveyId, $groupId, $sanitizedTitle, $sanitizedGroup, $survey, $group) {
                     try {
                         $diskName = 'public';
                         $directory = 'exports';
-                        $filenameOnly = strtolower($sanitizedTitle) . '_report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
+                        $filenameOnly = strtolower($sanitizedGroup . '_' . $sanitizedTitle) . '_report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
                         $fullFilePath = $directory . '/' . $filenameOnly;
                         $userId = auth()->id();
 
-                        // Create unique progress key
-                        $progressKey = "export_progress_{$userId}_{$surveyId}_" . md5($fullFilePath . now()->timestamp);
+                        // Create unique progress key (scoped to survey + group)
+                        $progressKey = "export_progress_{$userId}_{$surveyId}_{$groupId}_" . md5($fullFilePath . now()->timestamp);
 
-                        // Check if a job for this survey/user is already in progress
-                        $uniqueJobId = "survey_export_{$userId}_{$surveyId}_" . md5($fullFilePath);
+                        // Check if a job for this survey/group/user is already in progress
+                        $uniqueJobId = "survey_export_{$userId}_{$surveyId}_{$groupId}_" . md5($fullFilePath);
                         $cacheKey = "export_job_running_{$uniqueJobId}";
-                        
+
                         if (\Illuminate\Support\Facades\Cache::has($cacheKey)) {
                             Notification::make()
                                 ->title('Export Already in Progress')
-                                ->body("An export for {$survey->title} is already being generated. Please wait for it to complete.")
+                                ->body("An export for {$survey->title} ({$group->name}) is already being generated. Please wait for it to complete.")
                                 ->warning()
                                 ->send();
                             return;
@@ -132,11 +145,12 @@ class SmsResponseReports extends Page
                         // Dispatch the job to queue (returns immediately)
                         // The job implements ShouldBeUnique to prevent duplicate runs
                         // The job will clear the cache key in its finally block
-                        GenerateSurveyReportJob::dispatch($surveyId, $userId, $diskName, $fullFilePath, $progressKey);
+                        GenerateSurveyReportJob::dispatch($surveyId, $userId, $diskName, $fullFilePath, $progressKey, $groupId);
 
                         // Log for debugging
                         \Illuminate\Support\Facades\Log::info('Survey report job dispatched', [
                             'survey_id' => $surveyId,
+                            'group_id' => $groupId,
                             'user_id' => $userId,
                             'file_path' => $fullFilePath,
                             'queue_connection' => config('queue.default'),
@@ -145,7 +159,7 @@ class SmsResponseReports extends Page
                         // Send immediate notification
                         Notification::make()
                             ->title('Export Started')
-                            ->body("Your {$survey->title} report is being generated in the background. You will be notified when it's ready for download.")
+                            ->body("Your {$survey->title} report for {$group->name} is being generated in the background. You will be notified when it's ready for download.")
                             ->success()
                             ->send();
                     } catch (\Exception $e) {

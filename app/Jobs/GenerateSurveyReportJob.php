@@ -47,15 +47,16 @@ class GenerateSurveyReportJob implements ShouldQueue, ShouldBeUnique
         public int $userId,
         public string $diskName,
         public string $filePath,
-        public ?string $progressKey = null
+        public ?string $progressKey = null,
+        public ?int $groupId = null
     ) {
-        // Generate progress key if not provided
+        // Generate progress key if not provided (scoped to survey + group)
         if (!$this->progressKey) {
-            $this->progressKey = "export_progress_{$this->userId}_{$this->surveyId}_" . md5($this->filePath . now()->timestamp);
+            $this->progressKey = "export_progress_{$this->userId}_{$this->surveyId}_{$this->groupId}_" . md5($this->filePath . now()->timestamp);
         }
 
         // Generate unique job ID to prevent duplicate runs
-        $this->uniqueId = "survey_export_{$this->userId}_{$this->surveyId}_" . md5($this->filePath);
+        $this->uniqueId = "survey_export_{$this->userId}_{$this->surveyId}_{$this->groupId}_" . md5($this->filePath);
     }
 
     /**
@@ -94,7 +95,7 @@ class GenerateSurveyReportJob implements ShouldQueue, ShouldBeUnique
             }
 
             // Create export instance and store to disk
-            $export = new ExportSurveyReport($this->surveyId, $this->userId, $this->diskName, $this->filePath, $this->progressKey);
+            $export = new ExportSurveyReport($this->surveyId, $this->userId, $this->diskName, $this->filePath, $this->progressKey, $this->groupId);
 
             // Use memory-efficient writer settings
             Excel::store($export, $this->filePath, $this->diskName, \Maatwebsite\Excel\Excel::XLSX);
@@ -209,9 +210,12 @@ class GenerateSurveyReportJob implements ShouldQueue, ShouldBeUnique
                 return;
             }
 
+            $group = $this->groupId ? \App\Models\Group::find($this->groupId) : null;
+            $scopeLabel = $group ? "{$survey->title} report for {$group->name}" : "{$survey->title} report";
+
             Notification::make()
                 ->title('Survey Report Export Complete! ✅')
-                ->body("Your {$survey->title} report is ready for download. File size: " . $this->formatFileSize($fileSize))
+                ->body("Your {$scopeLabel} is ready for download. File size: " . $this->formatFileSize($fileSize))
                 ->success()
                 ->actions([
                     Action::make('download')

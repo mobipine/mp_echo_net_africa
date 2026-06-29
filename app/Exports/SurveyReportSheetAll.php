@@ -28,8 +28,9 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
     protected ?int $userId = null;
     protected ?string $filePath = null;
     protected ?string $progressKey = null;
+    protected ?int $groupId = null;
 
-    public function __construct(int $surveyId, array $englishQuestions, array $headings, ?int $userId = null, ?string $filePath = null, ?string $progressKey = null)
+    public function __construct(int $surveyId, array $englishQuestions, array $headings, ?int $userId = null, ?string $filePath = null, ?string $progressKey = null, ?int $groupId = null)
     {
         $this->surveyId = $surveyId;
         $this->englishQuestions = $englishQuestions;
@@ -37,6 +38,27 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
         $this->userId = $userId;
         $this->filePath = $filePath;
         $this->progressKey = $progressKey;
+        $this->groupId = $groupId;
+    }
+
+    /**
+     * Base query for the survey progresses included in this report.
+     * When a group is selected, only members belonging to that group are
+     * included — matching via the many-to-many group_member pivot OR the
+     * legacy members.group_id column so no member is missed.
+     */
+    protected function progressQuery()
+    {
+        return SurveyProgress::where('survey_id', $this->surveyId)
+            ->when($this->groupId, function ($query) {
+                $groupId = $this->groupId;
+                $query->whereHas('member', function ($memberQuery) use ($groupId) {
+                    $memberQuery->where('group_id', $groupId)
+                        ->orWhereHas('groups', function ($groupQuery) use ($groupId) {
+                            $groupQuery->where('groups.id', $groupId);
+                        });
+                });
+            });
     }
 
     public function title(): string
@@ -57,11 +79,11 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
 
         $data = collect();
         $processed = 0;
-        $total = SurveyProgress::where('survey_id', $this->surveyId)->count();
+        $total = $this->progressQuery()->count();
 
         // Process progresses in smaller chunks for better memory management
-        SurveyProgress::where('survey_id', $this->surveyId)
-            ->with(['member.groups', 'member.county'])
+        $this->progressQuery()
+            ->with(['member.county'])
             ->orderBy('id') // Ensure consistent ordering
             ->chunk(250, function ($progresses) use (&$data, $responseMap, &$processed, $total) {
                 $chunkData = $this->buildData($progresses, $responseMap);
@@ -146,9 +168,7 @@ class SurveyReportSheetAll implements FromCollection, WithHeadings, ShouldAutoSi
             $memberResponses = $responseMap->get($normalizedMemberPhone, collect());
 
             // Build row with member details - replace empty values with N/A
-            $groupNames = $member->groups->pluck('name')->join(', ') ?: 'N/A';
             $row = [
-                $groupNames,
                 $member->name ?? 'N/A',
                 $member->email ?? 'N/A',
                 $msisdn ?? 'N/A',
