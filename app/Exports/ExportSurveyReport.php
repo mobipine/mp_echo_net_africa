@@ -94,9 +94,9 @@ class ExportSurveyReport implements WithMultipleSheets
 
         // Only pass userId and filePath to the data sheet to avoid duplicate notifications
         return [
-            // Summary funnel first, then the full response data.
-            new SurveyDispatchFunnelSheet($this->surveyId, $this->groupId),
+            // Full response data first, then the summary funnel.
             new SurveyReportSheetAll($this->surveyId, $this->englishQuestions, $this->headings, $this->userId, $this->filePath, $this->progressKey, $this->groupId),
+            new SurveyDispatchFunnelSheet($this->surveyId, $this->groupId),
             // new SurveyReportSheetCompleted($this->surveyId, $this->englishQuestions, $this->headings, null, null, null),
             // new SurveyReportSheetIncomplete($this->surveyId, $this->englishQuestions, $this->headings, null, null, null),
         ];
