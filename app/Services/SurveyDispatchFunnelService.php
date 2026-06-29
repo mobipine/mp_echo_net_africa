@@ -34,16 +34,14 @@ class SurveyDispatchFunnelService
      */
     public function build(int $surveyId, ?int $groupId = null, ?string $since = null): array
     {
-        $progressIds = $this->scopedProgressIds($surveyId, $groupId);
+        $progressIds = $this->scopedProgressQuery($surveyId, $groupId)->pluck('id');
 
         if ($progressIds->isEmpty()) {
             return [];
         }
 
         // Anchor at the group's campaign start unless an explicit cutoff is given.
-        if ($since === null && $groupId) {
-            $since = optional(Group::find($groupId))->created_at?->toDateTimeString();
-        }
+        $since = $this->resolveSince($groupId, $since);
 
         // Normalised phones of the scoped members, for matching against responses.
         $scopedPhones = [];
@@ -156,10 +154,98 @@ class SurveyDispatchFunnelService
     }
 
     /**
-     * Survey progress IDs for the survey, optionally limited to a group's members
+     * Participation summary for the campaign: how many members were involved,
+     * how many completed, how many stalled, and where the stalled ones stopped
+     * (per question, in survey order). Bilingual question pairs are consolidated
+     * onto the English question, mirroring the response data sheet.
+     *
+     * @return array{involved:int,completed:int,stalled:int,byQuestion:array<int,array{position:int,question:string,count:int}>}
+     */
+    public function participation(int $surveyId, ?int $groupId = null, ?string $since = null): array
+    {
+        $since = $this->resolveSince($groupId, $since);
+
+        // Only the campaign's own progress rows (created on/after the anchor), so
+        // earlier waves to the same members are excluded.
+        $base = $this->scopedProgressQuery($surveyId, $groupId)
+            ->when($since, fn ($q) => $q->where('created_at', '>=', $since));
+
+        $involved = (clone $base)->count();
+        $completed = (clone $base)->whereNotNull('completed_at')->count();
+        $stalled = $involved - $completed;
+
+        // Where the non-completed members are currently stuck.
+        $stallCounts = (clone $base)
+            ->whereNull('completed_at')
+            ->select('current_question_id', DB::raw('count(*) as c'))
+            ->groupBy('current_question_id')
+            ->pluck('c', 'current_question_id');
+
+        $byQuestion = [];
+        $attributed = 0;
+        $position = 0;
+
+        $survey = \App\Models\Survey::find($surveyId);
+        if ($survey) {
+            $englishQuestions = $survey->questions()
+                ->whereNotNull('swahili_question_id')
+                ->orderBy('pivot_position')
+                ->get();
+
+            foreach ($englishQuestions as $question) {
+                $position++;
+                $count = (int) ($stallCounts[$question->id] ?? 0);
+
+                // Fold the Swahili variant's stalls into the English row.
+                if ($question->swahili_question_id && $question->swahili_question_id != $question->id) {
+                    $count += (int) ($stallCounts[$question->swahili_question_id] ?? 0);
+                }
+
+                $attributed += $count;
+                $byQuestion[] = [
+                    'position' => $position,
+                    'question' => $question->question,
+                    'count' => $count,
+                ];
+            }
+        }
+
+        // Anything not attributable to a listed question (e.g. null current
+        // question) is surfaced so the breakdown reconciles with "stalled".
+        $remainder = $stalled - $attributed;
+        if ($remainder > 0) {
+            $byQuestion[] = [
+                'position' => $position + 1,
+                'question' => 'Not started / other',
+                'count' => $remainder,
+            ];
+        }
+
+        return [
+            'involved' => $involved,
+            'completed' => $completed,
+            'stalled' => $stalled,
+            'byQuestion' => $byQuestion,
+        ];
+    }
+
+    /**
+     * The group's campaign start (its created_at) unless an explicit cutoff is given.
+     */
+    protected function resolveSince(?int $groupId, ?string $since): ?string
+    {
+        if ($since === null && $groupId) {
+            return optional(Group::find($groupId))->created_at?->toDateTimeString();
+        }
+
+        return $since;
+    }
+
+    /**
+     * Survey progress query for the survey, optionally limited to a group's members
      * (via the group_member pivot OR the legacy members.group_id column).
      */
-    protected function scopedProgressIds(int $surveyId, ?int $groupId)
+    protected function scopedProgressQuery(int $surveyId, ?int $groupId)
     {
         return SurveyProgress::where('survey_id', $surveyId)
             ->when($groupId, function ($query) use ($groupId) {
@@ -169,8 +255,7 @@ class SurveyDispatchFunnelService
                             $groupQuery->where('groups.id', $groupId);
                         });
                 });
-            })
-            ->pluck('id');
+            });
     }
 
     protected function ordinal(int $n): string
