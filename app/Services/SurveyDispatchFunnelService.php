@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Group;
 use App\Models\SurveyProgress;
 use App\Models\SurveyResponse;
 use Carbon\Carbon;
@@ -18,18 +19,30 @@ use Illuminate\Support\Facades\DB;
  * group when given) who sent any survey response in the window that runs from
  * that stage's dispatch time up to the next stage's dispatch time (or "now" for
  * the latest stage). A member active in more than one window is counted in each.
+ *
+ * Campaign anchoring: a survey can be dispatched to the same members more than
+ * once (e.g. a January wave and a fresh wave for a new group). Because a member
+ * keeps multiple survey_progress rows and dispatches aren't tagged to a group,
+ * scoping by membership alone would mix the waves. So when a group is given we
+ * anchor the funnel at the group's created_at (its campaign start) and ignore
+ * everything dispatched/answered before it. An explicit $since overrides this.
  */
 class SurveyDispatchFunnelService
 {
     /**
      * @return array<int, array{label:string,type:string,seq:?int,sent:int,responses:int,dispatched_at:?string}>
      */
-    public function build(int $surveyId, ?int $groupId = null): array
+    public function build(int $surveyId, ?int $groupId = null, ?string $since = null): array
     {
         $progressIds = $this->scopedProgressIds($surveyId, $groupId);
 
         if ($progressIds->isEmpty()) {
             return [];
+        }
+
+        // Anchor at the group's campaign start unless an explicit cutoff is given.
+        if ($since === null && $groupId) {
+            $since = optional(Group::find($groupId))->created_at?->toDateTimeString();
         }
 
         // Normalised phones of the scoped members, for matching against responses.
@@ -47,50 +60,45 @@ class SurveyDispatchFunnelService
         // --- Stage 0: initial send (is_reminder = 0) ---
         $initialQuery = DB::table('sms_inboxes')
             ->whereIn('survey_progress_id', $progressIds)
-            ->where('is_reminder', 0);
+            ->where('is_reminder', 0)
+            ->when($since, fn ($q) => $q->where('created_at', '>=', $since));
 
         $stages = [];
         $stages[] = [
             'label' => '1st day of sending',
             'type' => 'initial',
             'seq' => null,
-            'sent' => (clone $initialQuery)->count(),
+            // Distinct recipients, so accidental double-sends don't inflate the count.
+            'sent' => (clone $initialQuery)->distinct()->count('survey_progress_id'),
             'dispatched_at' => (clone $initialQuery)->min('created_at'),
         ];
 
-        // --- Reminder stages: rank each progress's reminders chronologically.
-        // The Nth reminder (by time) for a progress belongs to reminder round N.
-        $rounds = [];
-        $perProgressSeq = [];
-        DB::table('sms_inboxes')
+        // --- Reminder stages: one round per calendar day reminders went out.
+        // Reminders are dispatched roughly once a day; grouping by day collapses
+        // same-round double-sends (and the partially-populated dedupe_key) into a
+        // single round, and counts distinct recipients rather than raw messages.
+        $reminderDays = DB::table('sms_inboxes')
             ->whereIn('survey_progress_id', $progressIds)
             ->where('is_reminder', 1)
-            ->orderBy('survey_progress_id')
-            ->orderBy('created_at')
-            ->orderBy('id')
-            ->select('survey_progress_id', 'created_at')
-            ->each(function ($row) use (&$rounds, &$perProgressSeq) {
-                $pid = $row->survey_progress_id;
-                $seq = ($perProgressSeq[$pid] ?? 0) + 1;
-                $perProgressSeq[$pid] = $seq;
+            ->when($since, fn ($q) => $q->where('created_at', '>=', $since))
+            ->select(
+                DB::raw('DATE(created_at) as day'),
+                DB::raw('COUNT(DISTINCT survey_progress_id) as recipients'),
+                DB::raw('MIN(created_at) as first_at')
+            )
+            ->groupBy(DB::raw('DATE(created_at)'))
+            ->orderBy('day')
+            ->get();
 
-                if (!isset($rounds[$seq])) {
-                    $rounds[$seq] = ['sent' => 0, 'dispatched_at' => $row->created_at];
-                }
-                $rounds[$seq]['sent']++;
-                if ($row->created_at < $rounds[$seq]['dispatched_at']) {
-                    $rounds[$seq]['dispatched_at'] = $row->created_at;
-                }
-            });
-
-        ksort($rounds);
-        foreach ($rounds as $seq => $info) {
+        $seq = 0;
+        foreach ($reminderDays as $day) {
+            $seq++;
             $stages[] = [
                 'label' => $this->ordinal($seq) . ' Reminder',
                 'type' => 'reminder',
                 'seq' => $seq,
-                'sent' => $info['sent'],
-                'dispatched_at' => $info['dispatched_at'],
+                'sent' => (int) $day->recipients,
+                'dispatched_at' => $day->first_at,
             ];
         }
 
