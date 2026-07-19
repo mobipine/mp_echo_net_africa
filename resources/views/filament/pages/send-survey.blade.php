@@ -16,6 +16,7 @@
                         <p class="text-sm font-medium text-gray-700 dark:text-white">Summary</p>
                         <ul class="text-sm text-gray-600 dark:text-gray-300 space-y-1">
                             <li>• Survey: <span class="font-medium">{{ $previewData['survey_title'] }}</span></li>
+                            <li>• Recipients: {{ $previewData['recipient_label'] ?? 'Groups' }}</li>
                             <li>• Channel: {{ $previewData['channel'] }}</li>
                             <li>• Mode: {{ $previewData['is_automated'] ? 'Scheduled (automated)' : 'Send now (manual)' }}</li>
                             @if($previewData['is_automated'] && $previewData['starts_at'])
@@ -24,8 +25,12 @@
                             @if($previewData['limit'])
                                 <li>• Recipient limit: {{ number_format($previewData['limit']) }}</li>
                             @endif
-                            <li>• Groups: {{ $previewData['group_count'] }}</li>
-                            <li>• Unique active members in selected groups: {{ number_format($previewData['total_active']) }}</li>
+                            @if(($previewData['recipient_type'] ?? 'groups') === 'groups')
+                                <li>• Groups: {{ $previewData['group_count'] }}</li>
+                                <li>• Unique active members in selected groups: {{ number_format($previewData['total_active']) }}</li>
+                            @else
+                                <li>• Active selected members: {{ number_format($previewData['total_active']) }}</li>
+                            @endif
                             @if(($previewData['overlapping_members_count'] ?? 0) > 0)
                                 <li>• Members appearing in multiple selected groups: {{ number_format($previewData['overlapping_members_count']) }}</li>
                             @endif
@@ -38,12 +43,16 @@
                             @if($previewData['participant_uniqueness'] && $previewData['total_skipped_incomplete'] > 0)
                                 <li>• Skipped (incomplete, uniqueness ON): {{ number_format($previewData['total_skipped_incomplete']) }}</li>
                             @endif
+                            @if(($previewData['total_restartable'] ?? 0) > 0)
+                                <li>• Stale open progress to restart: {{ number_format($previewData['total_restartable']) }}</li>
+                            @endif
                             <li>• <span class="font-semibold">Will receive: {{ number_format($previewData['to_send']) }}</span></li>
                             <li>• Estimated SMS credits: <span class="font-semibold">{{ number_format($previewData['estimated_credits']) }}</span></li>
                         </ul>
                     </div>
 
                     {{-- Group breakdown --}}
+                    @if(($previewData['recipient_type'] ?? 'groups') === 'groups')
                     <div>
                         <p class="text-sm font-medium text-gray-700 dark:text-white mb-2">Breakdown by group</p>
                         @if(($previewData['overlapping_members_count'] ?? 0) > 0)
@@ -60,6 +69,9 @@
                                         @if($previewData['participant_uniqueness'])
                                             <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Incomplete</th>
                                         @endif
+                                        @if(($previewData['restart_open_progress'] ?? false))
+                                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Restart</th>
+                                        @endif
                                         <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">To send</th>
                                     </tr>
                                 </thead>
@@ -73,6 +85,9 @@
                                             @if($previewData['participant_uniqueness'])
                                                 <td class="px-3 py-2 text-gray-700 dark:text-white">{{ $row['incomplete_skipped'] }}</td>
                                             @endif
+                                            @if(($previewData['restart_open_progress'] ?? false))
+                                                <td class="px-3 py-2 text-gray-700 dark:text-white">{{ $row['restartable'] ?? 0 }}</td>
+                                            @endif
                                             <td class="px-3 py-2 text-gray-700 dark:text-white font-medium">{{ $row['to_send'] }}</td>
                                         </tr>
                                     @endforeach
@@ -80,6 +95,7 @@
                             </table>
                         </div>
                     </div>
+                    @endif
 
                     {{-- Sample recipients --}}
                     @if(!empty($previewData['sample_rows']))

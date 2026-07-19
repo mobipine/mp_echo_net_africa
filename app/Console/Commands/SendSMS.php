@@ -4,24 +4,23 @@ namespace App\Console\Commands;
 
 use App\Contracts\SmsTransport;
 use App\Models\Group;
-use App\Models\SMSInbox;
 use App\Models\SmsCredit;
+use App\Models\SMSInbox;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 class SendSMS extends Command
 {
-/**
- * SMS DISPATCH COMMAND - OVERVIEW
- *
- * 1. Runs every 5 seconds, processes 100 SMS records at a time
- * 2. Fetches: pending (not yet tried) OR failed (retries<3) from sms_inboxes
- * 3. For group messages: Expands to individual members, replaces placeholders
- * 4. Sends via BongaSMS API, updates: 'sent' (success) or 'failed' (error)
- * 5. Failed messages (status 666): retry up to 3 times, then permanently failed
- * 6. This is the ONLY place actual SMS sending happens in the app
- */
-
+    /**
+     * SMS DISPATCH COMMAND - OVERVIEW
+     *
+     * 1. Runs every 5 seconds, processes 100 SMS records at a time
+     * 2. Fetches: pending (not yet tried) OR failed (retries<3) from sms_inboxes
+     * 3. For group messages: Expands to individual members, replaces placeholders
+     * 4. Sends via BongaSMS API, updates: 'sent' (success) or 'failed' (error)
+     * 5. Failed messages (status 666): retry up to 3 times, then permanently failed
+     * 6. This is the ONLY place actual SMS sending happens in the app
+     */
     public $bonga_sms;
 
     public function __construct(SmsTransport $bonga_sms)
@@ -50,17 +49,19 @@ class SendSMS extends Command
     public function handle()
     {
         // Check if survey messages are enabled
-        if (!config('survey_settings.messages_enabled', true)) {
+        if (! config('survey_settings.messages_enabled', true)) {
             Log::info('Survey messages are disabled via config. Skipping SMS sending.');
             $this->info('Survey messages are disabled via config. Skipping SMS sending.');
+
             return;
         }
 
         // Acquire lock to prevent concurrent executions
         $lock = \Illuminate\Support\Facades\Cache::lock('dispatch-sms-command', 60);
 
-        if (!$lock->get()) {
+        if (! $lock->get()) {
             Log::info('SendSMS command already running. Skipping...');
+
             return;
         }
 
@@ -69,17 +70,18 @@ class SendSMS extends Command
             $creditBalance = SmsCredit::getBalance();
             if ($creditBalance <= 0) {
                 Log::warning("Insufficient SMS credits. Current balance: {$creditBalance}. Sending stopped.");
+
                 return;
             }
 
             // Fetch pending and failed (with retries < 3) SMSInbox records
             $pendingSms = SMSInbox::where('channel', 'sms')
-                ->where(function($query) {
+                ->where(function ($query) {
                     $query->where('status', 'pending'); // New messages not yet tried
-                        //   ->orWhere(function($q) {
-                        //       $q->where('status', 'failed')
-                        //         ->where('retries', '<', 3); // Failed messages eligible for retry
-                        //   })
+                    //   ->orWhere(function($q) {
+                    //       $q->where('status', 'failed')
+                    //         ->where('retries', '<', 3); // Failed messages eligible for retry
+                    //   })
 
                 })
                 ->take(100) // Process in batches of 100
@@ -87,7 +89,8 @@ class SendSMS extends Command
                 ->get();
 
             if ($pendingSms->isEmpty()) {
-                Log::info("No pending SMS records to send.");
+                Log::debug('No pending SMS records to send.');
+
                 return;
             }
 
@@ -184,7 +187,7 @@ class SendSMS extends Command
                     $smsInbox->update([
                         'status' => 'failed',
                         'retries' => $newRetryCount,
-                        'failure_reason' => 'Exception: ' . $e->getMessage(),
+                        'failure_reason' => 'Exception: '.$e->getMessage(),
                     ]);
 
                     if ($newRetryCount < 3) {
@@ -206,17 +209,17 @@ class SendSMS extends Command
     /**
      * Send a single SMS via BongaSMS service
      *
-     * @param string $phoneNumber
-     * @param string $message
      * @return array Response from SMS service
      */
     protected function sendSingleSMS(string $phoneNumber, string $message): array
     {
         try {
             $response = $this->bonga_sms->send($phoneNumber, $message);
+
             return $response;
         } catch (\Exception $e) {
             Log::error("Error sending SMS to {$phoneNumber}: {$e->getMessage()}");
+
             return ['status' => 'error', 'message' => $e->getMessage()];
         }
     }
@@ -224,9 +227,7 @@ class SendSMS extends Command
     /**
      * Replace placeholders in message with member data
      *
-     * @param string $message
-     * @param mixed $member
-     * @return string
+     * @param  mixed  $member
      */
     protected function replacePlaceholders(string $message, $member): string
     {
@@ -241,5 +242,3 @@ class SendSMS extends Command
         );
     }
 }
-
-

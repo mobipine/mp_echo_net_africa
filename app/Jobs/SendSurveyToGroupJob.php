@@ -2,22 +2,27 @@
 
 namespace App\Jobs;
 
+use App\Filament\Resources\SMSResource;
 use App\Models\Group;
 use App\Models\GroupSurvey;
 use App\Models\Member;
 use App\Models\Survey;
-use App\Models\SurveyQuestion;
+use App\Models\User;
 use App\Services\SurveyDispatchService;
+use Carbon\Carbon;
+use Filament\Notifications\Actions\Action;
+use Filament\Notifications\Notification;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
-class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
+class SendSurveyToGroupJob implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -57,9 +62,12 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
         public $startsAt = null,
         public $endsAt = null,
         public ?int $limit = null, // Optional max recipients across all groups (e.g. 2000 for monitoring)
-        public ?string $dispatchBatchUuid = null
+        public ?string $dispatchBatchUuid = null,
+        public ?int $userId = null,
+        public bool $restartOpenProgress = false,
+        public ?string $restartBefore = null
     ) {
-        if (!$this->automated && $this->startsAt === null) {
+        if (! $this->automated && $this->startsAt === null) {
             $this->startsAt = now()->startOfSecond()->toDateTimeString();
         }
 
@@ -73,130 +81,163 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
     {
         if ($this->groupIds === 'all') {
             $startsAtStr = $this->startsAt ? date('Y-m-d-H-i', strtotime($this->startsAt)) : 'now';
+
             return "send-survey-all-groups-{$this->survey->id}-{$startsAtStr}-{$this->channel}";
         }
 
         $normalizedGroupIds = app(SurveyDispatchService::class)->normalizeGroupIds($this->groupIds);
         $groupIdsStr = implode('-', $normalizedGroupIds);
+
         return "send-survey-{$this->survey->id}-groups-{$groupIdsStr}-{$this->channel}";
     }
 
     public function handle(SurveyDispatchService $dispatchService): void
     {
-        Log::info("Starting SendSurveyToGroupJob for survey '{$this->survey->title}'");
+        Log::info("Starting SendSurveyToGroupJob for survey '{$this->survey->title}'", [
+            'survey_id' => $this->survey->id,
+            'group_ids' => $this->groupIds,
+            'limit' => $this->limit,
+            'restart_open_progress' => $this->restartOpenProgress,
+            'restart_before' => $this->restartBefore,
+            'dispatch_batch_uuid' => $this->dispatchBatchUuid,
+        ]);
 
         // Handle "ALL GROUPS" case
         if ($this->groupIds === 'all') {
-            $this->processAllGroups($dispatchService);
+            $summary = $this->processAllGroups($dispatchService);
+            $this->notifyCompletion($summary);
+
             return;
         }
 
         // Handle specific groups case
-        $this->processSpecificGroups($dispatchService);
+        $summary = $this->processSpecificGroups($dispatchService);
+        $this->notifyCompletion($summary);
     }
 
     /**
      * Process ALL groups in the system
      */
-    protected function processAllGroups(SurveyDispatchService $dispatchService): void
+    protected function processAllGroups(SurveyDispatchService $dispatchService): array
     {
         Log::info("Processing ALL groups for survey '{$this->survey->title}'");
 
+        $assignmentIds = [];
+
         // First, create group_survey assignments for all groups
-        Group::chunk(300, function ($groups) {
+        Group::chunk(300, function ($groups) use (&$assignmentIds) {
             foreach ($groups as $group) {
-                GroupSurvey::firstOrCreate(
+                $assignment = GroupSurvey::firstOrCreate(
                     [
-                        'group_id'   => $group->id,
-                        'survey_id'  => $this->survey->id,
-                        'starts_at'  => $this->startsAt ?? now(),
+                        'group_id' => $group->id,
+                        'survey_id' => $this->survey->id,
+                        'starts_at' => $this->startsAt ?? now(),
                     ],
                     [
-                        'automated'       => $this->automated,
-                        'ends_at'         => $this->endsAt,
-                        'channel'         => $this->channel,
-                        'was_dispatched'  => !$this->automated,
+                        'automated' => $this->automated,
+                        'ends_at' => $this->endsAt,
+                        'channel' => $this->channel,
+                        'was_dispatched' => ! $this->automated,
                     ]
                 );
+
+                $assignmentIds[] = $assignment->id;
             }
         });
 
-        Log::info("Finished creating group_survey assignments for ALL groups");
+        Log::info('Finished creating group_survey assignments for ALL groups');
 
         // If automated, stop here - the scheduler will handle dispatch
         if ($this->automated) {
-            Log::info("Survey is automated - scheduler will dispatch at scheduled time");
-            return;
+            Log::info('Survey is automated - scheduler will dispatch at scheduled time');
+
+            return $this->summary(0, 0, [], 0, 0);
         }
 
         // If not automated, process all groups now
         $groupIds = Group::pluck('id')->toArray();
-        $this->processGroupIds($dispatchService->normalizeGroupIds($groupIds), $dispatchService);
+        $summary = $this->processGroupIds($dispatchService->normalizeGroupIds($groupIds), $dispatchService);
+        $this->storeGroupSurveySummary($assignmentIds, $summary);
+
+        return $summary;
     }
 
     /**
      * Process specific groups
      */
-    protected function processSpecificGroups(SurveyDispatchService $dispatchService): void
+    protected function processSpecificGroups(SurveyDispatchService $dispatchService): array
     {
         Log::info("Processing specific groups for survey '{$this->survey->title}'");
+
+        $assignmentIds = [];
 
         // First, create group_survey assignments for the selected groups
         foreach ($this->groupIds as $groupId) {
             $group = Group::find($groupId);
-            if (!$group) {
+            if (! $group) {
                 Log::warning("Group with ID {$groupId} not found. Skipping group_survey creation.");
+
                 continue;
             }
 
-            GroupSurvey::firstOrCreate(
+            $assignment = GroupSurvey::firstOrCreate(
                 [
-                    'group_id'   => $groupId,
-                    'survey_id'  => $this->survey->id,
-                    'starts_at'  => $this->startsAt ?? now(),
+                    'group_id' => $groupId,
+                    'survey_id' => $this->survey->id,
+                    'starts_at' => $this->startsAt ?? now(),
                 ],
                 [
-                    'automated'       => $this->automated,
-                    'ends_at'         => $this->endsAt,
-                    'channel'         => $this->channel,
-                    'was_dispatched'  => !$this->automated,
+                    'automated' => $this->automated,
+                    'ends_at' => $this->endsAt,
+                    'channel' => $this->channel,
+                    'was_dispatched' => ! $this->automated,
                 ]
             );
+
+            $assignmentIds[] = $assignment->id;
         }
 
-        Log::info("Finished creating group_survey assignments for " . count($this->groupIds) . " groups");
+        Log::info('Finished creating group_survey assignments for '.count($this->groupIds).' groups');
 
         // If automated, stop here - the scheduler will handle dispatch
         if ($this->automated) {
-            Log::info("Survey is automated - scheduler will dispatch at scheduled time");
-            return;
+            Log::info('Survey is automated - scheduler will dispatch at scheduled time');
+
+            return $this->summary(0, 0, [], 0, 0);
         }
 
         // If not automated, process the groups now
-        $this->processGroupIds($dispatchService->normalizeGroupIds($this->groupIds), $dispatchService);
+        $summary = $this->processGroupIds($dispatchService->normalizeGroupIds($this->groupIds), $dispatchService);
+        $this->storeGroupSurveySummary($assignmentIds, $summary);
+
+        return $summary;
     }
 
     /**
      * Process array of group IDs and send survey to members
      */
-    protected function processGroupIds(array $groupIds, SurveyDispatchService $dispatchService): void
+    protected function processGroupIds(array $groupIds, SurveyDispatchService $dispatchService): array
     {
         // Fetch the first question
         $firstQuestion = getNextQuestion($this->survey->id, null, null);
 
         // Check if getNextQuestion returned an error array
         if (is_array($firstQuestion)) {
-            Log::error("Error getting first question for survey '{$this->survey->title}': " . ($firstQuestion['message'] ?? 'Unknown error'));
-            return;
+            Log::error("Error getting first question for survey '{$this->survey->title}': ".($firstQuestion['message'] ?? 'Unknown error'));
+
+            return $this->summary(0, 0, ['Survey has no valid first question' => 1], 0, 0);
         }
 
-        if (!$firstQuestion || !$firstQuestion instanceof \App\Models\SurveyQuestion) {
+        if (! $firstQuestion || ! $firstQuestion instanceof \App\Models\SurveyQuestion) {
             Log::info("Survey '{$this->survey->title}' has no questions. No SMS sent.");
-            return;
+
+            return $this->summary(0, 0, ['Survey has no questions' => 1], 0, 0);
         }
 
         $totalQueued = 0;
-        $skipped = [];
+        $skippedReasons = [];
+        $cancelledProgress = 0;
+        $restartBefore = $this->restartBefore ? Carbon::parse($this->restartBefore) : null;
 
         if ($this->limit !== null) {
             Log::info("SendSurveyToGroupJob: recipient limit set to {$this->limit}");
@@ -208,12 +249,14 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
         foreach ($memberIds as $memberId) {
             if ($this->limit !== null && $totalQueued >= $this->limit) {
                 Log::info("SendSurveyToGroupJob: reached limit of {$this->limit} recipients. Stopping.");
+                $skippedReasons['Recipient limit reached'] = ($skippedReasons['Recipient limit reached'] ?? 0) + 1;
                 break;
             }
 
             $member = $members->get($memberId);
-            if (!$member) {
-                $skipped[] = ['member' => "ID {$memberId}", 'reason' => 'Member record not found'];
+            if (! $member) {
+                $skippedReasons['Member record not found'] = ($skippedReasons['Member record not found'] ?? 0) + 1;
+
                 continue;
             }
 
@@ -223,30 +266,78 @@ class SendSurveyToGroupJob implements ShouldQueue, ShouldBeUnique
                 $firstQuestion,
                 $this->channel,
                 $this->automated ? 'automated' : 'manual',
-                $this->dispatchBatchUuid
+                $this->dispatchBatchUuid,
+                $this->restartOpenProgress,
+                $restartBefore
             );
 
             if ($result['status'] === 'queued') {
                 $totalQueued++;
+                $cancelledProgress += (int) ($result['cancelled_progress_count'] ?? 0);
+
                 continue;
             }
 
-            $memberLabel = "{$member->name} (ID: {$member->id}, phone: " . ($member->phone ?: 'none') . ")";
-            $skipped[] = [
-                'member' => $memberLabel,
-                'reason' => $result['reason'] ?? 'Skipped',
-            ];
+            $reason = $result['reason'] ?? 'Skipped';
+            $skippedReasons[$reason] = ($skippedReasons[$reason] ?? 0) + 1;
         }
 
-        Log::info("SendSurveyToGroupJob completed for survey '{$this->survey->title}': {$totalQueued} total messages queued." . ($this->limit !== null ? " (limit was {$this->limit})" : ''));
+        $summary = $this->summary($totalQueued, array_sum($skippedReasons), $skippedReasons, $cancelledProgress, count($memberIds));
 
-        if (!empty($skipped)) {
-            Log::info("Survey '{$this->survey->title}' – members not sent to (" . count($skipped) . "):", [
-                'skipped' => $skipped,
-            ]);
-            foreach ($skipped as $s) {
-                Log::info("  - {$s['member']} | Reason: {$s['reason']}");
-            }
+        Log::info("SendSurveyToGroupJob completed for survey '{$this->survey->title}'", $summary);
+
+        return $summary;
+    }
+
+    private function summary(int $queued, int $skipped, array $skipReasons, int $cancelledProgress, int $eligibleMembers): array
+    {
+        return [
+            'queued' => $queued,
+            'skipped' => $skipped,
+            'skip_reasons' => $skipReasons,
+            'cancelled_stale_progress' => $cancelledProgress,
+            'eligible_members' => $eligibleMembers,
+            'dispatch_batch_uuid' => $this->dispatchBatchUuid,
+        ];
+    }
+
+    private function storeGroupSurveySummary(array $assignmentIds, array $summary): void
+    {
+        if (empty($assignmentIds) || ! Schema::hasColumn('group_survey', 'queued_count')) {
+            return;
         }
+
+        GroupSurvey::whereIn('id', $assignmentIds)->update([
+            'dispatch_batch_uuid' => $this->dispatchBatchUuid,
+            'queued_count' => $summary['queued'],
+            'skipped_count' => $summary['skipped'],
+            'dispatch_summary' => json_encode($summary),
+            'dispatched_at' => now(),
+            'was_dispatched' => true,
+        ]);
+    }
+
+    private function notifyCompletion(array $summary): void
+    {
+        if (! $this->userId || ! ($user = User::find($this->userId))) {
+            return;
+        }
+
+        $body = "Queued {$summary['queued']} SMS message(s); skipped {$summary['skipped']} member(s).";
+        if (($summary['cancelled_stale_progress'] ?? 0) > 0) {
+            $body .= " Restarted {$summary['cancelled_stale_progress']} stale open progress record(s).";
+        }
+
+        Notification::make()
+            ->title('Group survey dispatch complete')
+            ->body($body)
+            ->success()
+            ->actions([
+                Action::make('view_sms')
+                    ->label('View SMS records')
+                    ->url(SMSResource::getUrl('index'), shouldOpenInNewTab: true)
+                    ->button(),
+            ])
+            ->sendToDatabase($user);
     }
 }

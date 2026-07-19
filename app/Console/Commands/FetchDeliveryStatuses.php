@@ -3,8 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Contracts\SmsTransport;
-use Illuminate\Console\Command;
 use App\Models\SMSInbox;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 class FetchDeliveryStatuses extends Command
@@ -15,19 +15,21 @@ class FetchDeliveryStatuses extends Command
     }
 
     protected $signature = 'sms:fetch-delivery';
+
     protected $description = 'Fetch SMS delivery statuses for pending messages from BongaSMS';
 
     public function handle()
     {
-        Log::info("Fetching delivery statuses for pending SMS...");
+        Log::info('Fetching delivery statuses for pending SMS...');
 
         $processedCount = 0;
         $updatedCount = 0;
+        $blacklistedCount = 0;
 
         SMSInbox::whereNotNull('unique_id')
             ->where(function ($q) {
                 $q->whereNull('delivery_status')
-                  ->orWhere('delivery_status', 'pending');
+                    ->orWhere('delivery_status', 'pending');
             })
             ->take(500)
             ->chunk(500, function ($smsBatch) use (&$processedCount, &$updatedCount) {
@@ -35,7 +37,7 @@ class FetchDeliveryStatuses extends Command
                 SMSInbox::whereIn('id', $smsBatch->pluck('id'))
                     ->update(['delivery_status' => 'processing']);
 
-                Log::info("Marked " . count($smsBatch) . " SMS as processing.");
+                Log::info('Marked '.count($smsBatch).' SMS as processing.');
 
                 foreach ($smsBatch as $sms) {
                     $processedCount++;
@@ -43,8 +45,9 @@ class FetchDeliveryStatuses extends Command
                     try {
                         $data = $this->transport->fetchDeliveryStatus($sms->unique_id);
 
-                        if (!$data) {
+                        if (! $data) {
                             Log::error("Failed API call for SMS {$sms->id}");
+
                             continue;
                         }
 
@@ -61,21 +64,31 @@ class FetchDeliveryStatuses extends Command
                                 $sms->delivery_status = 'failed';
                             }
 
+                            if ($desc === 'SenderName Blacklisted') {
+                                $blacklistedCount++;
+                            }
+
                             $sms->delivery_status_desc = $desc;
                             $sms->save();
 
                             $updatedCount++;
                             Log::info("Updated SMS {$sms->id} to {$sms->delivery_status}");
                         } else {
-                            Log::warning("API error for SMS {$sms->id} : " . ($data['status_message'] ?? 'Unknown error'));
+                            Log::warning("API error for SMS {$sms->id} : ".($data['status_message'] ?? 'Unknown error'));
                         }
                     } catch (\Exception $e) {
-                        Log::error("Exception for SMS {$sms->id}: " . $e->getMessage());
+                        Log::error("Exception for SMS {$sms->id}: ".$e->getMessage());
                     }
 
                     usleep(50000); // 50ms
                 }
             });
+
+        if ($blacklistedCount > 0) {
+            Log::critical('SMS provider reported SenderName Blacklisted delivery failures. Confirm the sender name/service ID with the provider before sending more survey batches.', [
+                'blacklisted_count' => $blacklistedCount,
+            ]);
+        }
 
         Log::info("Delivery status fetch complete: {$processedCount} processed, {$updatedCount} updated");
     }

@@ -5,11 +5,12 @@ namespace Tests\Feature;
 use App\Console\Commands\DispatchDueSurveysCommand;
 use App\Jobs\SendIncompleteRemindersJob;
 use App\Jobs\SendSurveyToGroupJob;
+use App\Jobs\SendSurveyToMembersJob;
 use App\Models\Group;
 use App\Models\GroupSurvey;
 use App\Models\Member;
-use App\Models\SMSInbox;
 use App\Models\SmsCredit;
+use App\Models\SMSInbox;
 use App\Models\SmsTransportLog;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
@@ -61,6 +62,72 @@ class SurveySendingHardeningTest extends TestCase
         $this->assertContains($sharedMember->id, $queuedMemberIds);
         $this->assertContains($memberA->id, $queuedMemberIds);
         $this->assertNotContains($memberB->id, $queuedMemberIds);
+    }
+
+    public function test_send_survey_to_members_job_dispatches_only_selected_members(): void
+    {
+        [$survey] = $this->createSurveyWithFirstQuestion();
+        [$group] = $this->createGroups(1);
+
+        $memberA = $this->createMember('Selected A', '0700000101', $group, [$group]);
+        $memberB = $this->createMember('Selected B', '0700000102', $group, [$group]);
+        $memberC = $this->createMember('Not Selected', '0700000103', $group, [$group]);
+
+        $job = new SendSurveyToMembersJob([$memberA->id, $memberB->id], $survey, 'sms');
+        $job->handle(app(SurveyDispatchService::class));
+
+        $this->assertSame(2, SurveyProgress::count());
+        $this->assertSame(2, SMSInbox::count());
+        $this->assertEqualsCanonicalizing(
+            [$memberA->id, $memberB->id],
+            SMSInbox::pluck('member_id')->all()
+        );
+        $this->assertFalse(SurveyProgress::where('member_id', $memberC->id)->exists());
+    }
+
+    public function test_dispatch_can_restart_stale_open_progress_for_unique_surveys(): void
+    {
+        [$survey, $question] = $this->createSurveyWithFirstQuestion(participantUniqueness: true);
+        [$group] = $this->createGroups(1);
+        $member = $this->createMember('Stale Member', '0700000111', $group, [$group]);
+
+        $oldProgress = SurveyProgress::create([
+            'survey_id' => $survey->id,
+            'member_id' => $member->id,
+            'current_question_id' => $question->id,
+            'last_dispatched_at' => now()->subDays(10),
+            'has_responded' => false,
+            'status' => 'ACTIVE',
+            'source' => 'manual',
+            'channel' => 'sms',
+        ]);
+        $oldProgress->created_at = now()->subDays(10);
+        $oldProgress->updated_at = now()->subDays(10);
+        $oldProgress->saveQuietly();
+
+        $oldSms = SMSInbox::create([
+            'member_id' => $member->id,
+            'survey_progress_id' => $oldProgress->id,
+            'phone_number' => $member->phone,
+            'message' => 'Old pending question',
+            'status' => 'pending',
+            'channel' => 'sms',
+        ]);
+
+        $job = new SendSurveyToMembersJob(
+            [$member->id],
+            $survey,
+            'sms',
+            restartOpenProgress: true,
+            restartBefore: now()->subDay()->toDateTimeString()
+        );
+        $job->handle(app(SurveyDispatchService::class));
+
+        $this->assertSame('CANCELLED', $oldProgress->fresh()->status);
+        $this->assertSame('cancelled', $oldSms->fresh()->status);
+        $this->assertSame(2, SurveyProgress::count());
+        $this->assertSame(2, SMSInbox::count());
+        $this->assertSame(1, SurveyProgress::where('member_id', $member->id)->where('status', 'ACTIVE')->count());
     }
 
     public function test_send_incomplete_reminders_job_respects_limit_and_updates_progress(): void

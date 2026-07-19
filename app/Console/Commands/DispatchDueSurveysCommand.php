@@ -2,12 +2,13 @@
 
 namespace App\Console\Commands;
 
+use App\Models\GroupSurvey;
 use App\Models\Member;
 use App\Models\Survey;
-use App\Models\GroupSurvey;
 use App\Services\SurveyDispatchService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class DispatchDueSurveysCommand extends Command
@@ -22,23 +23,25 @@ class DispatchDueSurveysCommand extends Command
      * 5. Creates survey_progress, updates member stage, queues first question SMS
      * 6. Works with SendSurveyToGroupJob (this=automated, job=manual UI)
      */
-
     protected $signature = 'surveys:due-dispatch';
+
     protected $description = 'Dispatch automated surveys to eligible members based on order and stage';
 
     public function handle(SurveyDispatchService $dispatchService)
     {
         // Check if survey messages are enabled
-        if (!config('survey_settings.messages_enabled', true)) {
+        if (! config('survey_settings.messages_enabled', true)) {
             Log::info('Survey messages are disabled via config. Skipping automated survey dispatch.');
+
             return;
         }
 
         // Acquire lock to prevent concurrent executions
         $lock = \Illuminate\Support\Facades\Cache::lock('surveys-due-dispatch-command', 60);
 
-        if (!$lock->get()) {
+        if (! $lock->get()) {
             Log::info('DispatchDueSurveysCommand already running. Skipping...');
+
             return;
         }
 
@@ -50,7 +53,8 @@ class DispatchDueSurveysCommand extends Command
                 ->get();
 
             if ($dueAssignments->isEmpty()) {
-                Log::info('No automated survey assignments due.');
+                Log::debug('No automated survey assignments due.');
+
                 return;
             }
 
@@ -65,19 +69,22 @@ class DispatchDueSurveysCommand extends Command
 
             foreach ($assignmentBatches as $batchKey => $assignments) {
                 $survey = $assignments->first()?->survey;
-                if (!$survey) {
+                if (! $survey) {
                     Log::warning("Survey missing for due-dispatch batch {$batchKey}");
+
                     continue;
                 }
 
                 $firstQuestion = getNextQuestion($survey->id, null, null);
                 if (is_array($firstQuestion)) {
-                    Log::error("Error getting first question for survey '{$survey->title}': " . ($firstQuestion['message'] ?? 'Unknown error'));
+                    Log::error("Error getting first question for survey '{$survey->title}': ".($firstQuestion['message'] ?? 'Unknown error'));
+
                     continue;
                 }
 
-                if (!$firstQuestion || !$firstQuestion instanceof \App\Models\SurveyQuestion) {
+                if (! $firstQuestion || ! $firstQuestion instanceof \App\Models\SurveyQuestion) {
                     Log::warning("Survey '{$survey->title}' has no questions. Skipping.");
+
                     continue;
                 }
 
@@ -95,11 +102,11 @@ class DispatchDueSurveysCommand extends Command
 
                 foreach ($memberIds as $memberId) {
                     $member = $members->get($memberId);
-                    if (!$member) {
+                    if (! $member) {
                         continue;
                     }
 
-                    if (!$this->memberIsEligibleForAutomatedDispatch($member, $survey, $previousSurvey)) {
+                    if (! $this->memberIsEligibleForAutomatedDispatch($member, $survey, $previousSurvey)) {
                         continue;
                     }
 
@@ -119,9 +126,28 @@ class DispatchDueSurveysCommand extends Command
 
                 Log::info(
                     "Survey '{$survey->title}' dispatched to {$sentCount} unique members across "
-                    . count($groupIds) . ' due group(s)',
+                    .count($groupIds).' due group(s)',
                     ['assignment_ids' => $assignmentIds->all(), 'group_ids' => $groupIds]
                 );
+
+                if (Schema::hasColumn('group_survey', 'queued_count')) {
+                    $summary = [
+                        'queued' => $sentCount,
+                        'skipped' => max(0, count($memberIds) - $sentCount),
+                        'skip_reasons' => ['Automated eligibility or survey uniqueness rules' => max(0, count($memberIds) - $sentCount)],
+                        'eligible_members' => count($memberIds),
+                        'dispatch_batch_uuid' => $dispatchBatchUuid,
+                    ];
+
+                    GroupSurvey::whereIn('id', $assignmentIds)->update([
+                        'dispatch_batch_uuid' => $dispatchBatchUuid,
+                        'queued_count' => $summary['queued'],
+                        'skipped_count' => $summary['skipped'],
+                        'dispatch_summary' => json_encode($summary),
+                        'dispatched_at' => now(),
+                    ]);
+                }
+
                 $totalSent += $sentCount;
             }
 
@@ -135,21 +161,33 @@ class DispatchDueSurveysCommand extends Command
     {
         if ($survey->order === 1) {
             if ($member->stage !== 'New') {
-                Log::info("Skipping {$member->name}: not in 'New' stage for first survey");
+                Log::debug('Skipping automated survey dispatch: member is not in New stage for first survey', [
+                    'member_id' => $member->id,
+                    'stage' => $member->stage,
+                    'survey_id' => $survey->id,
+                ]);
+
                 return false;
             }
 
             return true;
         }
 
-        if (!$previousSurvey) {
-            Log::warning("Previous survey (order " . ($survey->order - 1) . ") not found");
+        if (! $previousSurvey) {
+            Log::warning('Previous survey (order '.($survey->order - 1).') not found');
+
             return false;
         }
 
-        $expectedStage = str_replace(' ', '', ucfirst($previousSurvey->title)) . 'Completed';
+        $expectedStage = str_replace(' ', '', ucfirst($previousSurvey->title)).'Completed';
         if ($member->stage !== $expectedStage) {
-            Log::info("Skipping {$member->name}: stage '{$member->stage}' != '{$expectedStage}'");
+            Log::debug('Skipping automated survey dispatch: member stage does not match expected previous-survey stage', [
+                'member_id' => $member->id,
+                'stage' => $member->stage,
+                'expected_stage' => $expectedStage,
+                'survey_id' => $survey->id,
+            ]);
+
             return false;
         }
 

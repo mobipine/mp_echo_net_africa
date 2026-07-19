@@ -8,8 +8,6 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Log;
 
 class SurveysRelationManager extends RelationManager
@@ -20,7 +18,7 @@ class SurveysRelationManager extends RelationManager
     {
         return $form
             ->schema([
-                //create a dropdown that will allow the user to select from the available surveys
+                // create a dropdown that will allow the user to select from the available surveys
                 // Forms\Components\Select::make('survey_id')
                 //     ->label('Survey')
                 //     ->relationship('surveys')
@@ -55,9 +53,23 @@ class SurveysRelationManager extends RelationManager
 
                 Tables\Columns\IconColumn::make('was_dispatched')
                     ->label('Dispatched')
-                    ->boolean()
+                    ->boolean(),
 
+                Tables\Columns\TextColumn::make('pivot.queued_count')
+                    ->label('Queued')
+                    ->placeholder('N/A')
+                    ->sortable(),
 
+                Tables\Columns\TextColumn::make('pivot.skipped_count')
+                    ->label('Skipped')
+                    ->placeholder('N/A')
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('pivot.dispatched_at')
+                    ->label('Dispatched At')
+                    ->dateTime()
+                    ->placeholder('N/A')
+                    ->sortable(),
             ])
             ->filters([
                 //
@@ -67,19 +79,19 @@ class SurveysRelationManager extends RelationManager
                     ->label('Assign Survey')
                     ->action(function (array $data): void {
                         $this->getRelationship()->attach($data['survey_id'], [
-                            'automated'      => $data['automated'],
-                            'starts_at'      => $data['starts_at'],
-                            'ends_at'        => $data['ends_at'],
+                            'automated' => $data['automated'],
+                            'starts_at' => $data['starts_at'],
+                            'ends_at' => $data['ends_at'],
                             'was_dispatched' => $data['was_dispatched'],
                         ]);
                     })
                     ->form([
                         Forms\Components\Select::make('survey_id')
                             ->label('Select Survey')
-                            ->options(fn() => \App\Models\Survey::whereDoesntHave('groups',
-                            function ($query) {
-                                $query->where('group_id', $this->ownerRecord->id);
-                            })->pluck('title', 'id'))
+                            ->options(fn () => \App\Models\Survey::whereDoesntHave('groups',
+                                function ($query) {
+                                    $query->where('group_id', $this->ownerRecord->id);
+                                })->pluck('title', 'id'))
                             ->searchable()
                             ->native(false)
                             ->required(),
@@ -124,9 +136,9 @@ class SurveysRelationManager extends RelationManager
                     ->action(function (array $data, $record): void {
                         Log::info('Editing pivot data', ['data' => $data, 'record' => $record]);
                         $this->getRelationship()->updateExistingPivot($record->id, [
-                            'automated'      => $data['automated'],
-                            'starts_at'      => $data['starts_at'],
-                            'ends_at'        => $data['ends_at'],
+                            'automated' => $data['automated'],
+                            'starts_at' => $data['starts_at'],
+                            'ends_at' => $data['ends_at'],
                             // 'question_interval'      => $data['question_interval'],
                             // 'question_interval_unit' => $data['question_interval_unit'],
                         ]);
@@ -166,14 +178,13 @@ class SurveysRelationManager extends RelationManager
                     ->label('Detach')
                     ->action(fn ($record) => $this->getRelationship()->detach($record->id)),
 
-
                 Tables\Actions\Action::make('dispatchManually')
                     ->label('Send Now')
                     ->icon('heroicon-s-paper-airplane')
                     ->color('success')
                     ->requiresConfirmation()
                     ->modalHeading('Send Survey Manually')
-                    ->modalDescription("Are you sure you want to manually send the survey to all members of this group? This will happen immediately and bypass the schedule.")
+                    ->modalDescription('Are you sure you want to manually send the survey to all members of this group? This will happen immediately and bypass the schedule.')
                     ->action(function (\App\Models\Survey $record): void {
                         // The action is for a single group, so we get its ID.
                         // The `ownerRecord` is the single Group instance this action belongs to.
@@ -187,7 +198,17 @@ class SurveysRelationManager extends RelationManager
                             ->channel ?? 'sms';
 
                         // The job now expects an array of group IDs, so we dispatch it with our single-item array.
-                        \App\Jobs\SendSurveyToGroupJob::dispatch($groupIds, $record, $channel);
+                        \App\Jobs\SendSurveyToGroupJob::dispatch(
+                            $groupIds,
+                            $record,
+                            $channel,
+                            false,
+                            null,
+                            null,
+                            null,
+                            null,
+                            auth()->id()
+                        );
 
                         // This is still a valid pivot relationship update for a single group.
                         $this->getRelationship()->updateExistingPivot($record->id, [

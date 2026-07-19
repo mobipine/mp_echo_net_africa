@@ -4,16 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use App\Models\Transaction;
 
 class Group extends Model
 {
-    protected $fillable = ['name', 'email', 'phone_number', 'max_loan_amount', 'county', 'sub_county', 'address', 'township','group_certificate','ward','local_implementing_partner_id','county_ENA_staff_id','formation_date','registration_number','kra_pin',
-                'bank_name',
-                'bank_account_number',
-                'bank_branch',
-                'meeting_frequency',
-                'meeting_day',];
+    protected $fillable = ['name', 'email', 'phone_number', 'max_loan_amount', 'county', 'sub_county', 'address', 'township', 'group_certificate', 'ward', 'local_implementing_partner_id', 'county_ENA_staff_id', 'formation_date', 'registration_number', 'kra_pin',
+        'bank_name',
+        'bank_account_number',
+        'bank_branch',
+        'meeting_frequency',
+        'meeting_day', ];
 
     protected $casts = [
         'formation_date' => 'date',
@@ -24,10 +23,12 @@ class Group extends Model
     {
         return $this->hasMany(KycDocument::class);
     }
+
     public function County()
     {
-        return $this->belongsTo(\App\Models\County::class,'county');
+        return $this->belongsTo(\App\Models\County::class, 'county');
     }
+
     /**
      * Get all members belonging to this group (many-to-many)
      */
@@ -36,17 +37,31 @@ class Group extends Model
         return $this->belongsToMany(\App\Models\Member::class, 'group_member')
             ->withTimestamps();
     }
+
     public function localImplementingPartner()
     {
-        return $this->belongsTo(\App\Models\LocalImplementingPartner::class,'local_implementing_partner_id');
+        return $this->belongsTo(\App\Models\LocalImplementingPartner::class, 'local_implementing_partner_id');
     }
-    public function CountyENAStaff(){
-        return $this->belongsTo(\App\Models\CountyENAStaff::class,'county_ENA_staff_id');
+
+    public function CountyENAStaff()
+    {
+        return $this->belongsTo(\App\Models\CountyENAStaff::class, 'county_ENA_staff_id');
     }
 
     public function surveys()
     {
-        return $this->belongsToMany(Survey::class, 'group_survey');
+        return $this->belongsToMany(Survey::class, 'group_survey')
+            ->withPivot([
+                'automated',
+                'channel',
+                'starts_at',
+                'ends_at',
+                'was_dispatched',
+                'queued_count',
+                'skipped_count',
+                'dispatched_at',
+                'dispatch_batch_uuid',
+            ]);
     }
 
     public function officials(): HasMany
@@ -122,6 +137,7 @@ class Group extends Model
     public function getBankBalanceAttribute(): float
     {
         $bankAccount = $this->getAccount('group_bank');
+
         return $bankAccount ? $bankAccount->balance : 0;
     }
 

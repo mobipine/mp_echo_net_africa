@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Exports\MembersExport;
 use App\Filament\Resources\MemberResource\Pages;
 use App\Filament\Resources\MemberResource\RelationManagers;
 use App\Imports\MembersImport;
@@ -16,23 +17,21 @@ use Filament\Forms\Components\Wizard\Step;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Notifications\Notification;
-use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Maatwebsite\Excel\Facades\Excel;
-use pxlrbt\FilamentExcel\Actions\Tables\ExportBulkAction;
-use pxlrbt\FilamentExcel\Exports\ExcelExport;
-use Illuminate\Validation\ValidationException;
+
 class MemberResource extends Resource
 {
     protected static ?string $model = Member::class;
@@ -69,7 +68,7 @@ class MemberResource extends Resource
                     ->native(false)
                     ->required()
                     ->helperText('Select one or more groups this member belongs to'),
-                \Filament\Forms\Components\TextInput::make('name')->required()->placeholder('e.g. John Doe')->hint("As it appears on the ID"),
+                \Filament\Forms\Components\TextInput::make('name')->required()->placeholder('e.g. John Doe')->hint('As it appears on the ID'),
                 \Filament\Forms\Components\TextInput::make('account_number')
                     ->required()
                     ->placeholder('e.g. ACC-0001')
@@ -85,9 +84,9 @@ class MemberResource extends Resource
                     ->maxLength(9)
                     ->minLength(7)
                     ->numeric()
-                    ->hint("As it appears on the ID"),
+                    ->hint('As it appears on the ID'),
                 \Filament\Forms\Components\Select::make('gender')
-                ->native(false)
+                    ->native(false)
                     ->options([
                         'male' => 'Male',
                         'female' => 'Female',
@@ -111,9 +110,8 @@ class MemberResource extends Resource
                     ->native(false)
                     ->required(),
 
-
                 Toggle::make('consent')
-                    ->label("Consent"),
+                    ->label('Consent'),
 
                 \Filament\Forms\Components\TextInput::make('disability')
                     ->label('Type of Disability')
@@ -122,9 +120,9 @@ class MemberResource extends Resource
                     ->required(fn (callable $get) => $get('is_disabled') === true)
                     ->maxLength(255),
                 \Filament\Forms\Components\DatePicker::make('dob')->label('Date of Birth')
-                ->hint("As it appears on the ID"),
+                    ->hint('As it appears on the ID'),
                 \Filament\Forms\Components\Select::make('marital_status')
-                ->native(false)
+                    ->native(false)
                     ->options([
                         'single' => 'Single',
                         'married' => 'Married',
@@ -142,17 +140,16 @@ class MemberResource extends Resource
                     ->visibility('public')
                     ->enableDownload()
                     ->enableOpen(),
-                Toggle::make('is_active',)
+                Toggle::make('is_active'),
 
             ]);
     }
     //    use Filament\Forms\Validation\ValidationException;
 
-
     public static function validateDob(array $data): void
     {
-        Log::info("validating date");
-        if (!isset($data['dob'])) {
+        Log::info('validating date');
+        if (! isset($data['dob'])) {
             return;
         }
 
@@ -167,11 +164,27 @@ class MemberResource extends Resource
             ]);
         }
 
-        if (!$isDisabled && ($age < 18 || $age > 35)) {
+        if (! $isDisabled && ($age < 18 || $age > 35)) {
             throw ValidationException::withMessages([
                 'dob' => 'Standard members must be between 18 and 35 years old.',
             ]);
         }
+    }
+
+    public static function queueMembersExport(?array $memberIds = null, ?int $userId = null): string
+    {
+        $userId ??= auth()->id();
+
+        if (! $userId) {
+            throw new \RuntimeException('A signed-in user is required to queue a member export.');
+        }
+
+        $fileName = 'exports/members_'.now()->format('Y_m_d_H_i_s').'_'.Str::lower(Str::random(6)).'.xlsx';
+
+        (new MembersExport($memberIds ? array_values(array_unique(array_map('intval', $memberIds))) : null, $userId, $fileName))
+            ->queue($fileName, 'public');
+
+        return $fileName;
     }
 
     /**
@@ -184,7 +197,7 @@ class MemberResource extends Resource
      */
     public static function analyzeImportFile(string $absolutePath, ?string $extension = null): array
     {
-        if (blank($absolutePath) || !is_file($absolutePath)) {
+        if (blank($absolutePath) || ! is_file($absolutePath)) {
             return ['total' => 0, 'unreadable' => true];
         }
 
@@ -195,7 +208,7 @@ class MemberResource extends Resource
             default => null, // let the library auto-detect
         };
 
-        $cacheKey = 'members_import_preview:' . md5($absolutePath . '|' . filemtime($absolutePath));
+        $cacheKey = 'members_import_preview:'.md5($absolutePath.'|'.filemtime($absolutePath));
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($absolutePath, $readerType, $extension) {
             $previewId = (string) Str::uuid();
@@ -209,7 +222,7 @@ class MemberResource extends Resource
             ]);
 
             try {
-                $preview = new MembersImportPreview();
+                $preview = new MembersImportPreview;
                 Excel::import($preview, $absolutePath, null, $readerType);
                 $result = $preview->result();
             } catch (\Throwable $e) {
@@ -227,7 +240,7 @@ class MemberResource extends Resource
             // user can see whether headers are on the wrong row / wrong sheet.
             if (($result['total'] ?? 0) === 0) {
                 try {
-                    $raw = Excel::toArray(new \stdClass(), $absolutePath, null, $readerType);
+                    $raw = Excel::toArray(new \stdClass, $absolutePath, null, $readerType);
                     $firstSheet = $raw[0] ?? [];
                     $result['diagnostics'] = [
                         'sheet_count' => count($raw),
@@ -280,7 +293,7 @@ class MemberResource extends Resource
                                     ->acceptedFileTypes([
                                         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                         'application/vnd.ms-excel',
-                                        'text/csv'
+                                        'text/csv',
                                     ])
                                     ->required()
                                     ->disk('local')
@@ -347,7 +360,7 @@ class MemberResource extends Resource
 
                             Notification::make()
                                 ->title('Import Failed')
-                                ->body('The file could not be imported: ' . $e->getMessage())
+                                ->body('The file could not be imported: '.$e->getMessage())
                                 ->danger()
                                 ->send();
 
@@ -362,7 +375,7 @@ class MemberResource extends Resource
                         ]);
 
                         // Get import results from session
-                        $results = session('import_results', ['imported' => 0, 'skipped' => 0,'updated' => 0]);
+                        $results = session('import_results', ['imported' => 0, 'skipped' => 0, 'updated' => 0]);
 
                         Log::info('[MembersImport] Import results reported to user', [
                             'import_id' => $importId,
@@ -380,7 +393,7 @@ class MemberResource extends Resource
                     ->after(function () {
                         // Clear the session data
                         session()->forget('import_results');
-                    })
+                    }),
             ])
             ->columns([
                 // \Filament\Tables\Columns\ImageColumn::make('profile_picture')->label('pfp')->circular()
@@ -388,7 +401,7 @@ class MemberResource extends Resource
                 //     ->size(40)
                 //     ->sortable(),
                 \Filament\Tables\Columns\TextColumn::make('id')->sortable(),
-                \Filament\Tables\Columns\TextColumn::make('stage')->sortable()->toggleable(isToggledHiddenByDefault:true)->searchable(),
+                \Filament\Tables\Columns\TextColumn::make('stage')->sortable()->toggleable(isToggledHiddenByDefault: true)->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('name')->sortable()->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('groups.name')
                     ->label('Groups')
@@ -397,12 +410,12 @@ class MemberResource extends Resource
                     ->sortable()
                     ->searchable(),
                 \Filament\Tables\Columns\TextColumn::make('email')->sortable()->searchable(),
-                \Filament\Tables\Columns\TextColumn::make('phone')->sortable()->toggleable(isToggledHiddenByDefault:true)->searchable(),
-                \Filament\Tables\Columns\TextColumn::make('national_id')->sortable()->toggleable(isToggledHiddenByDefault:true),
-                \Filament\Tables\Columns\TextColumn::make('gender')->sortable()->toggleable(isToggledHiddenByDefault:true),
-                \Filament\Tables\Columns\TextColumn::make('dob')->date()->sortable()->toggleable(isToggledHiddenByDefault:true),
-                \Filament\Tables\Columns\TextColumn::make('marital_status')->sortable()->toggleable(isToggledHiddenByDefault:true),
-                \Filament\Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault:true),
+                \Filament\Tables\Columns\TextColumn::make('phone')->sortable()->toggleable(isToggledHiddenByDefault: true)->searchable(),
+                \Filament\Tables\Columns\TextColumn::make('national_id')->sortable()->toggleable(isToggledHiddenByDefault: true),
+                \Filament\Tables\Columns\TextColumn::make('gender')->sortable()->toggleable(isToggledHiddenByDefault: true),
+                \Filament\Tables\Columns\TextColumn::make('dob')->date()->sortable()->toggleable(isToggledHiddenByDefault: true),
+                \Filament\Tables\Columns\TextColumn::make('marital_status')->sortable()->toggleable(isToggledHiddenByDefault: true),
+                \Filament\Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('county.name')
                     ->label('County')
                     ->searchable()
@@ -421,13 +434,20 @@ class MemberResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
-                     ExportBulkAction::make()
-                        ->exports([
-                            ExcelExport::make()
-                                ->fromTable()
-                            
-                        ])
-                    ->label('Export to Excel'),
+                    Tables\Actions\BulkAction::make('export_selected_members')
+                        ->label('Export selected to Excel')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->action(function (Collection $records): void {
+                            static::queueMembersExport($records->pluck('id')->all(), auth()->id());
+
+                            Notification::make()
+                                ->title('Selected member export queued')
+                                ->body('The selected members are being exported in the background.')
+                                ->success()
+                                ->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
                 ]),
             ]);
     }
@@ -440,7 +460,7 @@ class MemberResource extends Resource
             RelationManagers\EmailInboxesRelationManager::class,
             RelationManagers\SmsInboxesRelationManager::class,
             RelationManagers\SurveyResponsesRelationManager::class,
-            
+
         ];
     }
 

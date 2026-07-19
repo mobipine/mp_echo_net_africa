@@ -9,9 +9,13 @@ use Illuminate\Support\Facades\Log;
 class BongaSMS implements SmsTransport
 {
     protected $baseUrl;
+
     protected $clientId;
+
     protected $key;
+
     protected $secret;
+
     protected $serviceId;
 
     public function __construct()
@@ -37,18 +41,24 @@ class BongaSMS implements SmsTransport
             'serviceID' => $serviceId ?? $this->serviceId,
         ];
 
-        Log::info("Sending SMS Payload:", $payload);
+        Log::info('Sending SMS via BongaSMS', [
+            'msisdn_suffix' => substr($phoneNumber, -4),
+            'message_length' => strlen($message),
+            'service_id' => $payload['serviceID'],
+        ]);
 
         $response = Http::asForm()->post($this->baseUrl, $payload);
 
-        Log::info("SMS API Response:", [
-            'body' => $response->json(),
-            'status' => $response->status()
+        Log::info('SMS API response received', [
+            'status' => $response->status(),
+            'provider_status' => $response->json('status'),
+            'provider_message' => $response->json('status_message'),
+            'unique_id' => $response->json('unique_id'),
         ]);
 
-        if (!$response->successful()) {
-            Log::info("Sending SMS not successful");
-            throw new \Exception("SMS Sending Failed: " . $response->body());
+        if (! $response->successful()) {
+            Log::info('Sending SMS not successful');
+            throw new \Exception('SMS Sending Failed: '.$response->body());
         }
 
         return $response->json();
@@ -64,8 +74,8 @@ class BongaSMS implements SmsTransport
             'unique_id' => $uniqueId,
         ]);
 
-        if (!$response->successful()) {
-            throw new \Exception("SMS delivery fetch failed: " . $response->body());
+        if (! $response->successful()) {
+            throw new \Exception('SMS delivery fetch failed: '.$response->body());
         }
 
         return $response->json();
@@ -73,7 +83,7 @@ class BongaSMS implements SmsTransport
 
     private function guardRealDelivery(): void
     {
-        if (!config('sms.allow_real_delivery')) {
+        if (! config('sms.allow_real_delivery')) {
             throw new \RuntimeException('Real SMS delivery is disabled in this environment.');
         }
     }
