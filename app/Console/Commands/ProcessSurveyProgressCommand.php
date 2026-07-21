@@ -61,8 +61,16 @@ class ProcessSurveyProgressCommand extends Command
                 $survey = $progress->survey;
                 $currentQuestion = $progress->currentQuestion;
 
-                if (!$currentQuestion) {
-                    Log::warning("No current question found for survey progress ID: {$progress->id}.");
+                if (!$member || !$survey || !$currentQuestion) {
+                    Log::warning(
+                        "Skipping survey progress ID {$progress->id}: Missing member, survey, or current question",
+                        [
+                            'progress_id' => $progress->id,
+                            'member_id' => $progress->member_id,
+                            'survey_id' => $progress->survey_id,
+                            'current_question_id' => $progress->current_question_id,
+                        ]
+                    );
                     continue;
                 }
 

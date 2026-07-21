@@ -3,7 +3,9 @@
 namespace App\Observers;
 
 use App\Models\Member;
+use App\Models\SurveyProgress;
 use App\Services\FeeAccrualService;
+use App\Support\SurveyProgressState;
 
 class MemberObserver
 {
@@ -34,7 +36,13 @@ class MemberObserver
      */
     public function deleted(Member $member): void
     {
-        //
+        SurveyProgress::where('member_id', $member->id)
+            ->whereNull('completed_at')
+            ->whereIn('status', SurveyProgressState::OPEN_STATUSES)
+            ->update([
+                'status' => 'CANCELLED',
+                'open_progress_guard' => null,
+            ]);
     }
 
     /**
