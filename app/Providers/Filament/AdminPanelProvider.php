@@ -35,9 +35,12 @@ class AdminPanelProvider extends PanelProvider
             ->databaseNotifications()
             ->maxContentWidth('full')
             ->sidebarFullyCollapsibleOnDesktop()
+            //dark mode is disabled for now, but can be enabled by uncommenting the line below
+            // ->darkMode()
             ->colors([
-                'primary' => Color::Green,
+                // 'primary' => Color::Pink,
                 // 'primary' => "#64ffda",//set custom panel colors here
+                'primary' => Color::Green,//set custom panel colors here
                 'secondary' => Color::Purple,
 
                 'blue' => Color::Blue,
@@ -62,12 +65,14 @@ class AdminPanelProvider extends PanelProvider
                 'violet' => Color::Violet,
             ])
             ->font(
-                'Poppins' //set custom panel font here
+                // 'Outfit' //set custom panel font here
+                // 'Poppins' //set custom panel font here
                 // 'Montserrat' //set custom panel font here
+                'Bricolage Grotesque' //set custom panel font here
             )
             ->favicon(asset('images/echonet-logo.pngg'))
 
-            // ->brandName('FORUM KENYA')
+            // ->brandName('TRUSTFUND')
             ->brandLogo(asset('images/echonet-logo.png'))
             ->brandLogoHeight('3.5rem')
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
@@ -81,7 +86,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->widgets([
                 Widgets\AccountWidget::class,
-                Widgets\FilamentInfoWidget::class,
+                // Widgets\FilamentInfoWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,
