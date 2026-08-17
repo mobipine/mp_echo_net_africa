@@ -265,6 +265,13 @@ class CreditUtilizationReportingTest extends TestCase
         $this->assertSame([CreditStatsWidget::class], $creditReports->instance()->getVisibleHeaderWidgets());
     }
 
+    public function test_sms_report_styles_remain_inside_the_livewire_page_root(): void
+    {
+        $view = ltrim(file_get_contents(resource_path('views/filament/pages/survey-response-reports.blade.php')));
+
+        $this->assertStringStartsWith('<x-filament-panels::page>', $view);
+    }
+
     private function createReportingScenario(): array
     {
         $user = User::factory()->create();

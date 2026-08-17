@@ -1,3 +1,4 @@
+<x-filament-panels::page>
 <style>
     .ena-report-page {
         --ena-surface: #ffffff;
@@ -34,11 +35,20 @@
     .ena-scope-card,
     .ena-jobs-card,
     .ena-analysis-empty {
-        overflow: hidden;
         border: 1px solid var(--ena-border);
         border-radius: 1rem;
         background: var(--ena-surface);
         box-shadow: 0 16px 38px rgba(21, 48, 36, 0.07);
+    }
+
+    .ena-jobs-card,
+    .ena-analysis-empty {
+        overflow: hidden;
+    }
+
+    .ena-scope-card {
+        position: relative;
+        overflow: visible;
     }
 
     .dark .ena-scope-card,
@@ -410,12 +420,22 @@
 
         .ena-coverage-pane {
             border-left: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0 1rem 1rem 0;
+        }
+
+        .ena-filter-pane {
+            border-radius: 1rem 0 0 1rem;
         }
     }
 
     @media (max-width: 1099px) {
         .ena-coverage-pane {
             border-top: 1px solid var(--ena-border);
+            border-radius: 0 0 1rem 1rem;
+        }
+
+        .ena-filter-pane {
+            border-radius: 1rem 1rem 0 0;
         }
     }
 
@@ -468,7 +488,6 @@
     }
 </style>
 
-<x-filament-panels::page>
     <div class="ena-report-page">
         <section class="ena-scope-card">
             <div class="ena-scope-grid">
