@@ -38,26 +38,29 @@ class CreditUtilizationWorkbookWriter
 
         try {
             $sheets = $this->createSheets($writer);
-            $analysis = $this->writeMemberResponses(
-                $writer,
-                $sheets['members'],
+            $analysis = $this->surveyReports->streamMemberResponses(
                 (int) $scope['survey']->id,
                 (int) $scope['group']->id,
                 $scope['questions'],
             );
+            $memberRows = $this->writeMemberResponses(
+                $writer,
+                $sheets['members'],
+                (int) $scope['survey']->id,
+                (int) $scope['group']->id,
+                $scope['response_questions'],
+            );
 
             $creditSummary = $this->creditReports->summary($scope['credit_filters']);
-            $dailyCredits = $this->creditReports->dailyBreakdown($scope['credit_filters']);
 
             $this->writeOverview($writer, $sheets['overview'], $scope, $analysis['stats'], $creditSummary, $requestedBy);
             $this->writeParticipationFunnel($writer, $sheets['funnel'], $analysis['stats']);
             $this->writeQuestionPerformance($writer, $sheets['questions'], $analysis);
-            $this->writeCreditDailyTrend($writer, $sheets['credits'], $dailyCredits);
         } finally {
             $writer->close();
         }
 
-        return $analysis['stats']['group_members'];
+        return $memberRows;
     }
 
     private function createSheets(Writer $writer): array
@@ -74,10 +77,7 @@ class CreditUtilizationWorkbookWriter
         $members = $writer->addNewSheetAndMakeItCurrent();
         $members->setName('Member Responses');
 
-        $credits = $writer->addNewSheetAndMakeItCurrent();
-        $credits->setName('Credit Daily Trend');
-
-        return compact('overview', 'funnel', 'questions', 'members', 'credits');
+        return compact('overview', 'funnel', 'questions', 'members');
     }
 
     private function writeMemberResponses(
@@ -86,82 +86,53 @@ class CreditUtilizationWorkbookWriter
         int $surveyId,
         int $groupId,
         Collection $questions,
-    ): array {
+    ): int {
         $writer->setCurrentSheet($sheet);
         $headings = [
-            'Member ID',
-            'Member',
-            'Phone',
+            'Name',
             'Email',
+            'Phone Number',
             'National ID',
             'Gender',
-            'County',
-            'Survey Outcome',
-            'Progress Status',
-            'Completion',
-            'Questions Answered',
-            'Current / Drop-off Question',
-            'Reminders',
-            'Dispatched At',
-            'First Response',
-            'Last Response',
-            'Completed At',
-            ...$questions->map(fn (array $question): string => 'Q'.$question['position'].': '.$question['question'])->all(),
+            'Date of Birth',
+            'Marital Status',
+            'County Name',
+            ...$questions->pluck('question')->all(),
         ];
-        $widths = [12, 28, 18, 30, 18, 14, 20, 22, 18, 14, 14, 42, 12, 21, 21, 21, 21];
-        $this->setWidths($sheet, [...$widths, ...array_fill(0, $questions->count(), 36)]);
-        $sheet->setSheetView((new SheetView)
-            ->setShowGridLines(false)
-            ->setFreezeRow(2)
-            ->setFreezeColumn('H'));
-        $writer->addRow(Row::fromValues($headings, $this->headerStyle())->setHeight(38));
+        $sheet->setSheetView((new SheetView)->setFreezeRow(2));
+        $writer->addRow(Row::fromValues($headings, $this->legacyHeaderStyle())->setHeight(20));
 
-        $lastColumn = count($headings) - 1;
-        $wrapColumns = [1, 3, 7, 8, 11];
-        if ($lastColumn >= 17) {
-            $wrapColumns = [...$wrapColumns, ...range(17, $lastColumn)];
-        }
-        $columnStyles = $this->columnStyles(
-            [0 => '0', 9 => '0.0%', 10 => '0', 12 => '0'],
-            $wrapColumns
-        );
+        $maxLengths = array_map(fn ($heading): int => $this->displayLength($heading), $headings);
+        $bodyStyle = $this->legacyBodyStyle();
+        $alternateBodyStyle = $this->legacyBodyStyle(true);
+        $dataRow = 0;
 
-        $analysis = $this->surveyReports->streamMemberResponses(
+        $writtenRows = $this->surveyReports->streamLegacyMemberResponses(
             $surveyId,
             $groupId,
             $questions,
-            function (array $row) use ($writer, $questions, $columnStyles): void {
-                $member = $row['member'];
-                $progress = $row['progress'];
-                $answers = $row['answers'];
-                $values = [
-                    $member->id,
-                    $member->name,
-                    $member->phone,
-                    $member->email,
-                    $member->national_id,
-                    $member->gender,
-                    $member->county?->name,
-                    $row['status'],
-                    $progress?->status,
-                    $row['completion_rate'],
-                    $row['answered_count'],
-                    $row['current_question'],
-                    $progress?->number_of_reminders ?? 0,
-                    $this->dateTime($progress?->last_dispatched_at ?? $progress?->created_at),
-                    $this->dateTime($row['first_response_at']),
-                    $this->dateTime($row['last_response_at']),
-                    $this->dateTime($progress?->completed_at),
-                    ...$questions->map(fn (array $question) => $answers[$question['id']]['value'] ?? null)->all(),
-                ];
+            function (array $values) use (
+                $writer,
+                $bodyStyle,
+                $alternateBodyStyle,
+                &$dataRow,
+                &$maxLengths
+            ): void {
+                foreach ($values as $column => $value) {
+                    $maxLengths[$column] = max($maxLengths[$column], $this->displayLength($value));
+                }
 
-                $writer->addRow(Row::fromValuesWithStyles($values, $this->bodyStyle(), $columnStyles));
+                $style = $dataRow % 2 === 0 ? $alternateBodyStyle : $bodyStyle;
+                $writer->addRow(Row::fromValues($values, $style));
+                $dataRow++;
             }
         );
 
-        $sheet->setAutoFilter(new AutoFilter(0, 1, $lastColumn, $analysis['stats']['group_members'] + 1));
+        foreach ($maxLengths as $column => $length) {
+            $sheet->setColumnWidth(min(255, max(10, $length + 2)), $column + 1);
+        }
 
-        return $analysis;
+        return $writtenRows;
     }
 
     private function writeOverview(
@@ -188,7 +159,7 @@ class CreditUtilizationWorkbookWriter
             [],
             ['SURVEY PARTICIPATION'],
             ['Metric', 'Count', '% of group', '% dispatched', 'What it shows'],
-            ['Selected group members', $memberTotal, $this->ratio($memberTotal, $memberTotal), null, 'Every member included in the Member Responses sheet'],
+            ['Selected group members', $memberTotal, $this->ratio($memberTotal, $memberTotal), null, 'Full selected group; Member Responses retains the legacy dispatched-member format'],
             ['Survey dispatched', $dispatched, $this->ratio($dispatched, $memberTotal), $this->ratio($dispatched, $dispatched), 'Members with a survey progress record'],
             ['Responded', $participation['responded'], $this->ratio($participation['responded'], $memberTotal), $this->ratio($participation['responded'], $dispatched), 'Members with at least one answer or a recorded response'],
             ['Completed', $participation['completed'], $this->ratio($participation['completed'], $memberTotal), $this->ratio($participation['completed'], $dispatched), 'Members who reached a completed survey state'],
@@ -302,29 +273,6 @@ class CreditUtilizationWorkbookWriter
         );
     }
 
-    private function writeCreditDailyTrend(Writer $writer, Sheet $sheet, Collection $dailyCredits): void
-    {
-        $rows = [['Date', 'Credits utilized', 'Outbound SMS', 'Inbound SMS', 'Transactions']];
-
-        foreach ($dailyCredits as $day) {
-            $rows[] = [
-                data_get($day, 'usage_date'),
-                (int) data_get($day, 'credits_used'),
-                (int) data_get($day, 'credits_sent'),
-                (int) data_get($day, 'credits_received'),
-                (int) data_get($day, 'transaction_count'),
-            ];
-        }
-
-        $this->writeTabularSheet(
-            $writer,
-            $sheet,
-            $rows,
-            [16, 20, 18, 18, 18],
-            [1 => '#,##0', 2 => '#,##0', 3 => '#,##0', 4 => '#,##0']
-        );
-    }
-
     private function writeTabularSheet(
         Writer $writer,
         Sheet $sheet,
@@ -353,15 +301,6 @@ class CreditUtilizationWorkbookWriter
         return $total > 0 ? $value / $total : null;
     }
 
-    private function dateTime($value): ?string
-    {
-        if (! $value) {
-            return null;
-        }
-
-        return method_exists($value, 'format') ? $value->format('Y-m-d H:i:s') : (string) $value;
-    }
-
     private function columnStyles(array $formats, array $wrapColumns): array
     {
         $styles = [];
@@ -384,6 +323,51 @@ class CreditUtilizationWorkbookWriter
         foreach ($widths as $index => $width) {
             $sheet->setColumnWidth($width, $index + 1);
         }
+    }
+
+    private function displayLength(mixed $value): int
+    {
+        return collect(preg_split('/\R/u', (string) $value) ?: [''])
+            ->map(fn (string $line): int => mb_strlen($line))
+            ->max() ?? 0;
+    }
+
+    private function allBorders(string $color): Border
+    {
+        return new Border(
+            new BorderPart(Border::LEFT, $color, Border::WIDTH_THIN),
+            new BorderPart(Border::RIGHT, $color, Border::WIDTH_THIN),
+            new BorderPart(Border::TOP, $color, Border::WIDTH_THIN),
+            new BorderPart(Border::BOTTOM, $color, Border::WIDTH_THIN),
+        );
+    }
+
+    private function legacyHeaderStyle(): Style
+    {
+        return (new Style)
+            ->setFontName('Calibri')
+            ->setFontSize(11)
+            ->setFontBold()
+            ->setFontColor(Color::WHITE)
+            ->setBackgroundColor('4472C4')
+            ->setCellAlignment(CellAlignment::CENTER)
+            ->setCellVerticalAlignment(CellVerticalAlignment::CENTER)
+            ->setBorder($this->allBorders('000000'));
+    }
+
+    private function legacyBodyStyle(bool $alternate = false): Style
+    {
+        $style = (new Style)
+            ->setFontName('Calibri')
+            ->setFontSize(11)
+            ->setCellVerticalAlignment(CellVerticalAlignment::CENTER)
+            ->setBorder($this->allBorders('CCCCCC'));
+
+        if ($alternate) {
+            $style->setBackgroundColor('F2F2F2');
+        }
+
+        return $style;
     }
 
     private function titleStyle(): Style

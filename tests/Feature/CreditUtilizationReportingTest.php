@@ -25,6 +25,8 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -88,6 +90,7 @@ class CreditUtilizationReportingTest extends TestCase
         ], $scope['credit_filters']);
         $this->assertSame(2, app(CreditUtilizationReportService::class)->query($scope['credit_filters'])->count());
         $this->assertCount(2, $scope['questions']);
+        $this->assertCount(2, $scope['response_questions']);
     }
 
     public function test_queued_job_generates_the_private_comprehensive_survey_workbook(): void
@@ -115,7 +118,7 @@ class CreditUtilizationReportingTest extends TestCase
         Storage::disk('local')->assertExists($report->file_path);
         Storage::disk('local')->assertMissing($report->file_path.'.part');
         $this->assertSame(CreditReportExport::STATUS_COMPLETED, $report->status);
-        $this->assertSame(5, $report->row_count);
+        $this->assertSame(4, $report->row_count);
         $this->assertGreaterThan(0, $report->file_size);
 
         $workbook = IOFactory::load(Storage::disk('local')->path($report->file_path));
@@ -124,8 +127,8 @@ class CreditUtilizationReportingTest extends TestCase
             'Participation Funnel',
             'Question Performance',
             'Member Responses',
-            'Credit Daily Trend',
         ], $workbook->getSheetNames());
+        $this->assertNotContains('Credit Daily Trend', $workbook->getSheetNames());
         $this->assertNotContains('Transaction Ledger', $workbook->getSheetNames());
         $this->assertNotContains('Definitions', $workbook->getSheetNames());
 
@@ -138,17 +141,38 @@ class CreditUtilizationReportingTest extends TestCase
         $this->assertSame('5', (string) $overview->getCell('B10')->getValue());
 
         $members = $workbook->getSheetByName('Member Responses');
-        $this->assertSame('Q1: Did you save this month?', (string) $members->getCell('R1')->getValue());
-        $this->assertSame('Q2: How much did you save?', (string) $members->getCell('S1')->getValue());
-        $this->assertSame('Completed', (string) $members->getCell('H2')->getValue());
-        $this->assertSame('Yes', (string) $members->getCell('R2')->getValue());
-        $this->assertSame('500', (string) $members->getCell('S2')->getValue());
-        $this->assertSame('In progress', (string) $members->getCell('H3')->getValue());
-        $this->assertSame('Dropped / cancelled', (string) $members->getCell('H4')->getValue());
-        $this->assertSame('Not dispatched', (string) $members->getCell('H5')->getValue());
-        $this->assertSame('Dispatched, no response', (string) $members->getCell('H6')->getValue());
-        $this->assertSame(6, $members->getHighestDataRow());
-        $this->assertSame('A1:S6', $members->getAutoFilter()->getRange());
+        $this->assertSame('Name', (string) $members->getCell('A1')->getValue());
+        $this->assertSame('County Name', (string) $members->getCell('H1')->getValue());
+        $this->assertSame('Did you save this month?', (string) $members->getCell('I1')->getValue());
+        $this->assertSame('How much did you save?', (string) $members->getCell('J1')->getValue());
+        $this->assertSame('Jane Member', (string) $members->getCell('A2')->getValue());
+        $this->assertSame('N/A', (string) $members->getCell('B2')->getValue());
+        $this->assertSame('254700000001', (string) $members->getCell('C2')->getValue());
+        $this->assertSame('Nairobi', (string) $members->getCell('H2')->getValue());
+        $this->assertSame('Yes', (string) $members->getCell('I2')->getValue());
+        $this->assertSame('500', (string) $members->getCell('J2')->getValue());
+        $this->assertSame('John Active', (string) $members->getCell('A3')->getValue());
+        $this->assertSame('No', (string) $members->getCell('I3')->getValue());
+        $this->assertSame('N/A', (string) $members->getCell('J3')->getValue());
+        $this->assertSame('Mary No Response', (string) $members->getCell('A5')->getValue());
+        $this->assertSame('N/A', (string) $members->getCell('I5')->getValue());
+        $this->assertNotContains(
+            'Peter Waiting',
+            collect($members->toArray(null, true, true, false))->flatten()->all()
+        );
+        $this->assertSame(5, $members->getHighestDataRow());
+        $this->assertSame('J', $members->getHighestDataColumn());
+        $this->assertSame('', $members->getAutoFilter()->getRange());
+        $this->assertSame('A2', $members->getFreezePane());
+        $this->assertSame(20.0, $members->getRowDimension(1)->getRowHeight());
+        $this->assertTrue($members->getStyle('A1')->getFont()->getBold());
+        $this->assertSame('FFFFFF', $members->getStyle('A1')->getFont()->getColor()->getRGB());
+        $this->assertSame('4472C4', $members->getStyle('A1')->getFill()->getStartColor()->getRGB());
+        $this->assertSame(Alignment::HORIZONTAL_CENTER, $members->getStyle('A1')->getAlignment()->getHorizontal());
+        $this->assertSame(Alignment::VERTICAL_CENTER, $members->getStyle('A1')->getAlignment()->getVertical());
+        $this->assertSame(Border::BORDER_THIN, $members->getStyle('A1')->getBorders()->getLeft()->getBorderStyle());
+        $this->assertSame('F2F2F2', $members->getStyle('A2')->getFill()->getStartColor()->getRGB());
+        $this->assertSame(Border::BORDER_THIN, $members->getStyle('A2')->getBorders()->getLeft()->getBorderStyle());
 
         $questions = $workbook->getSheetByName('Question Performance');
         $this->assertSame('1', (string) $questions->getCell('E3')->getValue());
@@ -290,8 +314,15 @@ class CreditUtilizationReportingTest extends TestCase
             'question' => 'How much did you save?',
             'answer_data_type' => 'Numeric',
         ]);
+        $questionOneSwahili = SurveyQuestion::query()->create([
+            'question' => 'Je, uliweka akiba mwezi huu?',
+            'answer_data_type' => 'Alphanumeric',
+        ]);
+        $questionOne->forceFill(['swahili_question_id' => $questionOneSwahili->id])->save();
+        $questionTwo->forceFill(['swahili_question_id' => $questionTwo->id])->save();
         $survey->questions()->attach([
             $questionOne->id => ['position' => 1],
+            $questionOneSwahili->id => ['position' => 1],
             $questionTwo->id => ['position' => 2],
         ]);
 
@@ -344,9 +375,10 @@ class CreditUtilizationReportingTest extends TestCase
             'channel' => 'sms',
             'is_reminder' => false,
         ]);
+        $this->createResponse($survey, $member, $questionOne, $completedProgress, $surveyInbox, 'No');
         $response = $this->createResponse($survey, $member, $questionOne, $completedProgress, $surveyInbox, 'Yes');
         $this->createResponse($survey, $member, $questionTwo, $completedProgress, $surveyInbox, '500');
-        $this->createResponse($survey, $activeMember, $questionOne, $activeProgress, null, 'No');
+        $this->createResponse($survey, $activeMember, $questionOneSwahili, $activeProgress, null, 'No');
         $this->createResponse($survey, $droppedMember, $questionOne, $droppedProgress, null, 'Yes');
 
         $this->createTransaction([

@@ -10,6 +10,7 @@ use App\Models\SurveyResponse;
 use App\Support\SurveyProgressState;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class ComprehensiveSurveyReportService
@@ -34,6 +35,7 @@ class ComprehensiveSurveyReportService
             'survey' => $survey,
             'group' => $group,
             'questions' => $this->canonicalQuestions($survey),
+            'response_questions' => $this->legacyResponseQuestions($survey),
             'credit_filters' => $this->creditReports->normalizeFilters([
                 'survey_ids' => [$survey->id],
                 'group_ids' => [$group->id],
@@ -55,11 +57,115 @@ class ComprehensiveSurveyReportService
             });
     }
 
-    public function streamMemberResponses(
+    public function streamLegacyMemberResponses(
         int $surveyId,
         int $groupId,
         Collection $questions,
         callable $writeRow
+    ): int {
+        $writtenRows = 0;
+        $questionIds = $questions
+            ->flatMap(fn (array $question): array => array_filter([
+                $question['id'],
+                $question['swahili_question_id'],
+            ]))
+            ->unique()
+            ->values();
+
+        SurveyProgress::query()
+            ->where('survey_id', $surveyId)
+            ->whereHas('member', function (Builder $memberQuery) use ($groupId) {
+                $memberQuery
+                    ->where('group_id', $groupId)
+                    ->orWhereHas('groups', fn (Builder $groupQuery) => $groupQuery->where('groups.id', $groupId));
+            })
+            ->with('member.county')
+            ->chunkById(250, function (Collection $progresses) use (
+                $surveyId,
+                $questions,
+                $questionIds,
+                $writeRow,
+                &$writtenRows
+            ): void {
+                $phoneVariants = $progresses
+                    ->pluck('member.phone')
+                    ->filter()
+                    ->flatMap(fn (string $phone): array => $this->phoneVariants($phone))
+                    ->unique()
+                    ->values();
+
+                $responses = $phoneVariants->isEmpty() || $questionIds->isEmpty()
+                    ? collect()
+                    : SurveyResponse::query()
+                        ->where('survey_id', $surveyId)
+                        ->whereIn('msisdn', $phoneVariants)
+                        ->whereIn('question_id', $questionIds)
+                        ->whereIn('id', function ($query) use ($surveyId, $phoneVariants, $questionIds) {
+                            $query
+                                ->select(DB::raw('MAX(id)'))
+                                ->from('survey_responses')
+                                ->where('survey_id', $surveyId)
+                                ->whereIn('msisdn', $phoneVariants)
+                                ->whereIn('question_id', $questionIds)
+                                ->groupBy('msisdn', 'question_id');
+                        })
+                        ->orderByDesc('created_at')
+                        ->get(['id', 'msisdn', 'question_id', 'survey_response', 'created_at']);
+
+                $responseMap = collect();
+                foreach ($responses as $response) {
+                    $phone = normalizePhoneNumber($response->msisdn);
+                    if (! $responseMap->has($phone)) {
+                        $responseMap->put($phone, collect());
+                    }
+                    $responseMap->get($phone)->put($response->question_id, $response);
+                }
+
+                foreach ($progresses as $progress) {
+                    $member = $progress->member;
+                    if (! $member || ! $member->phone) {
+                        continue;
+                    }
+
+                    $memberResponses = $responseMap->get(
+                        normalizePhoneNumber($member->phone),
+                        collect()
+                    );
+                    $values = [
+                        $member->name ?? 'N/A',
+                        $member->email ?? 'N/A',
+                        $member->phone ?? 'N/A',
+                        $member->national_id ?? 'N/A',
+                        $member->gender ?? 'N/A',
+                        $member->dob ? $member->dob->format('Y-m-d') : 'N/A',
+                        $member->marital_status ?? 'N/A',
+                        $member->county?->name ?? 'N/A',
+                    ];
+
+                    foreach ($questions as $question) {
+                        $englishResponse = $memberResponses->get($question['id']);
+                        $swahiliResponse = $question['swahili_question_id']
+                            ? $memberResponses->get($question['swahili_question_id'])
+                            : null;
+                        $answer = $englishResponse
+                            ? ($englishResponse->survey_response ?? '')
+                            : ($swahiliResponse?->survey_response ?? '');
+                        $values[] = $answer ?: 'N/A';
+                    }
+
+                    $writeRow($values);
+                    $writtenRows++;
+                }
+            }, 'survey_progress.id', 'id');
+
+        return $writtenRows;
+    }
+
+    public function streamMemberResponses(
+        int $surveyId,
+        int $groupId,
+        Collection $questions,
+        ?callable $writeRow = null
     ): array {
         $questionByResponseId = [];
         $questionStats = [];
@@ -192,27 +298,29 @@ class ComprehensiveSurveyReportService
                         $questionStats[$currentQuestionId]['drop_offs']++;
                     }
 
-                    $responseDates = collect($answers)->pluck('created_at')->filter()->sort();
-                    $completionRate = $questions->isNotEmpty()
-                        ? ($completed ? 1 : min(1, $answeredCount / $questions->count()))
-                        : 0;
+                    if ($writeRow) {
+                        $responseDates = collect($answers)->pluck('created_at')->filter()->sort();
+                        $completionRate = $questions->isNotEmpty()
+                            ? ($completed ? 1 : min(1, $answeredCount / $questions->count()))
+                            : 0;
 
-                    $writeRow([
-                        'member' => $member,
-                        'progress' => $progress,
-                        'status' => $this->statusLabel($progress, $completed, $dropped, $responded),
-                        'completion_rate' => $completionRate,
-                        'answered_count' => $answeredCount,
-                        'current_question' => $this->currentQuestionLabel(
-                            $questions,
-                            $currentQuestionId,
-                            $progress,
-                            $completed
-                        ),
-                        'first_response_at' => $responseDates->first(),
-                        'last_response_at' => $responseDates->last(),
-                        'answers' => $answers,
-                    ]);
+                        $writeRow([
+                            'member' => $member,
+                            'progress' => $progress,
+                            'status' => $this->statusLabel($progress, $completed, $dropped, $responded),
+                            'completion_rate' => $completionRate,
+                            'answered_count' => $answeredCount,
+                            'current_question' => $this->currentQuestionLabel(
+                                $questions,
+                                $currentQuestionId,
+                                $progress,
+                                $completed
+                            ),
+                            'first_response_at' => $responseDates->first(),
+                            'last_response_at' => $responseDates->last(),
+                            'answers' => $answers,
+                        ]);
+                    }
                 }
             }, 'members.id', 'id');
 
@@ -247,6 +355,22 @@ class ComprehensiveSurveyReportService
                 ];
             })
             ->sortBy('position')
+            ->values();
+    }
+
+    private function legacyResponseQuestions(Survey $survey): Collection
+    {
+        return $survey->questions()
+            ->whereNotNull('swahili_question_id')
+            ->get()
+            ->map(fn ($question): array => [
+                'id' => (int) $question->id,
+                'question' => $question->question,
+                'swahili_question_id' => $question->swahili_question_id
+                    && $question->swahili_question_id !== $question->id
+                        ? (int) $question->swahili_question_id
+                        : null,
+            ])
             ->values();
     }
 
