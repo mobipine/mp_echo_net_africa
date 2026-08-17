@@ -2,177 +2,195 @@
 
 namespace App\Filament\Pages;
 
-
 use App\Filament\Widgets\SmsResponsesStatsOverview;
-use Filament\Pages\Page;
-use App\Models\Survey;
+use App\Jobs\GenerateCreditUtilizationReportJob;
+use App\Models\CreditReportExport;
 use App\Models\Group;
-use Filament\Pages\Dashboard\Concerns\HasFiltersForm;
-use Filament\Forms\Form;
-use Filament\Forms\Components\Select;
+use App\Models\Survey;
+use App\Models\SurveyQuestion;
+use App\Services\ComprehensiveSurveyReportService;
+use Filament\Actions\Action;
 use Filament\Forms\Components\Section;
-use Filament\Pages\Actions\Action;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Form;
 use Filament\Notifications\Notification;
-use App\Jobs\GenerateSurveyReportJob;
+use Filament\Pages\Dashboard\Concerns\HasFiltersForm;
+use Filament\Pages\Page;
+use Illuminate\Support\Str;
+use Throwable;
 
 class SmsResponseReports extends Page
 {
+    use HasFiltersForm;
 
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
+
     protected static string $view = 'filament.pages.survey-response-reports';
+
     protected static ?string $navigationGroup = 'Analytics';
-    protected static ?string $title = 'Sms Response Reports';
+
+    protected static ?string $title = 'SMS Response Reports';
+
     protected static ?int $navigationSort = 3;
 
-    use HasFiltersForm;
-    protected function filtersForm(Form $form): Form
+    public function getSubheading(): ?string
     {
-        return $form
-            ->schema([
-                Section::make('Filters')
-                    ->schema([
-
-                        Select::make('survey_id')
-                            ->label('Filter by Survey')
-                            ->options(Survey::pluck('title', 'id'))
-                            ->placeholder('All Surveys')
-                            ->reactive()
-                            ->afterStateUpdated(function (callable $set) {
-                                $set('question_id', null);
-                            })
-                            ->nullable(),
-
-                        Select::make('group_id')
-                            ->label('Filter by Group')
-                            ->options(Group::orderBy('name')->pluck('name', 'id'))
-                            ->placeholder('All Groups')
-                            ->searchable()
-                            ->nullable()
-                            ->reactive(),
-
-                        Select::make('question_id')
-                            ->label('Filter by Question')
-                            ->options(function (callable $get) {
-                                $surveyId = $get('survey_id');
-
-                                // If no survey selected → show all questions
-                                if (!$surveyId) {
-                                    return \App\Models\SurveyQuestion::pluck('question', 'id');
-                                }
-
-                                // Fetch questions mapped to this survey via pivot
-                                return \App\Models\SurveyQuestion::query()
-                                    ->whereIn('id', function ($query) use ($surveyId) {
-                                        $query->select('survey_question_id')
-                                            ->from('survey_question_survey')
-                                            ->where('survey_id', $surveyId);
-                                    })
-                                    ->pluck('question', 'id');
-                            })
-                            ->placeholder('All Questions')
-                            ->nullable()
-                            ->reactive(),
-
-                    ])
-                    ->columns(3),
-            ]);
+        return 'Analyze survey engagement and generate complete response, drop-off, and SMS credit workbooks.';
     }
 
+    protected function filtersForm(Form $form): Form
+    {
+        return $form->schema([
+            Section::make('Survey reporting scope')
+                ->description('Choose one survey and group for the comprehensive workbook. The question selector only drills into the on-screen analysis.')
+                ->schema([
+                    Select::make('survey_id')
+                        ->label('Survey')
+                        ->options(fn (): array => Survey::query()->orderBy('title')->pluck('title', 'id')->all())
+                        ->placeholder('Select a survey')
+                        ->searchable()
+                        ->preload()
+                        ->live()
+                        ->afterStateUpdated(fn (callable $set) => $set('question_id', null)),
+
+                    Select::make('group_id')
+                        ->label('Group')
+                        ->options(fn (): array => Group::query()->orderBy('name')->pluck('name', 'id')->all())
+                        ->placeholder('Select a group')
+                        ->searchable()
+                        ->preload()
+                        ->live(),
+
+                    Select::make('question_id')
+                        ->label('On-screen question')
+                        ->options(function (callable $get): array {
+                            $surveyId = $get('survey_id');
+
+                            return SurveyQuestion::query()
+                                ->when($surveyId, fn ($query) => $query->whereHas(
+                                    'surveys',
+                                    fn ($query) => $query->where('surveys.id', $surveyId)
+                                ))
+                                ->orderBy('question')
+                                ->pluck('question', 'id')
+                                ->all();
+                        })
+                        ->placeholder('All questions')
+                        ->searchable()
+                        ->live(),
+                ])
+                ->columns(3),
+        ]);
+    }
 
     protected function getHeaderWidgets(): array
     {
-
         return [
             SmsResponsesStatsOverview::make(['filters' => $this->filters]),
         ];
     }
 
-    protected function getActions(): array
+    protected function getHeaderActions(): array
     {
-        // Get filters (HasFiltersForm provides $this->filters)
-        $surveyId = $this->filters['survey_id'] ?? null;
-        $groupId = $this->filters['group_id'] ?? null;
-
-        // Only show download button once BOTH a survey and a group are selected.
-        // The complete report exports every question as a column for the members
-        // of the chosen group, so both filters are required.
-        if (!$surveyId || !$groupId) {
-            return [];
-        }
-
-        $survey = Survey::find($surveyId);
-        $group = Group::find($groupId);
-        if (!$survey || !$group) {
-            return [];
-        }
-
-        // Sanitize survey + group names for the filename
-        $sanitizedTitle = preg_replace('/[^a-zA-Z0-9_-]/', '_', $survey->title);
-        $sanitizedGroup = preg_replace('/[^a-zA-Z0-9_-]/', '_', $group->name);
-
         return [
-            Action::make('download_survey_report')
-                ->label("Export {$group->name} Complete Survey Report")
+            Action::make('generate_comprehensive_report')
+                ->label('Generate comprehensive report')
                 ->icon('heroicon-o-document-arrow-down')
                 ->color('success')
-                ->action(function () use ($surveyId, $groupId, $sanitizedTitle, $sanitizedGroup, $survey, $group) {
-                    try {
-                        $diskName = 'public';
-                        $directory = 'exports';
-                        $filenameOnly = strtolower($sanitizedGroup . '_' . $sanitizedTitle) . '_report_' . now()->format('Y_m_d_H_i_s') . '.xlsx';
-                        $fullFilePath = $directory . '/' . $filenameOnly;
-                        $userId = auth()->id();
-
-                        // Create unique progress key (scoped to survey + group)
-                        $progressKey = "export_progress_{$userId}_{$surveyId}_{$groupId}_" . md5($fullFilePath . now()->timestamp);
-
-                        // Check if a job for this survey/group/user is already in progress
-                        $uniqueJobId = "survey_export_{$userId}_{$surveyId}_{$groupId}_" . md5($fullFilePath);
-                        $cacheKey = "export_job_running_{$uniqueJobId}";
-
-                        if (\Illuminate\Support\Facades\Cache::has($cacheKey)) {
-                            Notification::make()
-                                ->title('Export Already in Progress')
-                                ->body("An export for {$survey->title} ({$group->name}) is already being generated. Please wait for it to complete.")
-                                ->warning()
-                                ->send();
-                            return;
-                        }
-
-                        // Mark job as running (expires in 1 hour)
-                        \Illuminate\Support\Facades\Cache::put($cacheKey, true, 3600);
-
-                        // Dispatch the job to queue (returns immediately)
-                        // The job implements ShouldBeUnique to prevent duplicate runs
-                        // The job will clear the cache key in its finally block
-                        GenerateSurveyReportJob::dispatch($surveyId, $userId, $diskName, $fullFilePath, $progressKey, $groupId);
-
-                        // Log for debugging
-                        \Illuminate\Support\Facades\Log::info('Survey report job dispatched', [
-                            'survey_id' => $surveyId,
-                            'group_id' => $groupId,
-                            'user_id' => $userId,
-                            'file_path' => $fullFilePath,
-                            'queue_connection' => config('queue.default'),
-                        ]);
-
-                        // Send immediate notification
-                        Notification::make()
-                            ->title('Export Started')
-                            ->body("Your {$survey->title} report for {$group->name} is being generated in the background. You will be notified when it's ready for download.")
-                            ->success()
-                            ->send();
-                    } catch (\Exception $e) {
-                        \Illuminate\Support\Facades\Log::error('Failed to queue survey report export: ' . $e->getMessage());
-                        Notification::make()
-                            ->title('Export Failed')
-                            ->body('Failed to start the export. Please try again or contact support.')
-                            ->danger()
-                            ->send();
-                    }
-                })
-                ->requiresConfirmation(false),
+                ->visible(fn (): bool => filled($this->filters['survey_id'] ?? null)
+                    && filled($this->filters['group_id'] ?? null))
+                ->requiresConfirmation()
+                ->modalHeading('Generate comprehensive survey workbook')
+                ->modalDescription('This queues a private Excel workbook with all group members, every survey question and response, participation outcomes, question drop-offs, and SMS credit utilization across all available dates.')
+                ->modalSubmitActionLabel('Queue workbook')
+                ->action(fn () => $this->queueComprehensiveReport()),
         ];
     }
-}
 
+    public function getRecentExports()
+    {
+        return CreditReportExport::query()
+            ->where('user_id', auth()->id())
+            ->latest()
+            ->limit(8)
+            ->get();
+    }
+
+    public function exportStatusColor(string $status): string
+    {
+        return match ($status) {
+            CreditReportExport::STATUS_COMPLETED => 'success',
+            CreditReportExport::STATUS_FAILED => 'danger',
+            CreditReportExport::STATUS_PROCESSING => 'warning',
+            default => 'gray',
+        };
+    }
+
+    public function exportStatusLabel(string $status): string
+    {
+        return $status === CreditReportExport::STATUS_PROCESSING
+            ? 'Generating'
+            : Str::headline($status);
+    }
+
+    public function formatFileSize(?int $bytes): string
+    {
+        if (! $bytes) {
+            return 'Size pending';
+        }
+
+        return match (true) {
+            $bytes >= 1_073_741_824 => number_format($bytes / 1_073_741_824, 2).' GB',
+            $bytes >= 1_048_576 => number_format($bytes / 1_048_576, 2).' MB',
+            $bytes >= 1024 => number_format($bytes / 1024, 1).' KB',
+            default => number_format($bytes).' bytes',
+        };
+    }
+
+    private function queueComprehensiveReport(): void
+    {
+        $userId = auth()->id();
+        abort_unless($userId, 403);
+
+        try {
+            $scope = app(ComprehensiveSurveyReportService::class)->scope([
+                'survey_ids' => [$this->filters['survey_id'] ?? null],
+                'group_ids' => [$this->filters['group_id'] ?? null],
+            ]);
+            $uuid = (string) Str::uuid();
+            $fileName = collect([
+                'echo_net_africa',
+                Str::slug($scope['survey']->title, '_'),
+                Str::slug($scope['group']->name, '_'),
+                'comprehensive_survey_report',
+                now()->format('Y_m_d_His'),
+            ])->filter()->implode('_').'.xlsx';
+
+            $report = CreditReportExport::query()->create([
+                'uuid' => $uuid,
+                'user_id' => $userId,
+                'status' => CreditReportExport::STATUS_QUEUED,
+                'filters' => $scope['credit_filters'],
+                'disk' => 'local',
+                'file_path' => "private/credit-reports/{$userId}/{$uuid}.xlsx",
+                'file_name' => $fileName,
+            ]);
+
+            GenerateCreditUtilizationReportJob::dispatch($report->id)->afterCommit();
+
+            Notification::make()
+                ->title('Comprehensive survey report queued')
+                ->body('The private workbook is being generated in the background. Progress appears in the report jobs section below.')
+                ->success()
+                ->send();
+        } catch (Throwable $exception) {
+            report($exception);
+
+            Notification::make()
+                ->title('Report could not be queued')
+                ->body('Please verify the survey and group, then try again.')
+                ->danger()
+                ->send();
+        }
+    }
+}

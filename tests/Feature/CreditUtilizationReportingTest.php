@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\CreditReports;
+use App\Filament\Pages\SmsResponseReports;
 use App\Jobs\GenerateCreditUtilizationReportJob;
 use App\Models\County;
 use App\Models\CreditReportExport;
@@ -15,9 +16,11 @@ use App\Models\SurveyProgress;
 use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
 use App\Models\User;
+use App\Services\ComprehensiveSurveyReportService;
 use App\Services\CreditUtilizationReportService;
 use App\Services\CreditUtilizationWorkbookWriter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -59,24 +62,49 @@ class CreditUtilizationReportingTest extends TestCase
         $this->assertCount(2, $daily);
         $this->assertSame(2, $daily->first()['credits_used']);
         $this->assertSame(1, $daily->last()['credits_used']);
-
-        $surveyBreakdown = $service->surveyBreakdown([])->keyBy('survey_title');
-        $this->assertSame(3, $surveyBreakdown->get($data['survey']->title)['credits_used']);
-        $this->assertTrue($surveyBreakdown->contains('survey_title', 'Non-survey / unattributed'));
     }
 
-    public function test_queued_job_generates_a_private_multi_sheet_workbook(): void
+    public function test_comprehensive_scope_locks_credit_filters_to_the_selected_survey_and_group(): void
+    {
+        $data = $this->createReportingScenario();
+        $scope = app(ComprehensiveSurveyReportService::class)->scope([
+            'survey_ids' => [$data['survey']->id],
+            'group_ids' => [$data['group']->id],
+            'date_from' => '2026-08-02',
+            'directions' => ['add'],
+        ]);
+
+        $this->assertSame([
+            'date_from' => null,
+            'date_to' => null,
+            'survey_ids' => [$data['survey']->id],
+            'group_ids' => [$data['group']->id],
+            'county_ids' => [],
+            'directions' => ['subtract'],
+            'transaction_types' => ['sms_sent', 'sms_received'],
+            'channels' => ['sms'],
+            'message_scope' => 'all',
+        ], $scope['credit_filters']);
+        $this->assertSame(2, app(CreditUtilizationReportService::class)->query($scope['credit_filters'])->count());
+        $this->assertCount(2, $scope['questions']);
+    }
+
+    public function test_queued_job_generates_the_private_comprehensive_survey_workbook(): void
     {
         Storage::fake('local');
         $data = $this->createReportingScenario();
+        $scope = app(ComprehensiveSurveyReportService::class)->scope([
+            'survey_ids' => [$data['survey']->id],
+            'group_ids' => [$data['group']->id],
+        ]);
         $report = CreditReportExport::query()->create([
             'uuid' => fake()->uuid(),
             'user_id' => $data['user']->id,
             'status' => CreditReportExport::STATUS_QUEUED,
-            'filters' => ['survey_ids' => [$data['survey']->id]],
+            'filters' => $scope['credit_filters'],
             'disk' => 'local',
             'file_path' => 'private/credit-reports/test/report.xlsx',
-            'file_name' => 'credit-utilization-test.xlsx',
+            'file_name' => 'comprehensive-survey-test.xlsx',
         ]);
 
         (new GenerateCreditUtilizationReportJob($report->id))
@@ -86,22 +114,44 @@ class CreditUtilizationReportingTest extends TestCase
         Storage::disk('local')->assertExists($report->file_path);
         Storage::disk('local')->assertMissing($report->file_path.'.part');
         $this->assertSame(CreditReportExport::STATUS_COMPLETED, $report->status);
-        $this->assertSame(2, $report->row_count);
+        $this->assertSame(5, $report->row_count);
         $this->assertGreaterThan(0, $report->file_size);
 
         $workbook = IOFactory::load(Storage::disk('local')->path($report->file_path));
         $this->assertSame([
-            'Executive Summary',
-            'Daily Trend',
-            'Survey Utilization',
-            'Transaction Ledger',
-            'Definitions',
+            'Survey Overview',
+            'Participation Funnel',
+            'Question Performance',
+            'Member Responses',
+            'Credit Daily Trend',
         ], $workbook->getSheetNames());
-        $this->assertSame('ECHO NET AFRICA | CREDIT UTILIZATION REPORT', (string) $workbook->getSheet(0)->getCell('A1')->getValue());
-        $ledger = $workbook->getSheetByName('Transaction Ledger');
-        $this->assertSame('Timestamp', (string) $ledger->getCell('A1')->getValue());
-        $this->assertSame(3, $ledger->getHighestDataRow());
-        $this->assertSame('A1:X3', $ledger->getAutoFilter()->getRange());
+        $this->assertNotContains('Transaction Ledger', $workbook->getSheetNames());
+        $this->assertNotContains('Definitions', $workbook->getSheetNames());
+
+        $overview = $workbook->getSheetByName('Survey Overview');
+        $this->assertSame('ECHO NET AFRICA | COMPREHENSIVE SURVEY REPORT', (string) $overview->getCell('A1')->getValue());
+        $this->assertStringNotContainsString(
+            'REPORT FILTERS',
+            collect($overview->toArray(null, true, true, false))->flatten()->implode(' ')
+        );
+        $this->assertSame('5', (string) $overview->getCell('B10')->getValue());
+
+        $members = $workbook->getSheetByName('Member Responses');
+        $this->assertSame('Q1: Did you save this month?', (string) $members->getCell('R1')->getValue());
+        $this->assertSame('Q2: How much did you save?', (string) $members->getCell('S1')->getValue());
+        $this->assertSame('Completed', (string) $members->getCell('H2')->getValue());
+        $this->assertSame('Yes', (string) $members->getCell('R2')->getValue());
+        $this->assertSame('500', (string) $members->getCell('S2')->getValue());
+        $this->assertSame('In progress', (string) $members->getCell('H3')->getValue());
+        $this->assertSame('Dropped / cancelled', (string) $members->getCell('H4')->getValue());
+        $this->assertSame('Not dispatched', (string) $members->getCell('H5')->getValue());
+        $this->assertSame('Dispatched, no response', (string) $members->getCell('H6')->getValue());
+        $this->assertSame(6, $members->getHighestDataRow());
+        $this->assertSame('A1:S6', $members->getAutoFilter()->getRange());
+
+        $questions = $workbook->getSheetByName('Question Performance');
+        $this->assertSame('1', (string) $questions->getCell('E3')->getValue());
+        $this->assertSame('1', (string) $questions->getCell('F3')->getValue());
     }
 
     public function test_report_job_uses_an_isolated_long_running_queue(): void
@@ -170,15 +220,44 @@ class CreditUtilizationReportingTest extends TestCase
             ->assertDownload('authorized.xlsx');
     }
 
-    public function test_credit_reports_page_renders_the_reporting_workspace(): void
+    public function test_comprehensive_report_is_queued_from_sms_response_reports_with_locked_filters(): void
+    {
+        Queue::fake();
+        $data = $this->createReportingScenario();
+
+        Livewire::actingAs($data['user'])
+            ->test(SmsResponseReports::class)
+            ->set('filters.survey_id', $data['survey']->id)
+            ->set('filters.group_id', $data['group']->id)
+            ->callAction('generate_comprehensive_report')
+            ->assertHasNoActionErrors();
+
+        $report = CreditReportExport::query()->sole();
+        $this->assertSame([$data['survey']->id], $report->filters['survey_ids']);
+        $this->assertSame([$data['group']->id], $report->filters['group_ids']);
+        $this->assertSame(['subtract'], $report->filters['directions']);
+        $this->assertSame(['sms_sent', 'sms_received'], $report->filters['transaction_types']);
+        $this->assertSame(['sms'], $report->filters['channels']);
+        $this->assertStringContainsString('comprehensive_survey_report', $report->file_name);
+        Queue::assertPushed(GenerateCreditUtilizationReportJob::class);
+    }
+
+    public function test_reporting_workspace_is_on_sms_reports_and_removed_from_credit_reports(): void
     {
         $data = $this->createReportingScenario();
 
         Livewire::actingAs($data['user'])
+            ->test(SmsResponseReports::class)
+            ->assertSuccessful()
+            ->assertSee('Comprehensive Survey Workbooks')
+            ->assertSee('Workbook scope');
+
+        Livewire::actingAs($data['user'])
             ->test(CreditReports::class)
             ->assertSuccessful()
-            ->assertSee('Recent Excel workbooks')
-            ->assertSee('Credit transactions');
+            ->assertSee('Credit transactions')
+            ->assertDontSee('Recent Excel workbooks')
+            ->assertDontSee('Generate Excel report');
     }
 
     private function createReportingScenario(): array
@@ -186,46 +265,77 @@ class CreditUtilizationReportingTest extends TestCase
         $user = User::factory()->create();
         $county = County::query()->create(['name' => 'Nairobi']);
         $group = Group::withoutEvents(fn () => Group::query()->create(['name' => 'Umoja Group']));
-        $member = Member::query()->create([
-            'group_id' => $group->id,
-            'name' => 'Jane Member',
-            'phone' => '254700000001',
-            'county_id' => $county->id,
-        ]);
-        $member->groups()->attach($group);
         $survey = Survey::query()->create([
             'title' => 'Household Finance Survey',
             'trigger_word' => 'START',
             'status' => 'Active',
         ]);
-        $question = SurveyQuestion::query()->create([
+        $questionOne = SurveyQuestion::query()->create([
             'question' => 'Did you save this month?',
             'answer_data_type' => 'Alphanumeric',
         ]);
-        $progress = SurveyProgress::query()->create([
+        $questionTwo = SurveyQuestion::query()->create([
+            'question' => 'How much did you save?',
+            'answer_data_type' => 'Numeric',
+        ]);
+        $survey->questions()->attach([
+            $questionOne->id => ['position' => 1],
+            $questionTwo->id => ['position' => 2],
+        ]);
+
+        $member = $this->createMember($group, $county, 'Jane Member', '254700000001', true);
+        $activeMember = $this->createMember($group, $county, 'John Active', '254700000002', false);
+        $droppedMember = $this->createMember($group, $county, 'Amina Dropoff', '254700000003', true);
+        $notDispatchedMember = $this->createMember($group, $county, 'Peter Waiting', '254700000004', false);
+        $noResponseMember = $this->createMember($group, $county, 'Mary No Response', '254700000005', true);
+
+        $completedProgress = SurveyProgress::query()->create([
             'survey_id' => $survey->id,
             'member_id' => $member->id,
-            'current_question_id' => $question->id,
+            'current_question_id' => $questionTwo->id,
+            'has_responded' => true,
+            'completed_at' => '2026-08-02 10:05:00',
+            'status' => 'COMPLETED',
+            'channel' => 'sms',
+        ]);
+        $activeProgress = SurveyProgress::query()->create([
+            'survey_id' => $survey->id,
+            'member_id' => $activeMember->id,
+            'current_question_id' => $questionTwo->id,
+            'has_responded' => true,
             'status' => 'ACTIVE',
             'channel' => 'sms',
         ]);
+        $droppedProgress = SurveyProgress::query()->create([
+            'survey_id' => $survey->id,
+            'member_id' => $droppedMember->id,
+            'current_question_id' => $questionTwo->id,
+            'has_responded' => true,
+            'status' => 'CANCELLED',
+            'channel' => 'sms',
+        ]);
+        SurveyProgress::query()->create([
+            'survey_id' => $survey->id,
+            'member_id' => $noResponseMember->id,
+            'current_question_id' => $questionOne->id,
+            'has_responded' => false,
+            'status' => 'ACTIVE',
+            'channel' => 'sms',
+        ]);
+
         $surveyInbox = SMSInbox::query()->create([
             'member_id' => $member->id,
-            'survey_progress_id' => $progress->id,
+            'survey_progress_id' => $completedProgress->id,
             'phone_number' => $member->phone,
             'message' => 'Did you save this month?',
             'status' => 'sent',
             'channel' => 'sms',
             'is_reminder' => false,
         ]);
-        $response = SurveyResponse::query()->create([
-            'survey_id' => $survey->id,
-            'msisdn' => $member->phone,
-            'question_id' => $question->id,
-            'survey_response' => 'Yes',
-            'inbox_id' => $surveyInbox->id,
-            'session_id' => $progress->id,
-        ]);
+        $response = $this->createResponse($survey, $member, $questionOne, $completedProgress, $surveyInbox, 'Yes');
+        $this->createResponse($survey, $member, $questionTwo, $completedProgress, $surveyInbox, '500');
+        $this->createResponse($survey, $activeMember, $questionOne, $activeProgress, null, 'No');
+        $this->createResponse($survey, $droppedMember, $questionOne, $droppedProgress, null, 'Yes');
 
         $this->createTransaction([
             'type' => 'subtract',
@@ -273,7 +383,58 @@ class CreditUtilizationReportingTest extends TestCase
             'user_id' => $user->id,
         ], '2026-08-04 12:00:00');
 
-        return compact('user', 'county', 'group', 'member', 'survey');
+        return compact(
+            'user',
+            'county',
+            'group',
+            'member',
+            'activeMember',
+            'droppedMember',
+            'notDispatchedMember',
+            'noResponseMember',
+            'survey',
+            'questionOne',
+            'questionTwo',
+        );
+    }
+
+    private function createMember(
+        Group $group,
+        County $county,
+        string $name,
+        string $phone,
+        bool $attachToPivot,
+    ): Member {
+        $member = Member::query()->create([
+            'group_id' => $group->id,
+            'name' => $name,
+            'phone' => $phone,
+            'county_id' => $county->id,
+        ]);
+
+        if ($attachToPivot) {
+            $member->groups()->attach($group);
+        }
+
+        return $member;
+    }
+
+    private function createResponse(
+        Survey $survey,
+        Member $member,
+        SurveyQuestion $question,
+        SurveyProgress $progress,
+        ?SMSInbox $inbox,
+        string $answer,
+    ): SurveyResponse {
+        return SurveyResponse::query()->create([
+            'survey_id' => $survey->id,
+            'msisdn' => $member->phone,
+            'question_id' => $question->id,
+            'survey_response' => $answer,
+            'inbox_id' => $inbox?->id,
+            'session_id' => $progress->id,
+        ]);
     }
 
     private function createTransaction(array $attributes, string $createdAt): CreditTransaction

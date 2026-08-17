@@ -53,10 +53,20 @@ class CreditUtilizationReportService
         if ($filters['group_ids']) {
             $query->where(function (Builder $query) use ($filters) {
                 $query
-                    ->whereHas('smsInbox.member.groups', fn (Builder $query) => $query
-                        ->whereIn('groups.id', $filters['group_ids']))
-                    ->orWhereHas('surveyResponse.member.groups', fn (Builder $query) => $query
-                        ->whereIn('groups.id', $filters['group_ids']));
+                    ->whereHas('smsInbox.member', fn (Builder $query) => $query
+                        ->where(function (Builder $query) use ($filters) {
+                            $query
+                                ->whereIn('group_id', $filters['group_ids'])
+                                ->orWhereHas('groups', fn (Builder $query) => $query
+                                    ->whereIn('groups.id', $filters['group_ids']));
+                        }))
+                    ->orWhereHas('surveyResponse.member', fn (Builder $query) => $query
+                        ->where(function (Builder $query) use ($filters) {
+                            $query
+                                ->whereIn('group_id', $filters['group_ids'])
+                                ->orWhereHas('groups', fn (Builder $query) => $query
+                                    ->whereIn('groups.id', $filters['group_ids']));
+                        }));
             });
         }
 

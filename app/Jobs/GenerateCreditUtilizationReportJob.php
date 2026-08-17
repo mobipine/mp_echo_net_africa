@@ -85,8 +85,8 @@ class GenerateCreditUtilizationReportJob implements ShouldBeUnique, ShouldQueue
             if ($report->user) {
                 try {
                     Notification::make()
-                        ->title('Credit utilization report ready')
-                        ->body('Your detailed Excel workbook is ready to download.')
+                        ->title('Comprehensive survey report ready')
+                        ->body('Your survey responses, participation, drop-off, and credit workbook is ready to download.')
                         ->success()
                         ->actions([
                             Action::make('download')
@@ -96,7 +96,7 @@ class GenerateCreditUtilizationReportJob implements ShouldBeUnique, ShouldQueue
                         ])
                         ->sendToDatabase($report->user);
                 } catch (Throwable $exception) {
-                    Log::warning('Credit report completed, but its notification could not be sent.', [
+                    Log::warning('Comprehensive survey report completed, but its notification could not be sent.', [
                         'credit_report_export_id' => $report->id,
                         'user_id' => $report->user_id,
                         'exception' => $exception,
@@ -129,7 +129,7 @@ class GenerateCreditUtilizationReportJob implements ShouldBeUnique, ShouldQueue
             'error_message' => str($exception->getMessage())->limit(1000)->toString(),
         ]);
 
-        Log::error('Credit utilization report generation failed.', [
+        Log::error('Comprehensive survey report generation failed.', [
             'credit_report_export_id' => $report->id,
             'user_id' => $report->user_id,
             'exception' => $exception,
@@ -137,7 +137,7 @@ class GenerateCreditUtilizationReportJob implements ShouldBeUnique, ShouldQueue
 
         if ($report->user) {
             Notification::make()
-                ->title('Credit report export failed')
+                ->title('Comprehensive survey report failed')
                 ->body('The workbook could not be generated. Please retry or contact support if the issue continues.')
                 ->danger()
                 ->sendToDatabase($report->user);
