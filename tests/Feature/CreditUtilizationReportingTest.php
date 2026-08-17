@@ -16,10 +16,12 @@ use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
 use App\Models\User;
 use App\Services\CreditUtilizationReportService;
+use App\Services\CreditUtilizationWorkbookWriter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use RuntimeException;
 use Tests\TestCase;
 
 class CreditUtilizationReportingTest extends TestCase
@@ -78,10 +80,11 @@ class CreditUtilizationReportingTest extends TestCase
         ]);
 
         (new GenerateCreditUtilizationReportJob($report->id))
-            ->handle(app(CreditUtilizationReportService::class));
+            ->handle(app(CreditUtilizationWorkbookWriter::class));
 
         $report->refresh();
         Storage::disk('local')->assertExists($report->file_path);
+        Storage::disk('local')->assertMissing($report->file_path.'.part');
         $this->assertSame(CreditReportExport::STATUS_COMPLETED, $report->status);
         $this->assertSame(2, $report->row_count);
         $this->assertGreaterThan(0, $report->file_size);
@@ -94,8 +97,45 @@ class CreditUtilizationReportingTest extends TestCase
             'Transaction Ledger',
             'Definitions',
         ], $workbook->getSheetNames());
-        $this->assertSame('ECHO NET AFRICA | CREDIT UTILIZATION REPORT', $workbook->getSheet(0)->getCell('A1')->getValue());
-        $this->assertSame('Timestamp', $workbook->getSheetByName('Transaction Ledger')->getCell('A1')->getValue());
+        $this->assertSame('ECHO NET AFRICA | CREDIT UTILIZATION REPORT', (string) $workbook->getSheet(0)->getCell('A1')->getValue());
+        $ledger = $workbook->getSheetByName('Transaction Ledger');
+        $this->assertSame('Timestamp', (string) $ledger->getCell('A1')->getValue());
+        $this->assertSame(3, $ledger->getHighestDataRow());
+        $this->assertSame('A1:X3', $ledger->getAutoFilter()->getRange());
+    }
+
+    public function test_report_job_uses_an_isolated_long_running_queue(): void
+    {
+        $job = new GenerateCreditUtilizationReportJob(123);
+
+        $this->assertSame('credit-reports', $job->connection);
+        $this->assertSame('credit-reports', $job->queue);
+        $this->assertSame(3600, $job->timeout);
+        $this->assertGreaterThan($job->timeout, config('queue.connections.credit-reports.retry_after'));
+    }
+
+    public function test_late_job_failure_cannot_overwrite_a_completed_export(): void
+    {
+        $user = User::factory()->create();
+        $report = CreditReportExport::query()->create([
+            'uuid' => fake()->uuid(),
+            'user_id' => $user->id,
+            'status' => CreditReportExport::STATUS_COMPLETED,
+            'filters' => [],
+            'disk' => 'local',
+            'file_path' => 'private/credit-reports/test/completed.xlsx',
+            'file_name' => 'completed.xlsx',
+            'row_count' => 10,
+            'file_size' => 1024,
+            'completed_at' => now(),
+        ]);
+
+        (new GenerateCreditUtilizationReportJob($report->id))
+            ->failed(new RuntimeException('Late worker failure'));
+
+        $this->assertSame(CreditReportExport::STATUS_COMPLETED, $report->refresh()->status);
+        $this->assertNull($report->error_message);
+        $this->assertNull($report->failed_at);
     }
 
     public function test_only_the_requesting_user_can_download_a_completed_export(): void

@@ -30,4 +30,9 @@ jobs:
             npm install
             npm run build
             php artisan migrate --force
+            php artisan optimize:clear
+            php artisan queue:restart
+            install -m 0644 deploy/supervisor/enaf-credit-reports-worker.conf /etc/supervisor/conf.d/enaf-credit-reports-worker.conf
+            supervisorctl reread
+            supervisorctl update
           EOF

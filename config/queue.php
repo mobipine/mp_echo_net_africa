@@ -43,6 +43,15 @@ return [
             'after_commit' => false,
         ],
 
+        'credit-reports' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => 'credit-reports',
+            'retry_after' => (int) env('CREDIT_REPORT_QUEUE_RETRY_AFTER', 3900),
+            'after_commit' => false,
+        ],
+
         'beanstalkd' => [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),
