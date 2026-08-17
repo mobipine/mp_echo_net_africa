@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Pages\CreditReports;
 use App\Filament\Pages\SmsResponseReports;
+use App\Filament\Widgets\CreditStatsWidget;
 use App\Jobs\GenerateCreditUtilizationReportJob;
 use App\Models\County;
 use App\Models\CreditReportExport;
@@ -250,14 +251,18 @@ class CreditUtilizationReportingTest extends TestCase
             ->test(SmsResponseReports::class)
             ->assertSuccessful()
             ->assertSee('Comprehensive Survey Workbooks')
-            ->assertSee('Workbook scope');
+            ->assertSee('Locked workbook coverage')
+            ->assertSee('Choose a question to inspect response patterns');
 
-        Livewire::actingAs($data['user'])
+        $creditReports = Livewire::actingAs($data['user'])
             ->test(CreditReports::class)
             ->assertSuccessful()
             ->assertSee('Credit transactions')
             ->assertDontSee('Recent Excel workbooks')
-            ->assertDontSee('Generate Excel report');
+            ->assertDontSee('Generate Excel report')
+            ->assertDontSee('Credit movement over time');
+
+        $this->assertSame([CreditStatsWidget::class], $creditReports->instance()->getVisibleHeaderWidgets());
     }
 
     private function createReportingScenario(): array

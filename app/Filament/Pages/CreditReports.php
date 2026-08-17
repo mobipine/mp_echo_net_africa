@@ -3,7 +3,6 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Widgets\CreditStatsWidget;
-use App\Filament\Widgets\CreditUtilizationTrendWidget;
 use App\Models\County;
 use App\Models\CreditTransaction;
 use App\Models\Group;
@@ -150,7 +149,6 @@ class CreditReports extends Page implements HasTable
     {
         return [
             CreditStatsWidget::class,
-            CreditUtilizationTrendWidget::class,
         ];
     }
 

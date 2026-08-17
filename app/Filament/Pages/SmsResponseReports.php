@@ -83,7 +83,7 @@ class SmsResponseReports extends Page
         ]);
     }
 
-    protected function getHeaderWidgets(): array
+    public function getResponseWidgets(): array
     {
         return [
             SmsResponsesStatsOverview::make(['filters' => $this->filters]),
@@ -145,6 +145,19 @@ class SmsResponseReports extends Page
             $bytes >= 1024 => number_format($bytes / 1024, 1).' KB',
             default => number_format($bytes).' bytes',
         };
+    }
+
+    public function exportRowLabel(CreditReportExport $export): string
+    {
+        if ($export->row_count === null) {
+            return 'Rows pending';
+        }
+
+        $unit = Str::contains($export->file_name, 'comprehensive_survey_report')
+            ? 'members'
+            : 'transactions';
+
+        return number_format($export->row_count).' '.$unit;
     }
 
     private function queueComprehensiveReport(): void
