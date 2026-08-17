@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CreditTransaction extends Model
 {
@@ -21,7 +22,7 @@ class CreditTransaction extends Model
     /**
      * Get the SMS inbox associated with this transaction
      */
-    public function smsInbox()
+    public function smsInbox(): BelongsTo
     {
         return $this->belongsTo(SMSInbox::class);
     }
@@ -29,7 +30,7 @@ class CreditTransaction extends Model
     /**
      * Get the survey response associated with this transaction
      */
-    public function surveyResponse()
+    public function surveyResponse(): BelongsTo
     {
         return $this->belongsTo(SurveyResponse::class);
     }
@@ -37,9 +38,27 @@ class CreditTransaction extends Model
     /**
      * Get the user who performed this transaction
      */
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function attributedSurvey(): ?Survey
+    {
+        return $this->surveyResponse?->survey
+            ?? $this->smsInbox?->surveyProgress?->survey;
+    }
+
+    public function attributedMember(): ?Member
+    {
+        return $this->smsInbox?->member
+            ?? $this->surveyResponse?->member;
+    }
+
+    public function attributedInbox(): ?SMSInbox
+    {
+        return $this->smsInbox
+            ?? $this->surveyResponse?->inbox;
     }
 
     /**
@@ -74,4 +93,3 @@ class CreditTransaction extends Model
         return $query->where('transaction_type', 'sms_received');
     }
 }
-

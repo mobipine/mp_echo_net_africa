@@ -7,6 +7,7 @@ use App\Http\Controllers\WebHookController;
 use App\Models\SurveyQuestion;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\UssdWebHookController;
+use App\Http\Controllers\CreditReportExportsController;
 
 Route::get('/', function () {
     // return view('welcome');
@@ -26,6 +27,9 @@ Route::any('/export-surveys/{scope}', [SurveyExportsController::class, 'export']
 
 
 Route::get('/export-responses', [ResponseExportsController::class, 'export'])->name('response.export');
+
+Route::get('/credit-reports/{creditReportExport}/download', [CreditReportExportsController::class, 'download'])
+    ->name('credit-reports.download');
 
 Route::get('/get-next-qtn', function () {
     // return view('get-next-qtn');

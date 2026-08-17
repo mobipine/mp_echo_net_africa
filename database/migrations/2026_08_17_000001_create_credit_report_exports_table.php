@@ -1,0 +1,36 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('credit_report_exports', function (Blueprint $table) {
+            $table->id();
+            $table->uuid('uuid')->unique();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->string('status', 24)->index();
+            $table->json('filters');
+            $table->string('disk', 50)->default('local');
+            $table->string('file_path')->nullable();
+            $table->string('file_name');
+            $table->unsignedBigInteger('row_count')->nullable();
+            $table->unsignedBigInteger('file_size')->nullable();
+            $table->timestamp('started_at')->nullable();
+            $table->timestamp('completed_at')->nullable();
+            $table->timestamp('failed_at')->nullable();
+            $table->text('error_message')->nullable();
+            $table->timestamps();
+
+            $table->index(['user_id', 'created_at']);
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('credit_report_exports');
+    }
+};
