@@ -18,6 +18,10 @@ class SurveyExportsController extends Controller
     $fullFilePath = $directory . '/' . $filenameOnly;
     $userId = auth()->id();
 
+    if (!$userId) {
+        return redirect('/admin/login');
+    }
+
     Excel::queue(
         new ExportSurveyProgress($scope, $filters, $userId, $diskName, $fullFilePath),
         $fullFilePath,

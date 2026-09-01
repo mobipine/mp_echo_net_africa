@@ -18,6 +18,10 @@ class SmsExportsController extends Controller
         $fullFilePath = $directory . '/' . $filenameOnly; // exports/sms_records_...xlsx
         $userId = auth()->id();
 
+        if (!$userId) {
+            return redirect('/admin/login');
+        }
+
         // Queue the export, passing all necessary details
         Excel::queue(
             // Pass the disk and file path to the export constructor
