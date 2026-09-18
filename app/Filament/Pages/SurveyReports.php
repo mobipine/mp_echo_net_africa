@@ -135,11 +135,17 @@ class SurveyReports extends Page
 
     protected function getHeaderWidgets(): array
     {
+        // Intentionally empty: we render filters first and widgets once in the page view.
+        return [];
+    }
+
+    public function getReportWidgets(): array
+    {
         return [
             SurveyStatsOverview::make(['filters' => $this->filters]),
+            SmsResponsesStatsOverview::make(['filters' => $this->filters]),
             GroupSurveySummaryTable::make(['filters' => $this->filters]),
             SurveyDropoutTable::make(['filters' => $this->filters]),
-            SmsResponsesStatsOverview::make(['filters' => $this->filters]),
         ];
     }
 

@@ -85,7 +85,9 @@ class AdminPanelProvider extends PanelProvider
                 Pages\Dashboard::class,
             ])
             ->widgets([
-                // Dashboard is intentionally left empty.
+                Widgets\AccountWidget::class,
+                // Dashboard is intentionally kept to just the account widget.
+                // Widgets\FilamentInfoWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,

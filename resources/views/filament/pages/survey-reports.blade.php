@@ -23,9 +23,9 @@
             </x-filament::button>
         </div>
 
-        {{-- Widgets --}}
+        {{-- Widgets (rendered once, below filters) --}}
         <x-filament-widgets::widgets
-            :widgets="$this->getHeaderWidgets()"
+            :widgets="$this->getReportWidgets()"
             :columns="2"
         />
 
