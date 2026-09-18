@@ -41,6 +41,7 @@ class SurveyReports extends Page
         return $form
             ->schema([
                 Section::make('Survey scope')
+                    ->description('Pick a survey and group to filter all widgets and downloads.')
                     ->schema([
                         Select::make('survey_id')
                             ->label('Survey')
@@ -82,9 +83,37 @@ class SurveyReports extends Page
             ]);
     }
 
-    public function applyFilters(): void
+    public function mount(): void
     {
-        $this->redirect(request()->fullUrl());
+        $this->mountHasFilters();
+
+        if (request()?->hasAny(['survey_id', 'group_id', 'question_id'])) {
+            return;
+        }
+
+        $this->filters = [
+            'survey_id' => null,
+            'group_id' => null,
+            'question_id' => null,
+        ];
+
+        $this->getFiltersForm()?->fill($this->filters);
+    }
+
+    public function persistsFiltersInSession(): bool
+    {
+        return false;
+    }
+
+    public function resetFilters(): void
+    {
+        $this->filters = [
+            'survey_id' => null,
+            'group_id' => null,
+            'question_id' => null,
+        ];
+
+        $this->getFiltersForm()?->fill($this->filters);
     }
 
     protected function getHeaderActions(): array

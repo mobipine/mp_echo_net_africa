@@ -5,11 +5,19 @@
             {{ $this->filtersForm }}
         </div>
 
-        <div class="flex justify-end p-4">
+        <div class="flex justify-end gap-3 p-4">
+            <x-filament::button
+                color="gray"
+                icon="heroicon-o-x-mark"
+                wire:click="resetFilters"
+            >
+                Clear filters
+            </x-filament::button>
+
             <x-filament::button
                 color="primary"
                 icon="heroicon-o-funnel"
-                x-on:click="window.location.reload()"
+                wire:click="$refresh"
             >
                 Apply Filters
             </x-filament::button>
