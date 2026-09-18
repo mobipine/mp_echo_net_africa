@@ -2,14 +2,11 @@
 
 namespace App\Filament\Pages;
 
-use App\Filament\Widgets\GroupSurveySummaryTable;
-use App\Filament\Widgets\SurveyDropoutTable;
-use App\Filament\Widgets\SurveyStatsOverview;
 use App\Jobs\GenerateCreditUtilizationReportJob;
 use App\Models\CreditReportExport;
 use App\Models\Group;
 use App\Models\Survey;
-use App\Models\SurveyQuestion;
+use App\Models\SurveyProgress;
 use App\Services\ComprehensiveSurveyReportService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
@@ -18,12 +15,14 @@ use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Dashboard\Concerns\HasFiltersForm;
 use Filament\Pages\Page;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
 class SurveyReports extends Page
 {
     use HasFiltersForm;
+
     protected static ?string $navigationIcon = 'heroicon-o-chart-pie';
     protected static ?string $navigationLabel = 'Survey Reports';
     protected static ?string $slug = 'survey-reports';
@@ -108,9 +107,7 @@ class SurveyReports extends Page
 
     public function applyFilters(): void
     {
-        // Force Livewire to re-render with updated filter values.
-        // The wire:key on the widgets container changes when filters change,
-        // causing the widget components to be re-created with fresh data.
+        // Livewire re-renders automatically; stats are computed inline.
     }
 
     protected function getHeaderActions(): array
@@ -132,17 +129,141 @@ class SurveyReports extends Page
 
     protected function getHeaderWidgets(): array
     {
-        // Intentionally empty: we render filters first and widgets once in the page view.
         return [];
     }
 
-    public function getReportWidgets(): array
+    /**
+     * Compute survey stats inline — no child Livewire components.
+     */
+    public function getStats(): array
     {
+        $surveyId = $this->filters['survey_id'] ?? null;
+        $groupId = $this->filters['group_id'] ?? null;
+
+        if (! $surveyId || ! $groupId) {
+            return [];
+        }
+
+        $baseQuery = SurveyProgress::query()
+            ->where('survey_id', $surveyId)
+            ->whereHas('member.groups', fn ($q) => $q->where('groups.id', $groupId));
+
+        $total = (clone $baseQuery)->count();
+        $completed = (clone $baseQuery)->whereNotNull('completed_at')->where('status', 'COMPLETED')->count();
+        $inProgress = (clone $baseQuery)->whereNull('completed_at')->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS', 'PENDING'])->count();
+        $cancelled = (clone $baseQuery)->whereNull('completed_at')->where('status', 'CANCELLED')->count();
+
+        $remindersSent = (clone $baseQuery)->where('number_of_reminders', '>', 0)->sum('number_of_reminders');
+        $membersSentReminder = (clone $baseQuery)->distinct('member_id')->where('number_of_reminders', '>=', 1)->count('member_id');
+        $repeatReminders = (clone $baseQuery)->distinct('member_id')->where('number_of_reminders', '>=', 3)->count('member_id');
+
+        $completionRate = $total > 0 ? round(($completed / $total) * 100, 1) : 0;
+
         return [
-            SurveyStatsOverview::make(['filters' => $this->filters]),
-            GroupSurveySummaryTable::make(['filters' => $this->filters]),
-            SurveyDropoutTable::make(['filters' => $this->filters]),
+            'total' => $total,
+            'completed' => $completed,
+            'in_progress' => $inProgress,
+            'cancelled' => $cancelled,
+            'reminders_sent' => $remindersSent,
+            'members_sent_reminder' => $membersSentReminder,
+            'repeat_reminders' => $repeatReminders,
+            'completion_rate' => $completionRate,
         ];
+    }
+
+    /**
+     * Group survey summary data for inline table.
+     */
+    public function getGroupSummary(): array
+    {
+        $surveyId = $this->filters['survey_id'] ?? null;
+        $groupId = $this->filters['group_id'] ?? null;
+
+        if (! $surveyId || ! $groupId) {
+            return [];
+        }
+
+        $group = Group::find($groupId);
+        if (! $group) {
+            return [];
+        }
+
+        $members = $group->members()->count();
+
+        $totalProgresses = SurveyProgress::query()
+            ->where('survey_id', $surveyId)
+            ->whereHas('member.groups', fn ($q) => $q->where('groups.id', $groupId))
+            ->count();
+
+        $completedProgresses = SurveyProgress::query()
+            ->where('survey_id', $surveyId)
+            ->whereNotNull('completed_at')
+            ->where('status', 'COMPLETED')
+            ->whereHas('member.groups', fn ($q) => $q->where('groups.id', $groupId))
+            ->count();
+
+        $ongoingProgresses = SurveyProgress::query()
+            ->where('survey_id', $surveyId)
+            ->whereNull('completed_at')
+            ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS', 'PENDING'])
+            ->whereHas('member.groups', fn ($q) => $q->where('groups.id', $groupId))
+            ->count();
+
+        $cancelledProgresses = SurveyProgress::query()
+            ->where('survey_id', $surveyId)
+            ->where('status', 'CANCELLED')
+            ->whereHas('member.groups', fn ($q) => $q->where('groups.id', $groupId))
+            ->count();
+
+        return [
+            'name' => $group->name,
+            'total_members' => $members,
+            'total_progresses' => $totalProgresses,
+            'completed_progresses' => $completedProgresses,
+            'ongoing_progresses' => $ongoingProgresses,
+            'cancelled_progresses' => $cancelledProgresses,
+        ];
+    }
+
+    /**
+     * Dropout data for inline table.
+     */
+    public function getDropoutData(): array
+    {
+        $surveyId = $this->filters['survey_id'] ?? null;
+        $groupId = $this->filters['group_id'] ?? null;
+
+        if (! $surveyId || ! $groupId) {
+            return [];
+        }
+
+        $rows = SurveyProgress::query()
+            ->select('current_question_id', DB::raw('COUNT(*) as total_stoppages'))
+            ->whereNull('completed_at')
+            ->whereIn('status', ['ACTIVE', 'PENDING', 'UPDATING_DETAILS'])
+            ->where('survey_id', $surveyId)
+            ->whereHas('member.groups', fn ($q) => $q->where('groups.id', $groupId))
+            ->groupBy('current_question_id')
+            ->orderByRaw('COUNT(*) DESC')
+            ->limit(20)
+            ->get();
+
+        return $rows->map(function ($row) {
+            $question = $row->current_question_id
+                ? \App\Models\SurveyQuestion::find($row->current_question_id)?->question
+                : null;
+
+            return [
+                'question' => $question ?: 'Not Started / Error',
+                'stoppages' => $row->total_stoppages,
+            ];
+        })->toArray();
+    }
+
+    public function hasFiltersApplied(): bool
+    {
+        return filled($this->filters['survey_id'] ?? null)
+            && filled($this->filters['group_id'] ?? null);
     }
 
     public function getRecentExports()
