@@ -5,7 +5,7 @@
             {{ $this->filtersForm }}
         </div>
 
-        <div class="flex justify-end gap-3 p-4">
+        <div class="flex justify-end gap-3 px-1">
             <x-filament::button
                 color="gray"
                 icon="heroicon-o-x-mark"
@@ -30,88 +30,93 @@
                 $dropoutData = $this->getDropoutData();
             @endphp
 
-            {{-- Stats cards: 4 columns on large screens, 2 on small --}}
+            {{-- Stat cards matching Filament's StatsOverviewWidget design --}}
             @php
                 $statCards = [
-                    ['label' => 'Total Progresses', 'value' => number_format($stats['total']), 'description' => 'Total progress records created.', 'color' => 'gray', 'icon' => 'heroicon-o-chart-bar'],
-                    ['label' => 'Surveys Completed', 'value' => number_format($stats['completed']), 'description' => $stats['completion_rate'] . '% Completion Rate', 'color' => 'success', 'icon' => 'heroicon-o-check-circle'],
-                    ['label' => 'Still In Progress', 'value' => number_format($stats['in_progress']), 'description' => 'Uncompleted active surveys.', 'color' => 'warning', 'icon' => 'heroicon-o-clock'],
-                    ['label' => 'Cancelled', 'value' => number_format($stats['cancelled']), 'description' => 'Cancelled the survey progress.', 'color' => 'danger', 'icon' => 'heroicon-o-x-circle'],
-                    ['label' => 'Reminders Sent', 'value' => number_format($stats['reminders_sent']), 'description' => 'Total reminders sent to members.', 'color' => 'info', 'icon' => 'heroicon-o-bell'],
-                    ['label' => 'Members Sent Reminder', 'value' => number_format($stats['members_sent_reminder']), 'description' => 'Unique members who received reminders.', 'color' => 'primary', 'icon' => 'heroicon-o-user-group'],
-                    ['label' => 'Repeated Reminders (3+)', 'value' => number_format($stats['repeat_reminders']), 'description' => 'Members who received 3+ reminders.', 'color' => 'danger', 'icon' => 'heroicon-o-exclamation-circle'],
-                ];
-                $colorMap = [
-                    'gray' => 'text-gray-600 dark:text-gray-400',
-                    'success' => 'text-green-600 dark:text-green-400',
-                    'warning' => 'text-yellow-600 dark:text-yellow-400',
-                    'danger' => 'text-red-600 dark:text-red-400',
-                    'info' => 'text-blue-600 dark:text-blue-400',
-                    'primary' => 'text-primary-600 dark:text-primary-400',
+                    ['label' => 'Total Progresses', 'value' => number_format($stats['total']), 'description' => 'Total progress records created.', 'icon' => 'heroicon-o-chart-bar', 'iconColor' => 'text-gray-400 dark:text-gray-500'],
+                    ['label' => 'Surveys Completed', 'value' => number_format($stats['completed']), 'description' => $stats['completion_rate'] . '% Completion Rate', 'icon' => 'heroicon-o-check-circle', 'iconColor' => 'text-green-500 dark:text-green-400'],
+                    ['label' => 'Still In Progress', 'value' => number_format($stats['in_progress']), 'description' => 'Uncompleted active surveys.', 'icon' => 'heroicon-o-clock', 'iconColor' => 'text-yellow-500 dark:text-yellow-400'],
+                    ['label' => 'Cancelled', 'value' => number_format($stats['cancelled']), 'description' => 'Cancelled the survey progress.', 'icon' => 'heroicon-o-x-circle', 'iconColor' => 'text-red-500 dark:text-red-400'],
+                    ['label' => 'Reminders Sent', 'value' => number_format($stats['reminders_sent']), 'description' => 'Total reminders sent to members.', 'icon' => 'heroicon-o-bell', 'iconColor' => 'text-blue-500 dark:text-blue-400'],
+                    ['label' => 'Members Sent Reminder', 'value' => number_format($stats['members_sent_reminder']), 'description' => 'Unique members who received reminders.', 'icon' => 'heroicon-o-user-group', 'iconColor' => 'text-primary-500 dark:text-primary-400'],
+                    ['label' => 'Repeated Reminders (3+)', 'value' => number_format($stats['repeat_reminders']), 'description' => 'Members who received 3+ reminders.', 'icon' => 'heroicon-o-exclamation-circle', 'iconColor' => 'text-red-500 dark:text-red-400'],
                 ];
             @endphp
 
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
                 @foreach ($statCards as $card)
-                    <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                        <div class="flex items-center justify-between">
-                            <span class="text-sm font-medium text-gray-700 dark:text-white">{{ $card['label'] }}</span>
-                            <x-filament::icon :name="$card['icon']" class="h-5 w-5 {{ $colorMap[$card['color']] ?? $colorMap['gray'] }}" />
+                    <div class="relative rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10">
+                        <div class="grid gap-y-2">
+                            <div class="flex items-center gap-x-2">
+                                <x-filament::icon :icon="$card['icon']" class="h-5 w-5 {{ $card['iconColor'] }}" />
+                                <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ $card['label'] }}</span>
+                            </div>
+                            <div class="text-3xl font-semibold tracking-tight text-gray-950 dark:text-white">
+                                {{ $card['value'] }}
+                            </div>
+                            <div class="text-sm text-gray-500 dark:text-gray-400">
+                                {{ $card['description'] }}
+                            </div>
                         </div>
-                        <p class="mt-2 text-3xl font-bold {{ $colorMap[$card['color']] ?? 'text-gray-700 dark:text-white' }}">{{ $card['value'] }}</p>
-                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $card['description'] }}</p>
                     </div>
                 @endforeach
             </div>
 
-            {{-- Group survey summary --}}
-            <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Group Survey Summary</h2>
+            {{-- Group survey summary table matching Filament's table design --}}
+            <div class="divide-y divide-gray-200 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:divide-white/10 dark:bg-gray-900 dark:ring-white/10">
+                <div class="flex items-center justify-between px-4 py-3">
+                    <h2 class="text-base font-semibold leading-6 text-gray-950 dark:text-white">Group Survey Summary</h2>
+                </div>
                 <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
+                    <table class="w-full whitespace-nowrap text-left text-sm">
                         <thead>
-                            <tr class="border-b border-gray-200 dark:border-gray-700">
-                                <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-white">Group</th>
-                                <th class="px-4 py-3 text-right font-medium text-gray-700 dark:text-white">Total Members</th>
-                                <th class="px-4 py-3 text-right font-medium text-gray-700 dark:text-white">Total</th>
-                                <th class="px-4 py-3 text-right font-medium text-gray-700 dark:text-white">Completed</th>
-                                <th class="px-4 py-3 text-right font-medium text-gray-700 dark:text-white">Ongoing</th>
-                                <th class="px-4 py-3 text-right font-medium text-gray-700 dark:text-white">Cancelled</th>
+                            <tr class="border-b border-gray-200 dark:border-white/10">
+                                <th class="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Group</th>
+                                <th class="px-4 py-3 text-right font-medium text-gray-500 dark:text-gray-400">Total Members</th>
+                                <th class="px-4 py-3 text-right font-medium text-gray-500 dark:text-gray-400">Total</th>
+                                <th class="px-4 py-3 text-right font-medium text-gray-500 dark:text-gray-400">Completed</th>
+                                <th class="px-4 py-3 text-right font-medium text-gray-500 dark:text-gray-400">Ongoing</th>
+                                <th class="px-4 py-3 text-right font-medium text-gray-500 dark:text-gray-400">Cancelled</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            <tr class="border-b border-gray-100 dark:border-gray-700">
-                                <td class="px-4 py-3 text-gray-700 dark:text-white">{{ $groupSummary['name'] }}</td>
-                                <td class="px-4 py-3 text-right text-gray-700 dark:text-white">{{ number_format($groupSummary['total_members']) }}</td>
-                                <td class="px-4 py-3 text-right text-gray-700 dark:text-white">{{ number_format($groupSummary['total_progresses']) }}</td>
-                                <td class="px-4 py-3 text-right font-medium text-green-600 dark:text-green-400">{{ number_format($groupSummary['completed_progresses']) }}</td>
-                                <td class="px-4 py-3 text-right font-medium text-yellow-600 dark:text-yellow-400">{{ number_format($groupSummary['ongoing_progresses']) }}</td>
-                                <td class="px-4 py-3 text-right font-medium text-red-600 dark:text-red-400">{{ number_format($groupSummary['cancelled_progresses']) }}</td>
+                        <tbody class="divide-y divide-gray-100 dark:divide-white/5">
+                            <tr>
+                                <td class="px-4 py-3 font-medium text-gray-950 dark:text-white">{{ $groupSummary['name'] }}</td>
+                                <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{{ number_format($groupSummary['total_members']) }}</td>
+                                <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{{ number_format($groupSummary['total_progresses']) }}</td>
+                                <td class="px-4 py-3 text-right font-semibold text-green-600 dark:text-green-400">{{ number_format($groupSummary['completed_progresses']) }}</td>
+                                <td class="px-4 py-3 text-right font-semibold text-yellow-600 dark:text-yellow-400">{{ number_format($groupSummary['ongoing_progresses']) }}</td>
+                                <td class="px-4 py-3 text-right font-semibold text-red-600 dark:text-red-400">{{ number_format($groupSummary['cancelled_progresses']) }}</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            {{-- Dropout table --}}
-            <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Survey Dropout Table (Incomplete)</h2>
+            {{-- Dropout table matching Filament's table design --}}
+            <div class="divide-y divide-gray-200 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:divide-white/10 dark:bg-gray-900 dark:ring-white/10">
+                <div class="flex items-center justify-between px-4 py-3">
+                    <h2 class="text-base font-semibold leading-6 text-gray-950 dark:text-white">Survey Dropout Table</h2>
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Where members stopped</span>
+                </div>
                 @if (empty($dropoutData))
-                    <p class="text-gray-700 dark:text-white">No dropout data for the selected filters.</p>
+                    <div class="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                        No dropout data for the selected filters.
+                    </div>
                 @else
                     <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
+                        <table class="w-full whitespace-nowrap text-left text-sm">
                             <thead>
-                                <tr class="border-b border-gray-200 dark:border-gray-700">
-                                    <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-white">Question</th>
-                                    <th class="px-4 py-3 text-right font-medium text-gray-700 dark:text-white">Members Stopped</th>
+                                <tr class="border-b border-gray-200 dark:border-white/10">
+                                    <th class="px-4 py-3 font-medium text-gray-500 dark:text-gray-400">Question</th>
+                                    <th class="px-4 py-3 text-right font-medium text-gray-500 dark:text-gray-400">Members Stopped</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody class="divide-y divide-gray-100 dark:divide-white/5">
                                 @foreach ($dropoutData as $row)
-                                    <tr class="border-b border-gray-100 dark:border-gray-700">
-                                        <td class="px-4 py-3 text-gray-700 dark:text-white">{{ $row['question'] }}</td>
-                                        <td class="px-4 py-3 text-right text-gray-700 dark:text-white">{{ number_format($row['stoppages']) }}</td>
+                                    <tr>
+                                        <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ $row['question'] }}</td>
+                                        <td class="px-4 py-3 text-right font-semibold text-gray-950 dark:text-white">{{ number_format($row['stoppages']) }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
@@ -127,14 +132,16 @@
         @endphp
 
         @if ($exports->isNotEmpty())
-            <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                <h2 class="mb-3 text-lg font-semibold text-gray-900 dark:text-white">Recent report downloads</h2>
-                <div class="space-y-2">
+            <div class="divide-y divide-gray-200 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:divide-white/10 dark:bg-gray-900 dark:ring-white/10">
+                <div class="flex items-center justify-between px-4 py-3">
+                    <h2 class="text-base font-semibold leading-6 text-gray-950 dark:text-white">Recent report downloads</h2>
+                </div>
+                <div class="divide-y divide-gray-100 dark:divide-white/5">
                     @foreach ($exports as $export)
-                        <div class="flex items-center justify-between rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+                        <div class="flex items-center justify-between px-4 py-3">
                             <div class="min-w-0 flex-1">
-                                <p class="truncate text-sm font-medium text-gray-900 dark:text-white">{{ $export->file_name }}</p>
-                                <p class="text-xs text-gray-500 dark:text-gray-400">
+                                <p class="truncate text-sm font-medium text-gray-950 dark:text-white">{{ $export->file_name }}</p>
+                                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                                     {{ $this->exportRowLabel($export) }} · {{ $this->formatFileSize($export->file_size) }} · {{ $export->created_at->diffForHumans() }}
                                 </p>
                             </div>
@@ -157,7 +164,7 @@
                         </div>
                     @endforeach
                 </div>
-            </section>
+            </div>
         @endif
     </div>
 </x-filament-panels::page>
