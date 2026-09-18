@@ -3,7 +3,6 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Widgets\GroupSurveySummaryTable;
-use App\Filament\Widgets\SmsResponsesStatsOverview;
 use App\Filament\Widgets\SurveyDropoutTable;
 use App\Filament\Widgets\SurveyStatsOverview;
 use App\Jobs\GenerateCreditUtilizationReportJob;
@@ -41,45 +40,38 @@ class SurveyReports extends Page
         return $form
             ->schema([
                 Section::make('Survey scope')
-                    ->description('Pick a survey and group to filter all widgets and downloads.')
+                    ->description('Select a group first, then pick a survey that was dispatched to it.')
                     ->schema([
-                        Select::make('survey_id')
-                            ->label('Survey')
-                            ->options(fn (): array => Survey::query()->orderBy('title')->pluck('title', 'id')->all())
-                            ->placeholder('Select a survey')
-                            ->searchable()
-                            ->preload()
-                            ->live()
-                            ->afterStateUpdated(fn (callable $set) => $set('question_id', null)),
-
                         Select::make('group_id')
                             ->label('Group')
                             ->options(fn (): array => Group::query()->orderBy('name')->pluck('name', 'id')->all())
                             ->placeholder('Select a group')
                             ->searchable()
                             ->preload()
-                            ->live(),
+                            ->live()
+                            ->afterStateUpdated(fn (callable $set) => $set('survey_id', null)),
 
-                        Select::make('question_id')
-                            ->label('Question to analyze')
+                        Select::make('survey_id')
+                            ->label('Survey')
                             ->options(function (callable $get): array {
-                                $surveyId = $get('survey_id');
+                                $groupId = $get('group_id');
 
-                                if (! $surveyId) {
+                                if (! $groupId) {
                                     return [];
                                 }
 
-                                return SurveyQuestion::query()
-                                    ->whereHas('surveys', fn ($query) => $query->where('surveys.id', $surveyId))
-                                    ->orderBy('question')
-                                    ->pluck('question', 'id')
+                                return Survey::query()
+                                    ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
+                                    ->orderBy('title')
+                                    ->pluck('title', 'id')
                                     ->all();
                             })
-                            ->placeholder('Pick a question to see responses')
+                            ->placeholder('Select a group first')
                             ->searchable()
-                            ->live(),
+                            ->live()
+                            ->disabled(fn (callable $get): bool => blank($get('group_id'))),
                     ])
-                    ->columns(3),
+                    ->columns(2),
             ]);
     }
 
@@ -87,14 +79,13 @@ class SurveyReports extends Page
     {
         $this->mountHasFilters();
 
-        if (request()?->hasAny(['survey_id', 'group_id', 'question_id'])) {
+        if (request()?->hasAny(['survey_id', 'group_id'])) {
             return;
         }
 
         $this->filters = [
             'survey_id' => null,
             'group_id' => null,
-            'question_id' => null,
         ];
 
         $this->getFiltersForm()?->fill($this->filters);
@@ -110,7 +101,6 @@ class SurveyReports extends Page
         $this->filters = [
             'survey_id' => null,
             'group_id' => null,
-            'question_id' => null,
         ];
 
         $this->getFiltersForm()?->fill($this->filters);
@@ -143,7 +133,6 @@ class SurveyReports extends Page
     {
         return [
             SurveyStatsOverview::make(['filters' => $this->filters]),
-            SmsResponsesStatsOverview::make(['filters' => $this->filters]),
             GroupSurveySummaryTable::make(['filters' => $this->filters]),
             SurveyDropoutTable::make(['filters' => $this->filters]),
         ];
