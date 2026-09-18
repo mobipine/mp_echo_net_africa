@@ -18,11 +18,10 @@ class SurveyStatsOverview extends BaseWidget
     protected static ?string $page = SurveyReports::class;
 
     protected static ?int $sort = 1;
+
     public static function canView(): bool
     {
-        // Returning false prevents the widget from being automatically displayed
-        // on the dashboard or resource pages.
-        return false;
+        return true;
     }
 
     protected function getStats(): array

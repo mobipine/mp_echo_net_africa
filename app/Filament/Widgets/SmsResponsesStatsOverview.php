@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
+use App\Filament\Pages\SurveyReports;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 
@@ -11,9 +12,11 @@ class SmsResponsesStatsOverview extends BaseWidget
 {
     public ?array $filters = [];
 
+    protected static ?string $page = SurveyReports::class;
+
     public static function canView(): bool
     {
-        return false; // Make visible if needed
+        return true;
     }
 
     protected function getStats(): array

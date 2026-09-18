@@ -25,9 +25,7 @@ class GroupSurveySummaryTable extends TableWidget
 
     public static function canView(): bool
     {
-        // Returning false prevents the widget from being automatically displayed 
-        // on the dashboard or resource pages.
-        return false; 
+        return true;
     }
 
     protected function getTableQuery(): Builder

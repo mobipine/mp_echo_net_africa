@@ -31,6 +31,11 @@ class SmsReports extends Page implements HasTable
     protected static ?string $title = 'Sms Reports';
     protected static ?int $navigationSort = 3;
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     public function table(Table $table): Table
     {
         
@@ -89,8 +94,7 @@ class SmsReports extends Page implements HasTable
             ->filters([
                
             ])
-            ->defaultSort('created_at', 'desc')
-            ->poll('30s');
+            ->defaultSort('created_at', 'desc');
     }
 
 

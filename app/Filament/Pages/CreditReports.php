@@ -141,8 +141,7 @@ class CreditReports extends Page implements HasTable
             ->emptyStateHeading('No credit activity matches these filters')
             ->emptyStateDescription('Adjust or clear the report filters to broaden the result set.')
             ->emptyStateIcon('heroicon-o-funnel')
-            ->striped()
-            ->poll('30s');
+            ->striped();
     }
 
     protected function getHeaderWidgets(): array

@@ -33,6 +33,11 @@ class SmsResponseReports extends Page
 
     protected static ?int $navigationSort = 3;
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     public function getSubheading(): ?string
     {
         return 'Analyze survey engagement and generate complete response, drop-off, and SMS credit workbooks.';
