@@ -16,7 +16,7 @@ class SmsResponsesStatsOverview extends BaseWidget
 
     public static function canView(): bool
     {
-        return true;
+        return false;
     }
 
     protected function getStats(): array

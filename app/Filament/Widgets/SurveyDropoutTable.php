@@ -21,7 +21,7 @@ class SurveyDropoutTable extends TableWidget
 
     public static function canView(): bool
     {
-        return true;
+        return false;
     }
 
     protected function getTableQuery(): Builder
