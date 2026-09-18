@@ -106,6 +106,13 @@ class SurveyReports extends Page
         $this->getFiltersForm()?->fill($this->filters);
     }
 
+    public function applyFilters(): void
+    {
+        // Force Livewire to re-render with updated filter values.
+        // The wire:key on the widgets container changes when filters change,
+        // causing the widget components to be re-created with fresh data.
+    }
+
     protected function getHeaderActions(): array
     {
         return [

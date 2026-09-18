@@ -17,17 +17,19 @@
             <x-filament::button
                 color="primary"
                 icon="heroicon-o-funnel"
-                wire:click="$refresh"
+                wire:click="applyFilters"
             >
                 Apply Filters
             </x-filament::button>
         </div>
 
-        {{-- Widgets (rendered once, below filters) --}}
-        <x-filament-widgets::widgets
-            :widgets="$this->getReportWidgets()"
-            :columns="2"
-        />
+        {{-- Widgets (rendered once, below filters; key forces re-render on filter change) --}}
+        <div wire:key="report-widgets-{{ md5(json_encode($this->filters)) }}">
+            <x-filament-widgets::widgets
+                :widgets="$this->getReportWidgets()"
+                :columns="2"
+            />
+        </div>
 
         {{-- Recent report downloads --}}
         @php
