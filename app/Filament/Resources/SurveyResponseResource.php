@@ -3,15 +3,19 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\SurveyResponseResource\Pages;
-use App\Filament\Resources\SurveyResponseResource\RelationManagers;
 use App\Models\SurveyResponse;
+use App\Models\Survey;
+use App\Models\SurveyQuestion;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use pxlrbt\FilamentExcel\Actions\Tables\ExportBulkAction;
 use pxlrbt\FilamentExcel\Exports\ExcelExport;
 
@@ -24,42 +28,67 @@ class SurveyResponseResource extends Resource
 
     public static function canCreate(): bool
     {
-        return false; // Disable the create action
+        return false;
     }
 
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Infolists\Components\Section::make('Response Details')
+                    ->schema([
+                        Infolists\Components\TextEntry::make('survey.title')
+                            ->label('Survey')
+                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
+                        Infolists\Components\TextEntry::make('member.name')
+                            ->label('Participant Name')
+                            ->placeholder('Unknown / unmatched')
+                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
+                        Infolists\Components\TextEntry::make('msisdn')
+                            ->label('Phone Number')
+                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
+                        Infolists\Components\TextEntry::make('question.question')
+                            ->label('Question')
+                            ->wrap()
+                            ->columnSpanFull(),
+                        Infolists\Components\TextEntry::make('survey_response')
+                            ->label('Response')
+                            ->wrap()
+                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
+                            ->color('primary')
+                            ->columnSpanFull(),
+                        Infolists\Components\TextEntry::make('created_at')
+                            ->label('Responded At')
+                            ->dateTime('M d, Y H:i'),
+                    ])
+                    ->columns(3),
+            ]);
+    }
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-            
                 Forms\Components\Select::make('survey_id')
-                    ->label('Survey Name')
-                    ->options(\App\Models\Survey::pluck('title', 'id')) // Fetch directly from the Survey model
                     ->label('Survey')
-                    ->required()
-                    ->native(false)
-                    ->searchable(),
-                Forms\Components\TextInput::make('msisdn')
-                    ->label('MSISDN')
-                    ->required()
-                    ->maxLength(15)
-                    ->placeholder('e.g. 0712345678'),
-                Forms\Components\Select::make('inbox_id')
-                    ->label('Question')
-                    // ->relationship('question', 'question')
-                    ->options(\App\Models\SMSInbox::pluck('message', 'id'))
+                    ->options(fn (): array => Survey::pluck('title', 'id')->all())
                     ->required()
                     ->native(false)
                     ->searchable(),
 
-                // Forms\Components\Select::make('question_id')
-                //     ->label('Question')
-                //     // ->relationship('question', 'question')
-                //     ->options(\App\Models\SurveyQuestion::pluck('question', 'id'))
-                //     ->required()
-                //     ->native(false)
-                //     ->searchable(),
+                Forms\Components\TextInput::make('msisdn')
+                    ->label('Phone Number')
+                    ->required()
+                    ->maxLength(15)
+                    ->placeholder('e.g. 0712345678'),
+
+                Forms\Components\Select::make('question_id')
+                    ->label('Question')
+                    ->options(fn (): array => SurveyQuestion::pluck('question', 'id')->all())
+                    ->required()
+                    ->native(false)
+                    ->searchable(),
+
                 Forms\Components\TextInput::make('survey_response')
                     ->label('Response')
                     ->required()
@@ -72,44 +101,111 @@ class SurveyResponseResource extends Resource
     {
         return $table
             ->columns([
-                // Tables\Columns\TextColumn::make('id')->sortable(),
-                // Tables\Columns\TextColumn::make('participant_id')->sortable()->searchable(),
-                // Tables\Columns\TextColumn::make('response_data')->limit(50),
+                Tables\Columns\TextColumn::make('id')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
+                Tables\Columns\TextColumn::make('survey.title')
+                    ->label('Survey')
+                    ->sortable()
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: false),
 
-                //i want columns for id	survey_name form the survey id, msisdn	question	survey_response	created_at	updated_at	
-                Tables\Columns\TextColumn::make('id')->sortable()->toggleable(isToggledHiddenByDefault:true),
-                Tables\Columns\TextColumn::make('survey.title')->label('Survey Name')->sortable()->searchable()->toggleable(isToggledHiddenByDefault:true),
-                Tables\Columns\TextColumn::make('member.name')->label('Member Name')->sortable()->searchable()->placeholder('Unknown')->toggleable(isToggledHiddenByDefault:false),
-                Tables\Columns\TextColumn::make('msisdn')->label('Phone Number')->sortable()->searchable()->toggleable(isToggledHiddenByDefault:true),
-                // Tables\Columns\TextColumn::make('inbox.message')->label('Message Sent')->sortable()->searchable()->toggleable(isToggledHiddenByDefault:false),
-                Tables\Columns\TextColumn::make('question.question')->label('Question')->sortable()->searchable()->toggleable(isToggledHiddenByDefault:true),
-                Tables\Columns\TextColumn::make('survey_response')->label('Response')->limit(50)->sortable(),
-                Tables\Columns\TextColumn::make('created_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault:true),
-                Tables\Columns\TextColumn::make('updated_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault:true),
+                Tables\Columns\TextColumn::make('member.name')
+                    ->label('Participant')
+                    ->sortable()
+                    ->searchable()
+                    ->placeholder('Unknown')
+                    ->toggleable(isToggledHiddenByDefault: false),
 
+                Tables\Columns\TextColumn::make('msisdn')
+                    ->label('Phone Number')
+                    ->sortable()
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('question.question')
+                    ->label('Question')
+                    ->sortable()
+                    ->searchable()
+                    ->wrap()
+                    ->limit(60)
+                    ->toggleable(isToggledHiddenByDefault: false),
+
+                Tables\Columns\TextColumn::make('survey_response')
+                    ->label('Response')
+                    ->limit(50)
+                    ->wrap()
+                    ->sortable()
+                    ->badge()
+                    ->color('primary'),
+
+                Tables\Columns\TextColumn::make('created_at')
+                    ->label('Responded At')
+                    ->dateTime('M d, Y H:i')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: false),
             ])
             ->filters([
-                //
+                SelectFilter::make('survey_id')
+                    ->label('Survey')
+                    ->relationship('survey', 'title')
+                    ->searchable()
+                    ->preload(),
+
+                SelectFilter::make('question_id')
+                    ->label('Question')
+                    ->relationship('question', 'question')
+                    ->searchable()
+                    ->preload(),
+
+                Filter::make('created_at')
+                    ->form([
+                        Forms\Components\DatePicker::make('created_from')
+                            ->label('From date'),
+                        Forms\Components\DatePicker::make('created_until')
+                            ->label('Until date'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when($data['created_from'], fn (Builder $q, $date) => $q->whereDate('created_at', '>=', $date))
+                            ->when($data['created_until'], fn (Builder $q, $date) => $q->whereDate('created_at', '<=', $date));
+                    }),
             ])
             ->actions([
-                // Tables\Actions\EditAction::make(),
-                Tables\Actions\ViewAction::make(),
+                Tables\Actions\ViewAction::make()
+                    ->infolist(fn (Infolist $infolist): Infolist => static::infolist($infolist))
+                    ->modalHeading(fn ($record): string => "Response from {$record->msisdn}"),
+
+                Tables\Actions\Action::make('view_participant_responses')
+                    ->label('View all responses')
+                    ->icon('heroicon-o-user-circle')
+                    ->color('info')
+                    ->modalHeading(fn ($record): string => "All survey responses from {$record->msisdn}")
+                    ->modalContent(fn ($record) => view('filament.resources.survey-response-resource.participant-responses', [
+                        'responses' => SurveyResponse::where('msisdn', $record->msisdn)
+                            ->with(['survey', 'question', 'member'])
+                            ->orderBy('survey_id')
+                            ->orderBy('created_at')
+                            ->get(),
+                        'msisdn' => $record->msisdn,
+                    ]))
+                    ->modalSubmitActionLabel('Close')
+                    ->modalCancelAction(false)
+                    ->extraModalWindowAttributes(['class' => 'fi-modal-2xl']),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
 
-                    // Use string keys for columns
                     ExportBulkAction::make()
                         ->exports([
-                            ExcelExport::make()
-                                ->fromTable()
-                            
+                            ExcelExport::make()->fromTable(),
                         ])
-                    ->label('Export to Excel'),
+                        ->label('Export to Excel'),
                 ]),
-            ]);
+            ])
+            ->defaultSort('created_at', 'desc');
     }
 
     public static function getRelations(): array
@@ -123,8 +219,6 @@ class SurveyResponseResource extends Resource
     {
         return [
             'index' => Pages\ListSurveyResponses::route('/'),
-            // 'create' => Pages\CreateSurveyResponse::route('/create'),
-            // 'edit' => Pages\EditSurveyResponse::route('/{record}/edit'),
         ];
     }
 }

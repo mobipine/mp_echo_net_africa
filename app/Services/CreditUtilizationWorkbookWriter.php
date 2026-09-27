@@ -38,24 +38,30 @@ class CreditUtilizationWorkbookWriter
 
         try {
             $sheets = $this->createSheets($writer);
+
+            $surveyId = $scope['survey']?->id;
+            $groupId = $scope['group']?->id;
+            $isConsolidated = $scope['is_consolidated'] ?? false;
+
             $analysis = $this->surveyReports->streamMemberResponses(
-                (int) $scope['survey']->id,
-                (int) $scope['group']->id,
+                $surveyId,
+                $groupId,
                 $scope['questions'],
             );
             $memberRows = $this->writeMemberResponses(
                 $writer,
                 $sheets['members'],
-                (int) $scope['survey']->id,
-                (int) $scope['group']->id,
+                $surveyId,
+                $groupId,
                 $scope['response_questions'],
+                $isConsolidated,
             );
 
             $creditSummary = $this->creditReports->summary($scope['credit_filters']);
 
             $this->writeOverview($writer, $sheets['overview'], $scope, $analysis['stats'], $creditSummary, $requestedBy);
             $this->writeParticipationFunnel($writer, $sheets['funnel'], $analysis['stats']);
-            $this->writeQuestionPerformance($writer, $sheets['questions'], $analysis);
+            $this->writeQuestionPerformance($writer, $sheets['questions'], $analysis, $isConsolidated);
         } finally {
             $writer->close();
         }
@@ -83,9 +89,10 @@ class CreditUtilizationWorkbookWriter
     private function writeMemberResponses(
         Writer $writer,
         Sheet $sheet,
-        int $surveyId,
-        int $groupId,
+        ?int $surveyId,
+        ?int $groupId,
         Collection $questions,
+        bool $isConsolidated = false,
     ): int {
         $writer->setCurrentSheet($sheet);
         $headings = [
@@ -97,8 +104,13 @@ class CreditUtilizationWorkbookWriter
             'Date of Birth',
             'Marital Status',
             'County Name',
-            ...$questions->pluck('question')->all(),
         ];
+
+        if ($isConsolidated) {
+            $headings[] = 'Survey';
+        }
+
+        $headings = array_merge($headings, $questions->pluck('question')->all());
         $sheet->setSheetView((new SheetView)->setFreezeRow(2));
         $writer->addRow(Row::fromValues($headings, $this->legacyHeaderStyle())->setHeight(20));
 
@@ -149,11 +161,18 @@ class CreditUtilizationWorkbookWriter
 
         $memberTotal = $participation['group_members'];
         $dispatched = $participation['dispatched'];
+        $isConsolidated = $scope['is_consolidated'] ?? false;
+
+        $surveyLabel = $scope['survey']?->title ?? 'All active surveys';
+        $groupLabel = $scope['group']?->name ?? 'All groups';
+
         $rows = [
             ['ECHO NET AFRICA | COMPREHENSIVE SURVEY REPORT'],
-            ['Participation, responses, drop-offs, and SMS credit utilization in one audit-ready workbook'],
-            ['Survey', $scope['survey']->title, null, null, 'Survey ID: '.$scope['survey']->id],
-            ['Group', $scope['group']->name, null, null, 'Group ID: '.$scope['group']->id],
+            [$isConsolidated
+                ? 'Consolidated report covering all active surveys and all groups'
+                : 'Participation, responses, drop-offs, and SMS credit utilization in one audit-ready workbook'],
+            ['Survey', $surveyLabel, null, null, $scope['survey'] ? 'Survey ID: '.$scope['survey']->id : 'Consolidated'],
+            ['Group', $groupLabel, null, null, $scope['group'] ? 'Group ID: '.$scope['group']->id : 'All groups'],
             ['Requested by', $requestedBy],
             ['Generated at', now()->format('Y-m-d H:i:s T')],
             [],
@@ -231,46 +250,58 @@ class CreditUtilizationWorkbookWriter
         );
     }
 
-    private function writeQuestionPerformance(Writer $writer, Sheet $sheet, array $analysis): void
+    private function writeQuestionPerformance(Writer $writer, Sheet $sheet, array $analysis, bool $isConsolidated = false): void
     {
         $memberTotal = $analysis['stats']['group_members'];
-        $rows = [[
-            'Position',
-            'Question',
-            'Respondents',
-            'Response rate (% group)',
-            'Active at question',
-            'Current drop-offs',
-            'Most common answer',
-            'Answer count',
-            'First response',
-            'Last response',
-        ]];
+
+        $headerRow = $isConsolidated
+            ? ['Survey', 'Position', 'Question', 'Respondents', 'Response rate (% group)', 'Active at question', 'Current drop-offs', 'Most common answer', 'Answer count', 'First response', 'Last response']
+            : ['Position', 'Question', 'Respondents', 'Response rate (% group)', 'Active at question', 'Current drop-offs', 'Most common answer', 'Answer count', 'First response', 'Last response'];
+
+        $rows = [$headerRow];
 
         foreach ($analysis['questions'] as $question) {
             $answerCounts = collect($question['answer_counts'])->sortDesc();
-            $rows[] = [
-                $question['position'],
-                $question['question'],
-                $question['respondents'],
-                $this->ratio($question['respondents'], $memberTotal),
-                $question['active_at_question'],
-                $question['drop_offs'],
-                $answerCounts->keys()->first(),
-                $answerCounts->first() ?? 0,
-                $question['first_response_at'],
-                $question['last_response_at'],
-            ];
+            $row = $isConsolidated
+                ? [
+                    $question['survey_title'] ?? '',
+                    $question['position'],
+                    $question['question'],
+                    $question['respondents'],
+                    $this->ratio($question['respondents'], $memberTotal),
+                    $question['active_at_question'],
+                    $question['drop_offs'],
+                    $answerCounts->keys()->first(),
+                    $answerCounts->first() ?? 0,
+                    $question['first_response_at'],
+                    $question['last_response_at'],
+                ]
+                : [
+                    $question['position'],
+                    $question['question'],
+                    $question['respondents'],
+                    $this->ratio($question['respondents'], $memberTotal),
+                    $question['active_at_question'],
+                    $question['drop_offs'],
+                    $answerCounts->keys()->first(),
+                    $answerCounts->first() ?? 0,
+                    $question['first_response_at'],
+                    $question['last_response_at'],
+                ];
+            $rows[] = $row;
         }
 
-        $this->writeTabularSheet(
-            $writer,
-            $sheet,
-            $rows,
-            [12, 58, 16, 17, 20, 20, 34, 16, 21, 21],
-            [0 => '0', 2 => '#,##0', 3 => '0.0%', 4 => '#,##0', 5 => '#,##0', 7 => '#,##0'],
-            [1, 6]
-        );
+        $widths = $isConsolidated
+            ? [24, 12, 58, 16, 17, 20, 20, 34, 16, 21, 21]
+            : [12, 58, 16, 17, 20, 20, 34, 16, 21, 21];
+
+        $formats = $isConsolidated
+            ? [1 => '0', 3 => '#,##0', 4 => '0.0%', 5 => '#,##0', 6 => '#,##0', 8 => '#,##0']
+            : [0 => '0', 2 => '#,##0', 3 => '0.0%', 4 => '#,##0', 5 => '#,##0', 7 => '#,##0'];
+
+        $wrapColumns = $isConsolidated ? [2, 7] : [1, 6];
+
+        $this->writeTabularSheet($writer, $sheet, $rows, $widths, $formats, $wrapColumns);
     }
 
     private function writeTabularSheet(

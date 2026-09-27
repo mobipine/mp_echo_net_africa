@@ -113,6 +113,18 @@ class SurveyReports extends Page
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('generate_consolidated_report')
+                ->label('Download consolidated report')
+                ->icon('heroicon-o-document-chart-bar')
+                ->color('info')
+                ->visible(fn (): bool => ! filled($this->filters['survey_id'] ?? null)
+                    || ! filled($this->filters['group_id'] ?? null))
+                ->requiresConfirmation()
+                ->modalHeading('Generate consolidated survey workbook')
+                ->modalDescription('This queues a single Excel workbook covering ALL active surveys and ALL groups. The M&E team can filter by survey within the workbook. This may take several minutes to generate.')
+                ->modalSubmitActionLabel('Queue consolidated workbook')
+                ->action(fn () => $this->queueComprehensiveReport(consolidated: true)),
+
             Action::make('generate_comprehensive_report')
                 ->label('Download comprehensive report')
                 ->icon('heroicon-o-document-arrow-down')
@@ -319,7 +331,7 @@ class SurveyReports extends Page
         return number_format($export->row_count).' '.$unit;
     }
 
-    private function queueComprehensiveReport(): void
+    private function queueComprehensiveReport(bool $consolidated = false): void
     {
         $userId = auth()->id();
         abort_unless($userId, 403);
@@ -330,13 +342,23 @@ class SurveyReports extends Page
                 'group_ids' => [$this->filters['group_id'] ?? null],
             ]);
             $uuid = (string) Str::uuid();
-            $fileName = collect([
-                'echo_net_africa',
-                Str::slug($scope['survey']->title, '_'),
-                Str::slug($scope['group']->name, '_'),
-                'comprehensive_survey_report',
-                now()->format('Y_m_d_His'),
-            ])->filter()->implode('_').'.xlsx';
+
+            if ($consolidated || ($scope['survey'] === null || $scope['group'] === null)) {
+                $fileName = collect([
+                    'echo_net_africa',
+                    'all_surveys',
+                    'consolidated_survey_report',
+                    now()->format('Y_m_d_His'),
+                ])->implode('_').'.xlsx';
+            } else {
+                $fileName = collect([
+                    'echo_net_africa',
+                    Str::slug($scope['survey']->title, '_'),
+                    Str::slug($scope['group']->name, '_'),
+                    'comprehensive_survey_report',
+                    now()->format('Y_m_d_His'),
+                ])->filter()->implode('_').'.xlsx';
+            }
 
             $report = CreditReportExport::query()->create([
                 'uuid' => $uuid,
@@ -351,7 +373,7 @@ class SurveyReports extends Page
             GenerateCreditUtilizationReportJob::dispatch($report->id)->afterCommit();
 
             Notification::make()
-                ->title('Comprehensive survey report queued')
+                ->title($consolidated ? 'Consolidated survey report queued' : 'Comprehensive survey report queued')
                 ->body('The workbook is being generated in the background. A notification will appear when it is ready.')
                 ->success()
                 ->send();

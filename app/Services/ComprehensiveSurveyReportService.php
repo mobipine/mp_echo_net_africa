@@ -11,7 +11,6 @@ use App\Support\SurveyProgressState;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 
 class ComprehensiveSurveyReportService
 {
@@ -24,42 +23,50 @@ class ComprehensiveSurveyReportService
         $surveyId = (int) collect($filters['survey_ids'] ?? [])->first();
         $groupId = (int) collect($filters['group_ids'] ?? [])->first();
 
-        if ($surveyId < 1 || $groupId < 1) {
-            throw new RuntimeException('A survey and group are required for a comprehensive survey report.');
-        }
+        $survey = $surveyId > 0 ? Survey::query()->findOrFail($surveyId) : null;
+        $group = $groupId > 0 ? Group::query()->findOrFail($groupId) : null;
 
-        $survey = Survey::query()->findOrFail($surveyId);
-        $group = Group::query()->findOrFail($groupId);
+        $surveys = $survey ? collect([$survey]) : Survey::query()->where('status', 'Active')->orderBy('title')->get();
+
+        $questions = $surveys->flatMap(fn (Survey $s) => $this->canonicalQuestions($s)->map(fn (array $q): array => array_merge($q, ['survey_id' => $s->id, 'survey_title' => $s->title])))->values();
+        $responseQuestions = $surveys->flatMap(fn (Survey $s) => $this->legacyResponseQuestions($s)->map(fn (array $q): array => array_merge($q, ['survey_id' => $s->id, 'survey_title' => $s->title])))->values();
+
+        $creditFilters = $this->creditReports->normalizeFilters([
+            'survey_ids' => $surveyId > 0 ? [$surveyId] : $surveys->pluck('id')->all(),
+            'group_ids' => $groupId > 0 ? [$groupId] : null,
+            'directions' => ['subtract'],
+            'transaction_types' => ['sms_sent', 'sms_received'],
+            'channels' => ['sms'],
+            'message_scope' => 'all',
+        ]);
 
         return [
             'survey' => $survey,
             'group' => $group,
-            'questions' => $this->canonicalQuestions($survey),
-            'response_questions' => $this->legacyResponseQuestions($survey),
-            'credit_filters' => $this->creditReports->normalizeFilters([
-                'survey_ids' => [$survey->id],
-                'group_ids' => [$group->id],
-                'directions' => ['subtract'],
-                'transaction_types' => ['sms_sent', 'sms_received'],
-                'channels' => ['sms'],
-                'message_scope' => 'all',
-            ]),
+            'surveys' => $surveys,
+            'questions' => $questions,
+            'response_questions' => $responseQuestions,
+            'credit_filters' => $creditFilters,
+            'is_consolidated' => $survey === null,
         ];
     }
 
-    public function memberQuery(int $groupId): Builder
+    public function memberQuery(?int $groupId = null): Builder
     {
         return Member::query()
-            ->where(function (Builder $query) use ($groupId) {
+            ->when($groupId, function (Builder $query, int $groupId) {
                 $query
-                    ->where('group_id', $groupId)
-                    ->orWhereHas('groups', fn (Builder $query) => $query->where('groups.id', $groupId));
+                    ->where(function (Builder $query) use ($groupId) {
+                        $query
+                            ->where('group_id', $groupId)
+                            ->orWhereHas('groups', fn (Builder $query) => $query->where('groups.id', $groupId));
+                    });
             });
     }
 
     public function streamLegacyMemberResponses(
-        int $surveyId,
-        int $groupId,
+        ?int $surveyId,
+        ?int $groupId,
         Collection $questions,
         callable $writeRow
     ): int {
@@ -73,11 +80,13 @@ class ComprehensiveSurveyReportService
             ->values();
 
         SurveyProgress::query()
-            ->where('survey_id', $surveyId)
-            ->whereHas('member', function (Builder $memberQuery) use ($groupId) {
-                $memberQuery
-                    ->where('group_id', $groupId)
-                    ->orWhereHas('groups', fn (Builder $groupQuery) => $groupQuery->where('groups.id', $groupId));
+            ->when($surveyId, fn ($q) => $q->where('survey_id', $surveyId))
+            ->when($groupId, function ($q) use ($groupId) {
+                $q->whereHas('member', function (Builder $memberQuery) use ($groupId) {
+                    $memberQuery
+                        ->where('group_id', $groupId)
+                        ->orWhereHas('groups', fn (Builder $groupQuery) => $groupQuery->where('groups.id', $groupId));
+                });
             })
             ->with('member.county')
             ->chunkById(250, function (Collection $progresses) use (
@@ -162,8 +171,8 @@ class ComprehensiveSurveyReportService
     }
 
     public function streamMemberResponses(
-        int $surveyId,
-        int $groupId,
+        ?int $surveyId,
+        ?int $groupId,
         Collection $questions,
         ?callable $writeRow = null
     ): array {
@@ -212,7 +221,7 @@ class ComprehensiveSurveyReportService
             ) {
                 $memberIds = $members->pluck('id');
                 $progresses = SurveyProgress::query()
-                    ->where('survey_id', $surveyId)
+                    ->when($surveyId, fn ($q) => $q->where('survey_id', $surveyId))
                     ->whereIn('member_id', $memberIds)
                     ->orderByDesc('id')
                     ->get()
@@ -227,7 +236,7 @@ class ComprehensiveSurveyReportService
                     ->values();
 
                 $responsesByPhone = SurveyResponse::query()
-                    ->where('survey_id', $surveyId)
+                    ->when($surveyId, fn ($q) => $q->where('survey_id', $surveyId))
                     ->whereIn('msisdn', $phoneVariants)
                     ->whereIn('question_id', array_keys($questionByResponseId))
                     ->orderBy('id')
