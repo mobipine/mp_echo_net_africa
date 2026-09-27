@@ -192,7 +192,7 @@ class SurveyResponseResource extends Resource
                     ]))
                     ->modalSubmitActionLabel('Close')
                     ->modalCancelAction(false)
-                    ->extraModalWindowAttributes(['class' => 'fi-modal-2xl']),
+                    ->modalWidth('2xl'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
