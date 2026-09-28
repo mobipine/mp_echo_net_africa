@@ -337,7 +337,7 @@ class SurveyReports extends Page
         abort_unless($userId, 403);
 
         try {
-            $scope = app(ComprehensiveSurveyReportService::class)->scope([
+            $scope = app(ComprehensiveSurveyReportService::class)->scope($consolidated ? [] : [
                 'survey_ids' => [$this->filters['survey_id'] ?? null],
                 'group_ids' => [$this->filters['group_id'] ?? null],
             ]);
@@ -360,11 +360,16 @@ class SurveyReports extends Page
                 ])->filter()->implode('_').'.xlsx';
             }
 
+            $reportFilters = $scope['credit_filters'];
+            if ($consolidated) {
+                $reportFilters['report_mode'] = 'consolidated';
+            }
+
             $report = CreditReportExport::query()->create([
                 'uuid' => $uuid,
                 'user_id' => $userId,
                 'status' => CreditReportExport::STATUS_QUEUED,
-                'filters' => $scope['credit_filters'],
+                'filters' => $reportFilters,
                 'disk' => 'local',
                 'file_path' => "private/credit-reports/{$userId}/{$uuid}.xlsx",
                 'file_name' => $fileName,

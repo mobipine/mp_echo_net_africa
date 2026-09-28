@@ -20,8 +20,9 @@ class ComprehensiveSurveyReportService
 
     public function scope(array $filters): array
     {
-        $surveyId = (int) collect($filters['survey_ids'] ?? [])->first();
-        $groupId = (int) collect($filters['group_ids'] ?? [])->first();
+        $isConsolidated = ($filters['report_mode'] ?? null) === 'consolidated';
+        $surveyId = $isConsolidated ? 0 : (int) collect($filters['survey_ids'] ?? [])->first();
+        $groupId = $isConsolidated ? 0 : (int) collect($filters['group_ids'] ?? [])->first();
 
         $survey = $surveyId > 0 ? Survey::query()->findOrFail($surveyId) : null;
         $group = $groupId > 0 ? Group::query()->findOrFail($groupId) : null;
@@ -47,7 +48,7 @@ class ComprehensiveSurveyReportService
             'questions' => $questions,
             'response_questions' => $responseQuestions,
             'credit_filters' => $creditFilters,
-            'is_consolidated' => $survey === null,
+            'is_consolidated' => $isConsolidated || $survey === null,
         ];
     }
 
@@ -68,7 +69,8 @@ class ComprehensiveSurveyReportService
         ?int $surveyId,
         ?int $groupId,
         Collection $questions,
-        callable $writeRow
+        callable $writeRow,
+        bool $isConsolidated = false
     ): int {
         $writtenRows = 0;
         $questionIds = $questions
@@ -94,6 +96,7 @@ class ComprehensiveSurveyReportService
                 $questions,
                 $questionIds,
                 $writeRow,
+                $isConsolidated,
                 &$writtenRows
             ): void {
                 $phoneVariants = $progresses
@@ -151,7 +154,16 @@ class ComprehensiveSurveyReportService
                         $member->county?->name ?? 'N/A',
                     ];
 
+                    if ($isConsolidated) {
+                        $values[] = $questions->firstWhere('survey_id', $progress->survey_id)['survey_title'] ?? 'N/A';
+                    }
+
                     foreach ($questions as $question) {
+                        if ($isConsolidated && (int) $question['survey_id'] !== (int) $progress->survey_id) {
+                            $values[] = 'N/A';
+                            continue;
+                        }
+
                         $englishResponse = $memberResponses->get($question['id']);
                         $swahiliResponse = $question['swahili_question_id']
                             ? $memberResponses->get($question['swahili_question_id'])
@@ -370,8 +382,15 @@ class ComprehensiveSurveyReportService
 
     private function legacyResponseQuestions(Survey $survey): Collection
     {
-        return $survey->questions()
-            ->get()
+        $questions = $survey->questions()->get();
+        $alternateIds = $questions
+            ->filter(fn ($question) => $question->swahili_question_id && $question->swahili_question_id !== $question->id)
+            ->pluck('swahili_question_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique();
+
+        return $questions
+            ->reject(fn ($question) => $alternateIds->contains((int) $question->id))
             ->map(fn ($question): array => [
                 'id' => (int) $question->id,
                 'question' => $question->question,

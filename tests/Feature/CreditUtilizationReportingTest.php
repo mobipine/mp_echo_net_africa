@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Pages\CreditReports;
 use App\Filament\Pages\SmsResponseReports;
+use App\Filament\Pages\SurveyReports;
 use App\Filament\Widgets\CreditStatsWidget;
 use App\Jobs\GenerateCreditUtilizationReportJob;
 use App\Models\County;
@@ -91,6 +92,45 @@ class CreditUtilizationReportingTest extends TestCase
         $this->assertSame(2, app(CreditUtilizationReportService::class)->query($scope['credit_filters'])->count());
         $this->assertCount(2, $scope['questions']);
         $this->assertCount(2, $scope['response_questions']);
+    }
+
+    public function test_consolidated_mode_survives_serialized_credit_filters_and_generates_member_rows(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+        $data = $this->createReportingScenario();
+        $service = app(ComprehensiveSurveyReportService::class);
+
+        $scope = $service->scope([
+            'report_mode' => 'consolidated',
+            'survey_ids' => [$data['survey']->id],
+            'group_ids' => [$data['group']->id],
+        ]);
+
+        $this->assertTrue($scope['is_consolidated']);
+        $this->assertNull($scope['survey']);
+        $this->assertNull($scope['group']);
+
+        Livewire::actingAs($data['user'])
+            ->test(SurveyReports::class)
+            ->callAction('generate_consolidated_report')
+            ->assertHasNoActionErrors();
+
+        $report = CreditReportExport::query()->sole();
+        $this->assertSame('consolidated', $report->filters['report_mode']);
+        Queue::assertPushed(GenerateCreditUtilizationReportJob::class);
+
+        (new GenerateCreditUtilizationReportJob($report->id))
+            ->handle(app(CreditUtilizationWorkbookWriter::class));
+
+        $report->refresh();
+        $this->assertSame(CreditReportExport::STATUS_COMPLETED, $report->status);
+        $this->assertGreaterThan(0, $report->row_count);
+
+        $workbook = IOFactory::load(Storage::disk('local')->path($report->file_path));
+        $members = $workbook->getSheetByName('Member Responses');
+        $this->assertSame('Survey', (string) $members->getCell('I1')->getValue());
+        $this->assertSame('Household Finance Survey', (string) $members->getCell('I2')->getValue());
     }
 
     public function test_queued_job_generates_the_private_comprehensive_survey_workbook(): void
@@ -312,7 +352,7 @@ class CreditUtilizationReportingTest extends TestCase
         ]);
         $questionTwo = SurveyQuestion::query()->create([
             'question' => 'How much did you save?',
-            'answer_data_type' => 'Numeric',
+            'answer_data_type' => 'Strictly Number',
         ]);
         $questionOneSwahili = SurveyQuestion::query()->create([
             'question' => 'Je, uliweka akiba mwezi huu?',
