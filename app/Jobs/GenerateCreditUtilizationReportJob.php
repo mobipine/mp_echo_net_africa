@@ -84,9 +84,12 @@ class GenerateCreditUtilizationReportJob implements ShouldBeUnique, ShouldQueue
 
             if ($report->user) {
                 try {
+                    $isConsolidated = ($report->filters['report_mode'] ?? null) === 'consolidated';
                     Notification::make()
-                        ->title('Comprehensive survey report ready')
-                        ->body('Your survey responses, participation, drop-off, and credit workbook is ready to download.')
+                        ->title($isConsolidated ? 'Consolidated survey report ready' : 'Survey report ready')
+                        ->body($isConsolidated
+                            ? 'Your workbook covering all active surveys and all groups is ready to download.'
+                            : 'Your survey participation, responses, and credit workbook is ready to download.')
                         ->success()
                         ->actions([
                             Action::make('download')

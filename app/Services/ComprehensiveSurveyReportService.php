@@ -27,7 +27,12 @@ class ComprehensiveSurveyReportService
         $survey = $surveyId > 0 ? Survey::query()->findOrFail($surveyId) : null;
         $group = $groupId > 0 ? Group::query()->findOrFail($groupId) : null;
 
-        $surveys = $survey ? collect([$survey]) : Survey::query()->where('status', 'Active')->orderBy('title')->get();
+        $surveys = $survey
+            ? collect([$survey])
+            : Survey::query()
+                ->where('status', 'Active')
+                ->orderBy('title')
+                ->get();
 
         $questions = $surveys->flatMap(fn (Survey $s) => $this->canonicalQuestions($s)->map(fn (array $q): array => array_merge($q, ['survey_id' => $s->id, 'survey_title' => $s->title])))->values();
         $responseQuestions = $surveys->flatMap(fn (Survey $s) => $this->legacyResponseQuestions($s)->map(fn (array $q): array => array_merge($q, ['survey_id' => $s->id, 'survey_title' => $s->title])))->values();

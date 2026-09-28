@@ -11,6 +11,7 @@ use App\Models\County;
 use App\Models\CreditReportExport;
 use App\Models\CreditTransaction;
 use App\Models\Group;
+use App\Models\GroupSurvey;
 use App\Models\Member;
 use App\Models\SMSInbox;
 use App\Models\Survey;
@@ -100,6 +101,70 @@ class CreditUtilizationReportingTest extends TestCase
         Queue::fake();
         $data = $this->createReportingScenario();
         $service = app(ComprehensiveSurveyReportService::class);
+        $batchUuid = fake()->uuid();
+        SurveyResponse::query()->create([
+            'survey_id' => $data['survey']->id,
+            'msisdn' => '+254700000001',
+            'question_id' => $data['questionTwo']->id,
+            'survey_response' => '750',
+            'session_id' => null,
+        ]);
+
+        SurveyProgress::query()
+            ->where('survey_id', $data['survey']->id)
+            ->update(['dispatch_batch_uuid' => $batchUuid]);
+        GroupSurvey::query()->create([
+            'group_id' => $data['group']->id,
+            'survey_id' => $data['survey']->id,
+            'automated' => false,
+            'was_dispatched' => true,
+            'queued_count' => 4,
+            'skipped_count' => 1,
+            'dispatch_batch_uuid' => $batchUuid,
+            'dispatched_at' => '2026-08-01 09:00:00',
+        ]);
+
+        $secondGroup = Group::withoutEvents(fn () => Group::query()->create(['name' => 'Kibera Group']));
+        Group::withoutEvents(fn () => Group::query()->create(['name' => 'Makueni Group']));
+        Member::query()->create([
+            'group_id' => $secondGroup->id,
+            'name' => 'Duplicate Jane',
+            'phone' => '+254700000001',
+            'county_id' => $data['county']->id,
+        ]);
+        SurveyResponse::query()->create([
+            'survey_id' => $data['survey']->id,
+            'msisdn' => '+254700000002',
+            'question_id' => $data['questionTwo']->id,
+            'survey_response' => '625',
+            'session_id' => null,
+        ]);
+        $secondActiveSurvey = Survey::query()->create([
+            'title' => 'Business Skills Survey',
+            'trigger_word' => 'SKILLS',
+            'status' => 'Active',
+        ]);
+        GroupSurvey::query()->create([
+            'group_id' => $secondGroup->id,
+            'survey_id' => $secondActiveSurvey->id,
+            'automated' => false,
+            'was_dispatched' => false,
+            'queued_count' => 0,
+            'skipped_count' => 0,
+        ]);
+        $inactiveSurvey = Survey::query()->create([
+            'title' => 'Archived Training Survey',
+            'trigger_word' => 'TRAIN',
+            'status' => 'Inactive',
+        ]);
+        GroupSurvey::query()->create([
+            'group_id' => $secondGroup->id,
+            'survey_id' => $inactiveSurvey->id,
+            'automated' => false,
+            'was_dispatched' => false,
+            'queued_count' => 0,
+            'skipped_count' => 0,
+        ]);
 
         $scope = $service->scope([
             'report_mode' => 'consolidated',
@@ -110,6 +175,7 @@ class CreditUtilizationReportingTest extends TestCase
         $this->assertTrue($scope['is_consolidated']);
         $this->assertNull($scope['survey']);
         $this->assertNull($scope['group']);
+        $this->assertSame(['Business Skills Survey', 'Household Finance Survey'], $scope['surveys']->pluck('title')->all());
 
         Livewire::actingAs($data['user'])
             ->test(SurveyReports::class)
@@ -125,12 +191,98 @@ class CreditUtilizationReportingTest extends TestCase
 
         $report->refresh();
         $this->assertSame(CreditReportExport::STATUS_COMPLETED, $report->status);
-        $this->assertGreaterThan(0, $report->row_count);
+        $this->assertSame(7, $report->row_count);
+        $this->assertSame(number_format($report->row_count).' responses', Livewire::actingAs($data['user'])
+            ->test(SurveyReports::class)
+            ->instance()
+            ->exportRowLabel($report));
 
         $workbook = IOFactory::load(Storage::disk('local')->path($report->file_path));
+        $this->assertSame([
+            'Read Me & Scope',
+            'Executive Summary',
+            'Survey Summary',
+            'Group x Survey',
+            'Group Coverage',
+            'Question Performance',
+            'Participant Survey Summary',
+            'Participant Responses',
+        ], $workbook->getSheetNames());
+
+        $surveySummary = $workbook->getSheetByName('Survey Summary');
+        $surveySummaryRows = collect($surveySummary->toArray(null, true, true, false));
+        $surveyTitles = $surveySummaryRows->pluck(0)->all();
+        $this->assertContains('Household Finance Survey', $surveyTitles);
+        $this->assertContains('Business Skills Survey', $surveyTitles);
+        $this->assertNotContains('Archived Training Survey', $surveyTitles);
+        $financeSummary = $surveySummaryRows->first(fn (array $row): bool => ($row[0] ?? null) === 'Household Finance Survey');
+        $this->assertSame('4', (string) $financeSummary[5]);
+        $this->assertSame('4', (string) $financeSummary[6]);
+        $this->assertSame('3', (string) $financeSummary[7]);
+        $this->assertSame('75.0%', (string) $financeSummary[12]);
+        $this->assertSame('7', (string) $financeSummary[14]);
+        $this->assertSame('3', (string) $financeSummary[15]);
+        $this->assertSame('3', (string) $financeSummary[16]);
+        $this->assertSame('2', (string) $financeSummary[19]);
+
+        $groupSurvey = $workbook->getSheetByName('Group x Survey');
+        $groupSurveyRows = collect($groupSurvey->toArray(null, true, true, false));
+        $this->assertTrue($groupSurveyRows->contains(fn (array $row): bool => in_array('Umoja Group', $row, true)
+            && in_array('Household Finance Survey', $row, true)));
+        $zeroActivityPair = $groupSurveyRows->first(fn (array $row): bool => ($row[0] ?? null) === 'Kibera Group'
+            && ($row[2] ?? null) === 'Business Skills Survey');
+        $this->assertNotNull($zeroActivityPair);
+        $this->assertSame('0', (string) $zeroActivityPair[6]);
+        $this->assertSame('0', (string) $zeroActivityPair[8]);
+        $activePair = $groupSurveyRows->first(fn (array $row): bool => ($row[0] ?? null) === 'Umoja Group'
+            && ($row[2] ?? null) === 'Household Finance Survey');
+        $this->assertSame('4', (string) $activePair[8]);
+        $this->assertSame('3', (string) $activePair[9]);
+        $this->assertSame('1', (string) $activePair[10]);
+        $this->assertSame('1', (string) $activePair[11]);
+        $this->assertSame('1', (string) $activePair[12]);
+        $this->assertSame('1', (string) $activePair[13]);
+        $this->assertSame('5', (string) $activePair[14]);
+        $this->assertSame('75.0%', (string) $activePair[15]);
+        $this->assertSame('3', (string) $activePair[17]);
+        $unattributedPair = $groupSurveyRows->first(fn (array $row): bool => ($row[0] ?? null) === 'Unattributed / legacy'
+            && ($row[2] ?? null) === 'Household Finance Survey');
+        $this->assertSame('2', (string) $unattributedPair[14]);
+
+        $groupCoverage = collect($workbook->getSheetByName('Group Coverage')->toArray(null, true, true, false));
+        $this->assertTrue($groupCoverage->contains(fn (array $row): bool => ($row[0] ?? null) === 'Kibera Group'
+            && ($row[6] ?? null) === 'Configured; no linked progress'));
+        $this->assertTrue($groupCoverage->contains(fn (array $row): bool => ($row[0] ?? null) === 'Makueni Group'
+            && ($row[6] ?? null) === 'No active survey configured'));
+        $umojaCoverage = $groupCoverage->first(fn (array $row): bool => ($row[0] ?? null) === 'Umoja Group');
+        $this->assertSame('5', (string) $umojaCoverage[2]);
+
         $members = $workbook->getSheetByName('Member Responses');
-        $this->assertSame('Survey', (string) $members->getCell('I1')->getValue());
-        $this->assertSame('Household Finance Survey', (string) $members->getCell('I2')->getValue());
+        $this->assertNull($members);
+
+        $responses = $workbook->getSheetByName('Participant Responses');
+        $responseRows = collect($responses->toArray(null, true, true, false));
+        $this->assertTrue($responseRows->contains(fn (array $row): bool => in_array('Jane Member', $row, true)
+            && in_array('Did you save this month?', $row, true)
+            && in_array('Yes', $row, true)
+            && in_array('Umoja Group', $row, true)));
+        $ambiguousLegacyResponse = $responseRows->first(fn (array $row): bool => ($row[7] ?? null) === 'Ambiguous phone match'
+            && ($row[11] ?? null) === '750');
+        $this->assertNotNull($ambiguousLegacyResponse);
+        $this->assertTrue($responseRows->contains(fn (array $row): bool => ($row[7] ?? null) === 'John Active'
+            && ($row[11] ?? null) === '625'));
+        $this->assertSame('A1:O8', $responses->getAutoFilter()->getRange());
+        $this->assertSame('A2', $responses->getFreezePane());
+        $participantSummary = $workbook->getSheetByName('Participant Survey Summary');
+        $this->assertSame(5, $participantSummary->getHighestRow());
+        $this->assertSame('A1:O5', $participantSummary->getAutoFilter()->getRange());
+
+        $questionPerformance = collect($workbook->getSheetByName('Question Performance')->toArray(null, true, true, false));
+        $savingsQuestion = $questionPerformance->first(fn (array $row): bool => ($row[3] ?? null) === 'Did you save this month?');
+        $this->assertSame('4', (string) $savingsQuestion[4]);
+        $this->assertSame('4', (string) $savingsQuestion[6]);
+        $this->assertSame('75.0%', (string) $savingsQuestion[7]);
+        $this->assertStringContainsString('Yes (2)', (string) $savingsQuestion[8]);
     }
 
     public function test_queued_job_generates_the_private_comprehensive_survey_workbook(): void

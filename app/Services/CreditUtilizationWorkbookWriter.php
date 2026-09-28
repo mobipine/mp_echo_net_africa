@@ -21,11 +21,17 @@ class CreditUtilizationWorkbookWriter
     public function __construct(
         private readonly CreditUtilizationReportService $creditReports,
         private readonly ComprehensiveSurveyReportService $surveyReports,
+        private readonly ConsolidatedSurveyReportDataService $consolidatedData,
     ) {}
 
     public function write(array $filters, string $requestedBy, string $outputPath): int
     {
         $scope = $this->surveyReports->scope($filters);
+
+        if ($scope['is_consolidated']) {
+            return $this->writeConsolidated($scope, $requestedBy, $outputPath);
+        }
+
         $options = new Options;
 
         foreach ([1, 2, 8, 20] as $row) {
@@ -68,6 +74,209 @@ class CreditUtilizationWorkbookWriter
         }
 
         return $memberRows;
+    }
+
+    private function writeConsolidated(array $scope, string $requestedBy, string $outputPath): int
+    {
+        $writer = new Writer(new Options);
+        $writer->setCreator('Echo Net Africa');
+        $writer->openToFile($outputPath);
+
+        $readMe = $writer->getCurrentSheet();
+        $readMe->setName('Read Me & Scope');
+        $executive = $writer->addNewSheetAndMakeItCurrent();
+        $executive->setName('Executive Summary');
+        $surveys = $writer->addNewSheetAndMakeItCurrent();
+        $surveys->setName('Survey Summary');
+        $groupSurvey = $writer->addNewSheetAndMakeItCurrent();
+        $groupSurvey->setName('Group x Survey');
+        $groupCoverage = $writer->addNewSheetAndMakeItCurrent();
+        $groupCoverage->setName('Group Coverage');
+        $questions = $writer->addNewSheetAndMakeItCurrent();
+        $questions->setName('Question Performance');
+        $participantSurvey = $writer->addNewSheetAndMakeItCurrent();
+        $participantSurvey->setName('Participant Survey Summary');
+        $participantResponses = $writer->addNewSheetAndMakeItCurrent();
+        $participantResponses->setName('Participant Responses');
+
+        $participantSurveyHeaders = [
+            'Survey', 'Survey ID', 'Survey Status', 'Group', 'Group ID', 'Group Attribution',
+            'Member ID', 'Participant', 'Phone', 'Progress ID', 'Progress Status', 'Responded',
+            'Response Count', 'Completed At', 'Dispatch Batch UUID',
+        ];
+        $participantResponseHeaders = [
+            'Survey', 'Survey ID', 'Survey Status', 'Group', 'Group ID', 'Group Attribution',
+            'Member ID', 'Participant', 'Phone', 'Question Position', 'Question', 'Response',
+            'Responded At', 'Progress Status', 'Dispatch Batch UUID',
+        ];
+        $this->startStreamingSheet($writer, $participantSurvey, $participantSurveyHeaders, [28, 12, 16, 28, 12, 38, 12, 28, 18, 12, 20, 14, 16, 21, 38]);
+        $this->startStreamingSheet($writer, $participantResponses, $participantResponseHeaders, [28, 12, 16, 28, 12, 38, 12, 28, 18, 16, 58, 38, 21, 20, 38]);
+
+        try {
+            $data = $this->consolidatedData->stream(
+                $scope['surveys'],
+                $scope['questions'],
+                $scope['credit_filters'],
+                function (array $values) use ($writer, $participantSurvey): void {
+                    $writer->setCurrentSheet($participantSurvey);
+                    $writer->addRow(Row::fromValues($values, $this->bodyStyle()));
+                },
+                function (array $values) use ($writer, $participantResponses): void {
+                    $writer->setCurrentSheet($participantResponses);
+                    $writer->addRow(Row::fromValues($values, $this->bodyStyle()));
+                },
+            );
+
+            $this->writeReadMe($writer, $readMe, $scope, $data, $requestedBy);
+            $this->writeExecutiveSummary($writer, $executive, $data, $requestedBy);
+            $this->writeConsolidatedSurveySummary($writer, $surveys, $data['survey_rows']);
+            $this->writeConsolidatedGroupSurvey($writer, $groupSurvey, $data['pair_rows']);
+            $this->writeGroupCoverage($writer, $groupCoverage, $data['group_rows']);
+            $this->writeConsolidatedQuestions($writer, $questions, $data['question_rows'], $data['survey_rows']);
+
+            $this->finishStreamingSheet($participantSurvey, count($data['survey_rows']) > 0
+                ? $data['participant_surveys']
+                : 0, count($participantSurveyHeaders));
+            $this->finishStreamingSheet($participantResponses, $data['responses'], count($participantResponseHeaders));
+        } finally {
+            $writer->close();
+        }
+
+        return (int) $data['responses'];
+    }
+
+    private function startStreamingSheet(Writer $writer, Sheet $sheet, array $headers, array $widths): void
+    {
+        $writer->setCurrentSheet($sheet);
+        $this->setWidths($sheet, $widths);
+        $sheet->setSheetView((new SheetView)->setShowGridLines(false)->setFreezeRow(2));
+        $writer->addRow(Row::fromValues($headers, $this->headerStyle())->setHeight(30));
+    }
+
+    private function finishStreamingSheet(Sheet $sheet, int $dataRows, int $columnCount): void
+    {
+        $sheet->setAutoFilter(new AutoFilter(0, 1, max(0, $columnCount - 1), $dataRows + 1));
+    }
+
+    private function writeReadMe(Writer $writer, Sheet $sheet, array $scope, array $data, string $requestedBy): void
+    {
+        $rows = [
+            ['Item', 'Details'],
+            ['Purpose', 'One workbook covering all active surveys and all groups.'],
+            ['Generated at', now()->format('Y-m-d H:i:s T')],
+            ['Requested by', $requestedBy],
+            ['Survey scope', 'All surveys marked Active at generation time; inactive surveys are excluded.'],
+            ['Group scope', 'All groups; configured assignments and groups without assignments are listed.'],
+            ['Survey count', $scope['surveys']->count()],
+            ['Group-survey assignment count', $data['configured_group_survey_pairs']],
+            ['Unique participants', $data['unique_participants']],
+            ['Participants with progress', $data['participant_surveys']],
+            ['Participant response rows', $data['responses']],
+            ['Unattributed participant-survey records', $data['unattributed_participant_surveys']],
+            ['Unattributed response rows', $data['unattributed_responses']],
+            ['Group attribution', 'A group is verified only when a progress record dispatch batch matches group-survey dispatch metadata. Other records are marked as legacy/unattributed.'],
+            ['Response row grain', 'One row per stored participant-survey-question response; repeated answers remain separate rows.'],
+            ['Participant summary grain', 'Latest progress record per participant and survey; response history remains in Participant Responses.'],
+            ['Filtering', 'Use each sheet’s header filters to analyze by survey, group, status, participant, or question.'],
+        ];
+
+        $this->writeTabularSheet($writer, $sheet, $rows, [34, 100], [], [1]);
+    }
+
+    private function writeExecutiveSummary(Writer $writer, Sheet $sheet, array $data, string $requestedBy): void
+    {
+        $credits = collect($data['survey_rows'])->sum(fn (array $row): int => (int) ($row['credit_summary']['survey_attributed'] ?? 0));
+        $rows = [
+            ['Metric', 'Value', 'Definition'],
+            ['Active surveys included', count($data['survey_rows']), 'Only surveys marked Active at generation time; see Survey Summary.'],
+            ['Configured group-survey assignments', $data['configured_group_survey_pairs'], 'Distinct configured group and survey pairs.'],
+            ['Unique participants', $data['unique_participants'], 'Distinct member IDs across the included surveys.'],
+            ['Group-survey pairs with dispatch recorded', $data['groups_with_dispatch_recorded'], 'Distinct configured group-survey pairs with a recorded dispatch.'],
+            ['Queued recipient entries', $data['queued_recipients'], 'Recipient count recorded by group-survey dispatch metadata; not necessarily unique people.'],
+            ['Participants with progress', $data['participant_surveys'], 'Latest progress record for each participant and survey.'],
+            ['Respondents across surveys', $data['respondents'], 'Survey-level unique respondents summed across surveys; a participant can count once per survey.'],
+            ['Completed participant-surveys', $data['completed'], 'Latest progress state per participant and survey.'],
+            ['Stored response rows', $data['responses'], 'One row per stored response record.'],
+            ['Unattributed participant-survey records', $data['unattributed_participant_surveys'], 'Progress records without a reliable group dispatch-batch match.'],
+            ['Survey-attributed SMS credits', $credits, 'Credits linked to survey responses or survey progress.'],
+            ['Unattributed response rows', $data['unattributed_responses'], 'Responses without a verified group dispatch-batch association.'],
+            ['Requested by', $requestedBy, 'Workbook requester.'],
+        ];
+
+        $this->writeTabularSheet($writer, $sheet, $rows, [42, 22, 90], [1 => '#,##0'], [2]);
+    }
+
+    private function writeConsolidatedSurveySummary(Writer $writer, Sheet $sheet, Collection $rows): void
+    {
+        $headers = [
+            'Survey', 'Survey ID', 'Status', 'Configured Groups', 'Dispatched Groups',
+            'Participants with Progress', 'Unique Participants Observed', 'Unique Respondents', 'Completed', 'In Progress',
+            'Dropped / Cancelled', 'Dispatched, No Response', 'Response Rate', 'Completion Rate',
+            'Response Rows', 'Survey-Attributed Credits', 'Group-Attributed Credits', 'Unattributed Credits',
+            'Unattributed Participants with Progress', 'Unattributed Response Rows',
+        ];
+        $dataRows = $rows->map(fn (array $row): array => [
+            $row['survey_title'], $row['survey_id'], $row['survey_status'], $row['configured_group_count'],
+            $row['dispatched_group_count'], $row['participant_survey_count'], $row['unique_participants'],
+            $row['unique_respondents'], $row['completed_count'], $row['in_progress_count'], $row['dropped_count'], $row['no_response_count'],
+            $row['response_rate'], $row['completion_rate'], $row['response_count'],
+            $row['credit_summary']['survey_attributed'] ?? 0, $row['attributed_group_credits'], $row['unattributed_credits'],
+            $row['unattributed_participant_surveys'], $row['unattributed_response_count'],
+        ])->prepend($headers)->all();
+
+        $this->writeTabularSheet($writer, $sheet, $dataRows, [32, 12, 16, 18, 18, 22, 22, 18, 14, 14, 18, 22, 16, 16, 16, 22, 22, 20, 28, 23], [1 => '#,##0', 3 => '#,##0', 4 => '#,##0', 5 => '#,##0', 6 => '#,##0', 7 => '#,##0', 8 => '#,##0', 9 => '#,##0', 10 => '#,##0', 11 => '#,##0', 12 => '0.0%', 13 => '0.0%', 14 => '#,##0', 15 => '#,##0', 16 => '#,##0', 17 => '#,##0', 18 => '#,##0', 19 => '#,##0'], [0]);
+    }
+
+    private function writeConsolidatedGroupSurvey(Writer $writer, Sheet $sheet, Collection $rows): void
+    {
+        $headers = [
+            'Group', 'Group ID', 'Survey', 'Survey ID', 'Survey Status', 'Assignment State',
+            'Queued Recipients', 'Skipped Recipients', 'Participants with Progress', 'Unique Respondents',
+            'Completed', 'In Progress', 'Dropped / Cancelled', 'Dispatched, No Response',
+            'Response Rows', 'Response Rate', 'Completion Rate', 'Attributed SMS Credits', 'Attribution',
+            'Dispatched At', 'Dispatch Batch UUIDs',
+        ];
+        $dataRows = $rows->map(fn (array $row): array => [
+            $row['group_name'], $row['group_id'], $row['survey_title'], $row['survey_id'], $row['survey_status'] ?? '',
+            $row['was_dispatched'] ? 'Dispatched' : 'Not recorded as dispatched', $row['queued_recipients'],
+            $row['skipped_recipients'], $row['progress_count'], $row['unique_respondents'],
+            $row['completed_count'], $row['in_progress_count'], $row['dropped_count'], $row['no_response_count'],
+            $row['response_count'], $row['response_rate'], $row['completion_rate'], $row['attributed_credits'], $row['attribution'],
+            $row['dispatched_at']?->toDateTimeString(), implode(', ', $row['dispatch_batch_uuids']),
+        ])->prepend($headers)->all();
+
+        $this->writeTabularSheet($writer, $sheet, $dataRows, [30, 12, 32, 12, 16, 24, 18, 18, 22, 18, 14, 14, 18, 22, 16, 16, 16, 20, 42, 21, 42], [1 => '#,##0', 3 => '#,##0', 6 => '#,##0', 7 => '#,##0', 8 => '#,##0', 9 => '#,##0', 10 => '#,##0', 11 => '#,##0', 12 => '#,##0', 13 => '#,##0', 14 => '#,##0', 15 => '0.0%', 16 => '0.0%', 17 => '#,##0'], [0, 2, 18, 20]);
+    }
+
+    private function writeGroupCoverage(Writer $writer, Sheet $sheet, Collection $rows): void
+    {
+        $headers = ['Group', 'Group ID', 'Current Members', 'Configured Surveys', 'Dispatched Surveys', 'Participant-Survey Records', 'Coverage'];
+        $dataRows = $rows->map(fn (array $row): array => [
+            $row['group_name'], $row['group_id'], $row['member_count'], $row['configured_surveys'],
+            $row['dispatched_surveys'], $row['participant_surveys'], $row['coverage_status'],
+        ])->prepend($headers)->all();
+
+        $this->writeTabularSheet($writer, $sheet, $dataRows, [34, 12, 18, 20, 20, 26, 42], [1 => '#,##0', 2 => '#,##0', 3 => '#,##0', 4 => '#,##0', 5 => '#,##0'], [0, 6]);
+    }
+
+    private function writeConsolidatedQuestions(Writer $writer, Sheet $sheet, Collection $rows, Collection $surveyRows): void
+    {
+        $participantCounts = $surveyRows->keyBy('survey_id')->map(fn (array $row): int => $row['unique_participants']);
+        $headers = [
+            'Survey', 'Survey ID', 'Question Position', 'Question', 'Observed Participant Denominator',
+            'Unique Respondents', 'Response Rows', 'Response Rate', 'Answer Distribution (top 10)',
+            'Most Common Answer', 'Most Common Answer Count', 'First Response', 'Last Response',
+        ];
+        $dataRows = $rows->map(fn (array $row): array => [
+            $row['survey_title'], $row['survey_id'], $row['position'], $row['question'],
+            $participantCounts->get($row['survey_id'], 0), $row['unique_respondents'], $row['response_count'],
+            $participantCounts->get($row['survey_id'], 0) > 0
+                ? $row['unique_respondents'] / $participantCounts->get($row['survey_id'])
+                : null,
+            $row['answer_distribution'], $row['most_common_answer'], $row['most_common_answer_count'], $row['first_response_at'], $row['last_response_at'],
+        ])->prepend($headers)->all();
+
+        $this->writeTabularSheet($writer, $sheet, $dataRows, [32, 12, 16, 64, 24, 18, 16, 16, 60, 40, 24, 22, 22], [1 => '#,##0', 2 => '#,##0', 4 => '#,##0', 5 => '#,##0', 6 => '#,##0', 7 => '0.0%', 10 => '#,##0'], [0, 3, 8, 9]);
     }
 
     private function createSheets(Writer $writer): array

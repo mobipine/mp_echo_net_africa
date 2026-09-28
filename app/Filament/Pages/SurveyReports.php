@@ -324,9 +324,10 @@ class SurveyReports extends Page
             return 'Rows pending';
         }
 
-        $unit = Str::contains($export->file_name, 'comprehensive_survey_report')
-            ? 'members'
-            : 'transactions';
+        $unit = (($export->filters['report_mode'] ?? null) === 'consolidated'
+            || Str::contains($export->file_name, 'consolidated_survey_report'))
+            ? 'responses'
+            : (Str::contains($export->file_name, 'comprehensive_survey_report') ? 'members' : 'transactions');
 
         return number_format($export->row_count).' '.$unit;
     }
@@ -361,7 +362,7 @@ class SurveyReports extends Page
             }
 
             $reportFilters = $scope['credit_filters'];
-            if ($consolidated) {
+            if ($scope['is_consolidated']) {
                 $reportFilters['report_mode'] = 'consolidated';
             }
 
