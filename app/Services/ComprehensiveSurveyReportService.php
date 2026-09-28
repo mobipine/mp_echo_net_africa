@@ -371,7 +371,6 @@ class ComprehensiveSurveyReportService
     private function legacyResponseQuestions(Survey $survey): Collection
     {
         return $survey->questions()
-            ->whereNotNull('swahili_question_id')
             ->get()
             ->map(fn ($question): array => [
                 'id' => (int) $question->id,
