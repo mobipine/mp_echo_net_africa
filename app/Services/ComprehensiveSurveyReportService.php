@@ -106,14 +106,14 @@ class ComprehensiveSurveyReportService
                 $responses = $phoneVariants->isEmpty() || $questionIds->isEmpty()
                     ? collect()
                     : SurveyResponse::query()
-                        ->where('survey_id', $surveyId)
+                        ->when($surveyId, fn ($q) => $q->where('survey_id', $surveyId))
                         ->whereIn('msisdn', $phoneVariants)
                         ->whereIn('question_id', $questionIds)
                         ->whereIn('id', function ($query) use ($surveyId, $phoneVariants, $questionIds) {
                             $query
                                 ->select(DB::raw('MAX(id)'))
                                 ->from('survey_responses')
-                                ->where('survey_id', $surveyId)
+                                ->when($surveyId, fn ($q) => $q->where('survey_id', $surveyId))
                                 ->whereIn('msisdn', $phoneVariants)
                                 ->whereIn('question_id', $questionIds)
                                 ->groupBy('msisdn', 'question_id');
@@ -187,6 +187,7 @@ class ComprehensiveSurveyReportService
             $questionStats[$question['id']] = [
                 'position' => $question['position'],
                 'question' => $question['question'],
+                'survey_title' => $question['survey_title'] ?? '',
                 'respondents' => 0,
                 'active_at_question' => 0,
                 'drop_offs' => 0,
