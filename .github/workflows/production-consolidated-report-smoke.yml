@@ -1,0 +1,24 @@
+name: Production consolidated report smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_production_report:
+        description: Generate and validate a temporary workbook against production data
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  smoke-test:
+    if: inputs.confirm_production_report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install sshpass
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+      - name: Generate and validate a temporary production workbook
+        run: |
+          sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@213.199.58.213 'cd /var/www/enaf && php scripts/production-consolidated-report-smoke.php'

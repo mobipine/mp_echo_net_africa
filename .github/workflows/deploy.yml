@@ -41,22 +41,3 @@ jobs:
             supervisorctl reread
             supervisorctl update
           EOF
-
-      - name: Run reporting tests on production host (isolated database)
-        run: |
-          sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@213.199.58.213 << 'EOF'
-            cd /var/www/enaf
-            APP_CONFIG_CACHE="/var/www/enaf/bootstrap/cache/config-test-${{ github.sha }}.php"
-            test ! -e "$APP_CONFIG_CACHE"
-            APP_ENV=testing \
-            APP_CONFIG_CACHE="$APP_CONFIG_CACHE" \
-            DB_CONNECTION=sqlite \
-            DB_DATABASE=:memory: \
-            DB_URL= \
-            CACHE_STORE=array \
-            SESSION_DRIVER=array \
-            QUEUE_CONNECTION=sync \
-            MAIL_MAILER=array \
-            LOG_CHANNEL=stderr \
-            php artisan test tests/Feature/CreditUtilizationReportingTest.php
-          EOF
