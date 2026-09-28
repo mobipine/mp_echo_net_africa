@@ -43,11 +43,25 @@ class CreditUtilizationWorkbookWriter
             $groupId = $scope['group']?->id;
             $isConsolidated = $scope['is_consolidated'] ?? false;
 
+            \Illuminate\Support\Facades\Log::info('CreditUtilizationWorkbookWriter::write starting', [
+                'survey_id' => $surveyId,
+                'group_id' => $groupId,
+                'is_consolidated' => $isConsolidated,
+                'questions_count' => $scope['questions']->count(),
+                'response_questions_count' => $scope['response_questions']->count(),
+            ]);
+
             $analysis = $this->surveyReports->streamMemberResponses(
                 $surveyId,
                 $groupId,
                 $scope['questions'],
             );
+
+            \Illuminate\Support\Facades\Log::info('streamMemberResponses completed', [
+                'stats' => $analysis['stats'],
+                'question_count' => $analysis['questions']->count(),
+            ]);
+
             $memberRows = $this->writeMemberResponses(
                 $writer,
                 $sheets['members'],
@@ -56,6 +70,10 @@ class CreditUtilizationWorkbookWriter
                 $scope['response_questions'],
                 $isConsolidated,
             );
+
+            \Illuminate\Support\Facades\Log::info('writeMemberResponses completed', [
+                'member_rows' => $memberRows,
+            ]);
 
             $creditSummary = $this->creditReports->summary($scope['credit_filters']);
 
