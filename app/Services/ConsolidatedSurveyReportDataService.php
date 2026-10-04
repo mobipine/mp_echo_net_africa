@@ -214,7 +214,7 @@ class ConsolidatedSurveyReportDataService
                             : '(Blank)';
                         $questionStats[$statsKey]['answer_counts'][$answer] =
                             ($questionStats[$statsKey]['answer_counts'][$answer] ?? 0) + 1;
-                        $createdAt = $response->created_at?->toDateTimeString();
+                        $createdAt = $response->created_at ? (is_string($response->created_at) ? $response->created_at : $response->created_at->toDateTimeString()) : null;
                         if ($createdAt) {
                             $questionStats[$statsKey]['first_response_at'] = min(
                                 $questionStats[$statsKey]['first_response_at'] ?? $createdAt,
@@ -240,7 +240,7 @@ class ConsolidatedSurveyReportDataService
                         $question['position'] ?? null,
                         $question['question'] ?? 'Question unavailable',
                         $response->survey_response ?? '',
-                        $response->created_at?->toDateTimeString(),
+                        $response->created_at ? (is_string($response->created_at) ? $response->created_at : $response->created_at->toDateTimeString()) : null,
                         $progress?->status ?? 'No linked progress',
                         $batchUuid,
                     ]);

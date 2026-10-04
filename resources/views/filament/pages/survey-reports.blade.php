@@ -138,7 +138,7 @@
                 </div>
                 <div class="divide-y divide-gray-100 dark:divide-white/5">
                     @foreach ($exports as $export)
-                        <div class="flex items-center justify-between px-4 py-3">
+                        <div class="flex items-center justify-between px-4 py-3" data-e2e="recent-report-row">
                             <div class="min-w-0 flex-1">
                                 <p class="truncate text-sm font-medium text-gray-950 dark:text-white">{{ $export->file_name }}</p>
                                 <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
