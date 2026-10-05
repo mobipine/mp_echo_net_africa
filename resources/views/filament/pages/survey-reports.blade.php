@@ -1,4 +1,8 @@
 <x-filament-panels::page>
+    @push('head')
+        <meta name="user-id" content="{{ auth()->check() ? auth()->id() : '' }}">
+    @endpush
+
     <div class="space-y-6">
         {{-- Filters --}}
         <div class="filament-forms">

@@ -45,12 +45,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    window.Echo.private(`App.Models.User.${userId}`)
-        .notification((notification) => {
-            if (notification.type === 'report.completed') {
-                window.dispatchEvent(new CustomEvent('report-status-updated', {
-                    detail: { id: notification.id, status: 'completed' },
-                }));
-            }
-        });
+window.Echo.private(`reports.${userId}`)
+    .listen('.report.completed', (e) => {
+        window.dispatchEvent(new CustomEvent('report-status-updated', {
+            detail: { id: e.id, status: e.status || 'completed' },
+        }));
+    });
 });

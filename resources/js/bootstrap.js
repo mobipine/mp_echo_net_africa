@@ -20,4 +20,5 @@ window.Echo = new Echo({
     wssPort: reverbPort,
     forceTLS: reverbScheme === 'https',
     enabledTransports: ['ws', 'wss'],
+    wsPath: import.meta.env.VITE_REVERB_PATH || '/reverb-websocket',
 });
