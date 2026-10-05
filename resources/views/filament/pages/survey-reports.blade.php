@@ -132,9 +132,17 @@
         @endphp
 
         @if ($exports->isNotEmpty())
-            <div class="divide-y divide-gray-200 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:divide-white/10 dark:bg-gray-900 dark:ring-white/10">
-                <div class="flex items-center justify-between px-4 py-3">
-                    <h2 class="text-base font-semibold leading-6 text-gray-950 dark:text-white">Recent report downloads</h2>
+            <div class="divide-y divide-gray-200 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:divide-white/10 dark:bg-gray-900 dark:ring-white/10"
+                 wire:poll.5s="$refresh"
+                 x-data="{ justCompleted: false }"
+                 x-on:report-status-updated.window="justCompleted = true; setTimeout(() => justCompleted = false, 3000)"
+            >
+                <div class="flex items-center justify-between px-4 py-3"
+                     x-bind:class="justCompleted && 'ring-2 ring-success-500 dark:ring-success-400 rounded-xl'"
+                >
+                    <h2 class="text-base font-semibold leading-6 text-gray-950 dark:text-white"
+                        x-text="justCompleted ? 'Recent report downloads (updated)' : 'Recent report downloads'"
+                    >Recent report downloads</h2>
                 </div>
                 <div class="divide-y divide-gray-100 dark:divide-white/5">
                     @foreach ($exports as $export)

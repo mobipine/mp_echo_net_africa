@@ -2,6 +2,7 @@
     @push('scripts')
         @vite(['resources/js/app.js'])
     @endpush
+    <meta name="user-id" content="{{ auth()-u003echeck() ? auth()-u003eid() : '' }}">
     <div class="min-h-screen bg-gray-50 dark:bg-gray-900" id="ussd-flow-app"></div>
 
     <script>

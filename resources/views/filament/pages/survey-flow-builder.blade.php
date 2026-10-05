@@ -1,7 +1,8 @@
 <x-filament-panels::page>
     @push('scripts')
-        @vite(['resources/js/app.js'])
+    @vite(['resources/js/app.js'])
     @endpush
+    <meta name="user-id" content="{{ auth()-u003echeck() ? auth()-u003eid() : '' }}">
     <div class="min-h-screen bg-" id="survey-flow-app"></div>
 
     <script>

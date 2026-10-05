@@ -15,6 +15,7 @@ use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Dashboard\Concerns\HasFiltersForm;
 use Filament\Pages\Page;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -28,6 +29,45 @@ class SurveyReports extends Page
     protected static ?string $slug = 'survey-reports';
     protected static ?string $navigationGroup = 'Analytics';
     protected static string $view = 'filament.pages.survey-reports';
+
+    /**
+     * The user channel Livewire listens on for report-completion broadcasts.
+     */
+    public ?string $reportChannel = null;
+
+    public function mount(): void
+    {
+        $this->mountHasFilters();
+
+        $this->reportChannel = auth()->check()
+            ? 'reports.'.auth()->id()
+            : null;
+
+        if (request()?->hasAny(['survey_id', 'group_id'])) {
+            return;
+        }
+
+        $this->filters = [
+            'survey_id' => null,
+            'group_id' => null,
+        ];
+
+        $this->getFiltersForm()?->fill($this->filters);
+    }
+
+    /**
+     * Livewire event listeners for Reverb broadcasts.
+     *
+     * @return array<string, string>
+     */
+    protected function getListeners(): array
+    {
+        $userId = auth()->id();
+
+        return $userId
+            ? ['echo-private:reports.'.$userId.',report.completed' => '$refresh']
+            : [];
+    }
 
     public function getSubheading(): ?string
     {
@@ -72,22 +112,6 @@ class SurveyReports extends Page
                     ])
                     ->columns(2),
             ]);
-    }
-
-    public function mount(): void
-    {
-        $this->mountHasFilters();
-
-        if (request()?->hasAny(['survey_id', 'group_id'])) {
-            return;
-        }
-
-        $this->filters = [
-            'survey_id' => null,
-            'group_id' => null,
-        ];
-
-        $this->getFiltersForm()?->fill($this->filters);
     }
 
     public function persistsFiltersInSession(): bool

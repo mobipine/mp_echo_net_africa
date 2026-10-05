@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Events\CreditReportCompleted;
 use App\Models\CreditReportExport;
 use App\Services\CreditUtilizationWorkbookWriter;
 use Filament\Notifications\Actions\Action;
@@ -81,6 +82,15 @@ class GenerateCreditUtilizationReportJob implements ShouldBeUnique, ShouldQueue
                 'failed_at' => null,
                 'error_message' => null,
             ]);
+
+            try {
+                broadcast(new CreditReportCompleted($report))->toOthers();
+            } catch (Throwable $exception) {
+                Log::warning('Credit report completed but broadcast failed.', [
+                    'credit_report_export_id' => $report->id,
+                    'exception' => $exception,
+                ]);
+            }
 
             if ($report->user) {
                 try {
