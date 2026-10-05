@@ -1,8 +1,10 @@
 <x-filament-panels::page>
-    @vite(['resources/js/app.js'])
-
-    @push('head')
+    @push('styles')
         <meta name="user-id" content="{{ auth()->check() ? auth()->id() : '' }}">
+    @endpush
+
+    @push('scripts')
+        @vite(['resources/js/app.js'])
     @endpush
 
     <div class="space-y-6">
