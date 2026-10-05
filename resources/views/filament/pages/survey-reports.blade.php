@@ -1,4 +1,6 @@
 <x-filament-panels::page>
+    @vite(['resources/js/app.js'])
+
     @push('head')
         <meta name="user-id" content="{{ auth()->check() ? auth()->id() : '' }}">
     @endpush
