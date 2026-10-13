@@ -6,6 +6,7 @@ use App\Models\Group;
 use App\Models\Member;
 use App\Models\Survey;
 use App\Models\SurveyProgress;
+use App\Models\SurveyQuestion;
 use App\Models\SurveyResponse;
 use App\Support\SurveyProgressState;
 use Illuminate\Database\Eloquent\Builder;
@@ -174,9 +175,10 @@ class ComprehensiveSurveyReportService
                         $swahiliResponse = $question['swahili_question_id']
                             ? $memberResponses->get($question['swahili_question_id'])
                             : null;
-                        $answer = $englishResponse
-                            ? ($englishResponse->survey_response ?? '')
-                            : ($swahiliResponse?->survey_response ?? '');
+                        $response = $englishResponse ?: $swahiliResponse;
+                        $answer = $response
+                            ? $this->formatResponseAnswer($question, $response->survey_response, (int) $response->question_id)
+                            : '';
                         $values[] = $answer ?: 'N/A';
                     }
 
@@ -197,6 +199,7 @@ class ComprehensiveSurveyReportService
     ): array {
         $questionByResponseId = [];
         $questionStats = [];
+        $questionDetails = $questions->keyBy('id');
 
         foreach ($questions as $question) {
             foreach ($question['answer_ids'] as $answerId) {
@@ -314,8 +317,13 @@ class ComprehensiveSurveyReportService
                     foreach ($memberResponses as $response) {
                         $questionId = $questionByResponseId[$response->question_id] ?? null;
                         if ($questionId) {
+                            $question = $questionDetails->get($questionId);
                             $answers[$questionId] = [
-                                'value' => $response->survey_response,
+                                'value' => $this->formatResponseAnswer(
+                                    $question,
+                                    $response->survey_response,
+                                    (int) $response->question_id,
+                                ),
                                 'created_at' => $response->created_at,
                             ];
                         }
@@ -420,18 +428,39 @@ class ComprehensiveSurveyReportService
     private function canonicalQuestions(Survey $survey): Collection
     {
         $questions = $survey->questions()->get();
+        $questionsById = $questions->keyBy(fn (SurveyQuestion $question): int => (int) $question->id);
         $alternateIds = $questions
-            ->filter(fn ($question) => $question->swahili_question_id && $question->swahili_question_id !== $question->id)
+            ->filter(fn (SurveyQuestion $question) => $question->swahili_question_id && (int) $question->swahili_question_id !== (int) $question->id)
             ->pluck('swahili_question_id')
             ->map(fn ($id): int => (int) $id)
             ->unique();
+        $alternateQuestions = SurveyQuestion::query()
+            ->whereIn('id', $alternateIds)
+            ->get(['id', 'possible_answers'])
+            ->keyBy('id');
+        $hasEnglishMarkers = $questions->contains(fn (SurveyQuestion $question) => filled($question->swahili_question_id));
 
         return $questions
-            ->reject(fn ($question) => $alternateIds->contains((int) $question->id))
+            // English questions link to their Kiswahili alternate, or to themselves
+            // when English is the only version. Exclude only unmarked questions that
+            // are actually referenced as alternates. Keep legacy unmarked-only surveys,
+            // and keep marked English roots even when an old target ID collides with them.
+            ->reject(fn (SurveyQuestion $question) =>
+                ! filled($question->swahili_question_id)
+                && $alternateIds->contains((int) $question->id)
+            )
+            ->filter(fn (SurveyQuestion $question) =>
+                ! $hasEnglishMarkers
+                || filled($question->swahili_question_id)
+                || ! $alternateIds->contains((int) $question->id)
+            )
             ->values()
-            ->map(function ($question, int $index): array {
+            ->map(function (SurveyQuestion $question, int $index) use ($questionsById, $alternateQuestions): array {
                 $alternateId = $question->swahili_question_id && $question->swahili_question_id !== $question->id
                     ? (int) $question->swahili_question_id
+                    : null;
+                $alternate = $alternateId
+                    ? ($questionsById->get($alternateId) ?? $alternateQuestions->get($alternateId))
                     : null;
 
                 return [
@@ -439,6 +468,10 @@ class ComprehensiveSurveyReportService
                     'position' => (int) ($question->pivot?->position ?? $index + 1),
                     'question' => $question->question,
                     'answer_ids' => array_values(array_filter([(int) $question->id, $alternateId])),
+                    'swahili_question_id' => $alternateId,
+                    'answer_strictness' => $question->answer_strictness,
+                    'possible_answers' => $question->possible_answers ?? [],
+                    'alternate_possible_answers' => $alternate?->possible_answers ?? [],
                 ];
             })
             ->sortBy('position')
@@ -447,24 +480,70 @@ class ComprehensiveSurveyReportService
 
     private function legacyResponseQuestions(Survey $survey): Collection
     {
-        $questions = $survey->questions()->get();
-        $alternateIds = $questions
-            ->filter(fn ($question) => $question->swahili_question_id && $question->swahili_question_id !== $question->id)
-            ->pluck('swahili_question_id')
-            ->map(fn ($id): int => (int) $id)
-            ->unique();
-
-        return $questions
-            ->reject(fn ($question) => $alternateIds->contains((int) $question->id))
-            ->map(fn ($question): array => [
-                'id' => (int) $question->id,
-                'question' => $question->question,
-                'swahili_question_id' => $question->swahili_question_id
-                    && $question->swahili_question_id !== $question->id
-                        ? (int) $question->swahili_question_id
-                        : null,
+        return $this->canonicalQuestions($survey)
+            ->map(fn (array $question): array => [
+                'id' => $question['id'],
+                'question' => $question['question'],
+                'swahili_question_id' => $question['swahili_question_id'],
+                'answer_strictness' => $question['answer_strictness'],
+                'possible_answers' => $question['possible_answers'],
+                'alternate_possible_answers' => $question['alternate_possible_answers'],
             ])
             ->values();
+    }
+
+    public function formatResponseAnswer(array $question, mixed $value, ?int $sourceQuestionId = null): ?string
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        $answer = trim((string) $value);
+        if (($question['answer_strictness'] ?? null) !== 'Multiple Choice') {
+            return $answer;
+        }
+
+        $englishOptions = $question['possible_answers'] ?? [];
+        $alternateOptions = $question['alternate_possible_answers'] ?? [];
+        $sourceOptions = $sourceQuestionId !== null
+            && $sourceQuestionId === (int) ($question['swahili_question_id'] ?? 0)
+            && $alternateOptions !== []
+                ? $alternateOptions
+                : $englishOptions;
+
+        foreach ($englishOptions as $option) {
+            if ($this->normalizeAnswerLabel($option['answer'] ?? '') === $this->normalizeAnswerLabel($answer)) {
+                return (string) $option['answer'];
+            }
+        }
+
+        foreach ($sourceOptions as $index => $option) {
+            $letter = strtoupper(trim((string) ($option['letter'] ?? '')));
+            $labelMatches = $this->normalizeAnswerLabel($option['answer'] ?? '') === $this->normalizeAnswerLabel($answer);
+            $letterMatches = $letter !== '' && strtoupper($answer) === $letter;
+            $numberMatches = ctype_digit($answer) && (int) $answer === $index + 1;
+
+            if (! $labelMatches && ! $letterMatches && ! $numberMatches) {
+                continue;
+            }
+
+            $englishOption = collect($englishOptions)->first(function (array $candidate, int $candidateIndex) use ($option, $index): bool {
+                $sourceLetter = strtoupper(trim((string) ($option['letter'] ?? '')));
+                $englishLetter = strtoupper(trim((string) ($candidate['letter'] ?? '')));
+
+                return ($sourceLetter !== '' && $englishLetter === $sourceLetter)
+                    || ($sourceLetter === '' && $candidateIndex === $index);
+            });
+
+            return isset($englishOption['answer']) ? (string) $englishOption['answer'] : $answer;
+        }
+
+        return $answer;
+    }
+
+    private function normalizeAnswerLabel(mixed $value): string
+    {
+        return mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $value)) ?? '');
     }
 
     private function phoneVariants(string $phone): array

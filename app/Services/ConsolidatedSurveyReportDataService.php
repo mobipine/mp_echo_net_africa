@@ -13,7 +13,10 @@ use Illuminate\Support\Facades\DB;
 
 class ConsolidatedSurveyReportDataService
 {
-    public function __construct(private readonly CreditUtilizationReportService $creditReports) {}
+    public function __construct(
+        private readonly CreditUtilizationReportService $creditReports,
+        private readonly ComprehensiveSurveyReportService $surveyReports,
+    ) {}
 
     public function stream(
         Collection $surveys,
@@ -215,6 +218,15 @@ class ConsolidatedSurveyReportDataService
                         }
                     }
 
+                    $answer = $question
+                        ? $this->surveyReports->formatResponseAnswer(
+                            $question,
+                            $response->survey_response,
+                            (int) $response->question_id,
+                        )
+                        : (filled($response->survey_response) ? trim((string) $response->survey_response) : null);
+                    $answerForOutput = $answer ?? '';
+
                     if ($questionId !== null) {
                         $statsKey = $surveyId.':'.$questionId;
                         $questionStats[$statsKey]['response_count']++;
@@ -222,9 +234,7 @@ class ConsolidatedSurveyReportDataService
                             $questionStats[$statsKey]['respondent_ids'][$memberId] = true;
                         }
 
-                        $answer = filled($response->survey_response)
-                            ? trim((string) $response->survey_response)
-                            : '(Blank)';
+                        $answer ??= '(Blank)';
                         $questionStats[$statsKey]['answer_counts'][$answer] =
                             ($questionStats[$statsKey]['answer_counts'][$answer] ?? 0) + 1;
                         $createdAt = $response->created_at ? (is_string($response->created_at) ? $response->created_at : $response->created_at->toDateTimeString()) : null;
@@ -252,7 +262,7 @@ class ConsolidatedSurveyReportDataService
                         $member?->phone ?? $response->msisdn,
                         $question['position'] ?? null,
                         $question['question'] ?? 'Question unavailable',
-                        $response->survey_response ?? '',
+                        $answerForOutput,
                         $response->created_at ? (is_string($response->created_at) ? $response->created_at : $response->created_at->toDateTimeString()) : null,
                         $progress?->status ?? 'No linked progress',
                         $batchUuid,
