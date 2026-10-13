@@ -21,4 +21,4 @@ jobs:
 
       - name: Generate and validate a temporary production workbook
         run: |
-          sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@213.199.58.213 'cd /var/www/enaf && php scripts/production-consolidated-report-smoke.php'
+          sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=20 root@213.199.58.213 'cd /var/www/enaf && php scripts/production-consolidated-report-smoke.php'
