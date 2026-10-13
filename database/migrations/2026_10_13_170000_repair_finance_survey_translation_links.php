@@ -84,7 +84,7 @@ return new class extends Migration
             'What is preventing you from using the money?' => 'Tafadhali eleza ni nini kinakuzuia kutumia fedha ulizopokea.',
             'Which business are you engaged in?' => 'Unajishughulisha na biashara gani?',
             // The production English prompt contains two spaces after "specify".
-            'Please specify  the business you are engaged in' => 'Taja biashara unayejishugulishs nayo?',
+            'Please specify  the business you are engaged in' => 'Taja biashara unayojishugulishs nayo?',
             'Which fish species are you selling?' => 'Unauza aina gani ya samaki?',
             'Please specify the fish species you are selling' => 'Taja aina ya samaki unayouza?',
             'In the past, how much capital did you input daily (stock, transport, rent, electricity, levy, etc.)?' => 'Hapo awali, ulikuwa unaingiza mtaji kiasi gani kila siku (hisa, usafiri, kodi, umeme, ushuru n.k.)?',
@@ -104,7 +104,7 @@ return new class extends Migration
             'Please specify what you used the loan for' => 28,
             'What is preventing you from using the money?' => 20,
             'Which business are you engaged in?' => 21,
-            'Please specify the business you are engaged in' => 27,
+            'Please specify  the business you are engaged in' => 27,
             'Which fish species are you selling?' => 23,
             'Please specify the fish species you are selling' => 22,
             'In the past, how much capital did you input daily (stock, transport, rent, electricity, levy, etc.)?' => 24,
