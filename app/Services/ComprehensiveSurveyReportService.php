@@ -259,6 +259,7 @@ class ComprehensiveSurveyReportService
                 $surveyId,
                 $questions,
                 $questionByResponseId,
+                $questionDetails,
                 &$questionStats,
                 &$stats,
                 $writeRow,
