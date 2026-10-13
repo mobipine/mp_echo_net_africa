@@ -129,13 +129,15 @@ class CreditUtilizationReportingTest extends TestCase
         $page = Livewire::actingAs($data['user'])
             ->test(SurveyReports::class)
             ->set('filters.survey_id', $data['survey']->id)
-            ->assertSee('Group Survey Summary');
+            ->assertDontSee('Group Survey Summary')
+            ->assertSee('Survey Dropout Table');
 
         $this->assertTrue($page->instance()->hasFiltersApplied());
         $this->assertSame(5, $page->instance()->getStats()['total']);
         $this->assertSame(['Kibera Group', 'Umoja Group'], array_column($page->instance()->getGroupSummary(), 'name'));
 
-        $page->set('filters.group_id', $secondGroup->id);
+        $page->set('filters.group_id', $secondGroup->id)
+            ->assertSee('Group Survey Summary');
         $this->assertSame(1, $page->instance()->getStats()['total']);
         $this->assertSame(['Kibera Group'], array_column($page->instance()->getGroupSummary(), 'name'));
 

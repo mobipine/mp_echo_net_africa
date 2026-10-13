@@ -34,7 +34,6 @@
         @if ($this->hasFiltersApplied())
             @php
                 $stats = $this->getStats();
-                $groupSummaries = $this->getGroupSummary();
                 $dropoutData = $this->getDropoutData();
             @endphp
 
@@ -70,8 +69,11 @@
                 @endforeach
             </div>
 
-            {{-- Group survey summary table matching Filament's table design --}}
-            <div class="divide-y divide-gray-200 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:divide-white/10 dark:bg-gray-900 dark:ring-white/10">
+            @if (filled($this->filters['group_id'] ?? null))
+                @php $groupSummaries = $this->getGroupSummary(); @endphp
+
+                {{-- Group survey summary table matching Filament's table design --}}
+                <div class="divide-y divide-gray-200 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:divide-white/10 dark:bg-gray-900 dark:ring-white/10">
                 <div class="flex items-center justify-between px-4 py-3">
                     <h2 class="text-base font-semibold leading-6 text-gray-950 dark:text-white">Group Survey Summary</h2>
                 </div>
@@ -105,7 +107,8 @@
                         </tbody>
                     </table>
                 </div>
-            </div>
+                </div>
+            @endif
 
             {{-- Dropout table matching Filament's table design --}}
             <div class="divide-y divide-gray-200 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-950/5 dark:divide-white/10 dark:bg-gray-900 dark:ring-white/10">
