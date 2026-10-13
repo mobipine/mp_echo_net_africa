@@ -95,6 +95,77 @@ class CreditUtilizationReportingTest extends TestCase
         $this->assertCount(2, $scope['response_questions']);
     }
 
+    public function test_survey_reports_support_survey_only_results_and_export_across_groups(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+        $data = $this->createReportingScenario();
+        $secondGroup = Group::withoutEvents(fn () => Group::query()->create(['name' => 'Kibera Group']));
+        $secondMember = $this->createMember($secondGroup, $data['county'], 'Second Group Member', '254700000006', true);
+        $otherSurvey = Survey::query()->create([
+            'title' => 'Other Survey',
+            'trigger_word' => 'OTHER',
+            'status' => 'Active',
+        ]);
+        GroupSurvey::query()->create([
+            'group_id' => $secondGroup->id,
+            'survey_id' => $data['survey']->id,
+            'automated' => false,
+            'was_dispatched' => true,
+        ]);
+        $secondProgress = SurveyProgress::query()->create([
+            'survey_id' => $data['survey']->id,
+            'member_id' => $secondMember->id,
+            'status' => 'COMPLETED',
+            'completed_at' => '2026-08-02 11:00:00',
+        ]);
+        $this->createResponse($data['survey'], $secondMember, $data['questionOne'], $secondProgress, null, 'Yes');
+        SurveyProgress::query()->create([
+            'survey_id' => $otherSurvey->id,
+            'member_id' => $secondMember->id,
+            'status' => 'ACTIVE',
+        ]);
+
+        $page = Livewire::actingAs($data['user'])
+            ->test(SurveyReports::class)
+            ->set('filters.survey_id', $data['survey']->id)
+            ->assertSee('Group Survey Summary');
+
+        $this->assertTrue($page->instance()->hasFiltersApplied());
+        $this->assertSame(5, $page->instance()->getStats()['total']);
+        $this->assertSame(['Kibera Group', 'Umoja Group'], array_column($page->instance()->getGroupSummary(), 'name'));
+
+        $page->set('filters.group_id', $secondGroup->id);
+        $this->assertSame(1, $page->instance()->getStats()['total']);
+        $this->assertSame(['Kibera Group'], array_column($page->instance()->getGroupSummary(), 'name'));
+
+        $page->set('filters.group_id', null)
+            ->callAction('generate_comprehensive_report')
+            ->assertHasNoActionErrors();
+
+        $report = CreditReportExport::query()->sole();
+        $this->assertSame([$data['survey']->id], $report->filters['survey_ids']);
+        $this->assertSame([], $report->filters['group_ids']);
+        $this->assertNull($report->filters['report_mode'] ?? null);
+        $this->assertStringContainsString('all_groups_survey_report', $report->file_name);
+        Queue::assertPushed(GenerateCreditUtilizationReportJob::class);
+
+        (new GenerateCreditUtilizationReportJob($report->id))
+            ->handle(app(CreditUtilizationWorkbookWriter::class));
+
+        $report->refresh();
+        $this->assertSame(CreditReportExport::STATUS_COMPLETED, $report->status);
+        $this->assertSame('6 responses', $page->instance()->exportRowLabel($report));
+
+        $workbook = IOFactory::load(Storage::disk('local')->path($report->file_path));
+        $readMe = collect($workbook->getSheetByName('Read Me & Scope')->toArray(null, true, true, false));
+        $this->assertTrue($readMe->contains(fn (array $row): bool => ($row[0] ?? null) === 'Survey scope'
+            && str_contains((string) ($row[1] ?? ''), $data['survey']->title)));
+        $surveySummary = collect($workbook->getSheetByName('Survey Summary')->toArray(null, true, true, false));
+        $this->assertTrue($surveySummary->contains(fn (array $row): bool => ($row[0] ?? null) === $data['survey']->title));
+        $this->assertFalse($surveySummary->contains(fn (array $row): bool => ($row[0] ?? null) === $otherSurvey->title));
+    }
+
     public function test_consolidated_mode_survives_serialized_credit_filters_and_generates_member_rows(): void
     {
         Storage::fake('local');

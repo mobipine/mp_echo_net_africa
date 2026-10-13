@@ -53,7 +53,7 @@ class ComprehensiveSurveyReportService
             'questions' => $questions,
             'response_questions' => $responseQuestions,
             'credit_filters' => $creditFilters,
-            'is_consolidated' => $isConsolidated || $survey === null,
+            'is_consolidated' => $isConsolidated || $survey === null || $group === null,
         ];
     }
 
@@ -166,6 +166,7 @@ class ComprehensiveSurveyReportService
                     foreach ($questions as $question) {
                         if ($isConsolidated && (int) $question['survey_id'] !== (int) $progress->survey_id) {
                             $values[] = 'N/A';
+
                             continue;
                         }
 

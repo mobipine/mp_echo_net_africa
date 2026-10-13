@@ -162,10 +162,14 @@ class CreditUtilizationWorkbookWriter
     {
         $rows = [
             ['Item', 'Details'],
-            ['Purpose', 'One workbook covering all active surveys and all groups.'],
+            ['Purpose', $scope['survey']
+                ? 'One workbook covering the selected survey and all groups.'
+                : 'One workbook covering all active surveys and all groups.'],
             ['Generated at', now()->format('Y-m-d H:i:s T')],
             ['Requested by', $requestedBy],
-            ['Survey scope', 'All surveys marked Active at generation time; inactive surveys are excluded.'],
+            ['Survey scope', $scope['survey']
+                ? $scope['survey']->title.' (survey ID: '.$scope['survey']->id.').'
+                : 'All surveys marked Active at generation time; inactive surveys are excluded.'],
             ['Group scope', 'All groups; configured assignments and groups without assignments are listed.'],
             ['Survey count', $scope['surveys']->count()],
             ['Group-survey assignment count', $data['configured_group_survey_pairs']],
@@ -188,7 +192,7 @@ class CreditUtilizationWorkbookWriter
         $credits = collect($data['survey_rows'])->sum(fn (array $row): int => (int) ($row['credit_summary']['survey_attributed'] ?? 0));
         $rows = [
             ['Metric', 'Value', 'Definition'],
-            ['Active surveys included', count($data['survey_rows']), 'Only surveys marked Active at generation time; see Survey Summary.'],
+            ['Surveys included', count($data['survey_rows']), 'See Survey Summary for the selected survey scope.'],
             ['Configured group-survey assignments', $data['configured_group_survey_pairs'], 'Distinct configured group and survey pairs.'],
             ['Unique participants', $data['unique_participants'], 'Distinct member IDs across the included surveys.'],
             ['Group-survey pairs with dispatch recorded', $data['groups_with_dispatch_recorded'], 'Distinct configured group-survey pairs with a recorded dispatch.'],

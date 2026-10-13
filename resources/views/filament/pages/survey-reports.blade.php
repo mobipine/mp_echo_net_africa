@@ -34,7 +34,7 @@
         @if ($this->hasFiltersApplied())
             @php
                 $stats = $this->getStats();
-                $groupSummary = $this->getGroupSummary();
+                $groupSummaries = $this->getGroupSummary();
                 $dropoutData = $this->getDropoutData();
             @endphp
 
@@ -88,14 +88,20 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100 dark:divide-white/5">
-                            <tr>
-                                <td class="px-4 py-3 font-medium text-gray-950 dark:text-white">{{ $groupSummary['name'] }}</td>
-                                <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{{ number_format($groupSummary['total_members']) }}</td>
-                                <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{{ number_format($groupSummary['total_progresses']) }}</td>
-                                <td class="px-4 py-3 text-right font-semibold text-green-600 dark:text-green-400">{{ number_format($groupSummary['completed_progresses']) }}</td>
-                                <td class="px-4 py-3 text-right font-semibold text-yellow-600 dark:text-yellow-400">{{ number_format($groupSummary['ongoing_progresses']) }}</td>
-                                <td class="px-4 py-3 text-right font-semibold text-red-600 dark:text-red-400">{{ number_format($groupSummary['cancelled_progresses']) }}</td>
-                            </tr>
+                            @forelse ($groupSummaries as $groupSummary)
+                                <tr>
+                                    <td class="px-4 py-3 font-medium text-gray-950 dark:text-white">{{ $groupSummary['name'] }}</td>
+                                    <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{{ number_format($groupSummary['total_members']) }}</td>
+                                    <td class="px-4 py-3 text-right text-gray-700 dark:text-gray-300">{{ number_format($groupSummary['total_progresses']) }}</td>
+                                    <td class="px-4 py-3 text-right font-semibold text-green-600 dark:text-green-400">{{ number_format($groupSummary['completed_progresses']) }}</td>
+                                    <td class="px-4 py-3 text-right font-semibold text-yellow-600 dark:text-yellow-400">{{ number_format($groupSummary['ongoing_progresses']) }}</td>
+                                    <td class="px-4 py-3 text-right font-semibold text-red-600 dark:text-red-400">{{ number_format($groupSummary['cancelled_progresses']) }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="6" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">No group data for the selected survey.</td>
+                                </tr>
+                            @endforelse
                         </tbody>
                     </table>
                 </div>

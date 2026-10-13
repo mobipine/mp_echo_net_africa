@@ -9,13 +9,12 @@ use App\Models\Survey;
 use App\Models\SurveyProgress;
 use App\Services\ComprehensiveSurveyReportService;
 use Filament\Actions\Action;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Pages\Dashboard\Concerns\HasFiltersForm;
 use Filament\Pages\Page;
-use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -25,9 +24,13 @@ class SurveyReports extends Page
     use HasFiltersForm;
 
     protected static ?string $navigationIcon = 'heroicon-o-chart-pie';
+
     protected static ?string $navigationLabel = 'Survey Reports';
+
     protected static ?string $slug = 'survey-reports';
+
     protected static ?string $navigationGroup = 'Analytics';
+
     protected static string $view = 'filament.pages.survey-reports';
 
     /**
@@ -79,36 +82,41 @@ class SurveyReports extends Page
         return $form
             ->schema([
                 Section::make('Survey scope')
-                    ->description('Select a group first, then pick a survey that was dispatched to it.')
+                    ->description('Choose a survey to see results across all groups. Add a group to narrow the results.')
                     ->schema([
-                        Select::make('group_id')
-                            ->label('Group')
-                            ->options(fn (): array => Group::query()->orderBy('name')->pluck('name', 'id')->all())
-                            ->placeholder('Select a group')
-                            ->searchable()
-                            ->preload()
-                            ->live()
-                            ->afterStateUpdated(fn (callable $set) => $set('survey_id', null)),
-
                         Select::make('survey_id')
                             ->label('Survey')
                             ->options(function (callable $get): array {
                                 $groupId = $get('group_id');
 
-                                if (! $groupId) {
-                                    return [];
-                                }
-
                                 return Survey::query()
-                                    ->whereHas('groups', fn ($query) => $query->where('groups.id', $groupId))
+                                    ->when($groupId, fn ($query) => $query->whereHas('groups', fn ($groups) => $groups->where('groups.id', $groupId)))
                                     ->orderBy('title')
                                     ->pluck('title', 'id')
                                     ->all();
                             })
-                            ->placeholder('Select a group first')
+                            ->placeholder('Select a survey')
                             ->searchable()
+                            ->preload()
+                            ->live(),
+
+                        Select::make('group_id')
+                            ->label('Group (optional)')
+                            ->options(fn (): array => Group::query()->orderBy('name')->pluck('name', 'id')->all())
+                            ->placeholder('All groups')
+                            ->searchable()
+                            ->preload()
                             ->live()
-                            ->disabled(fn (callable $get): bool => blank($get('group_id'))),
+                            ->afterStateUpdated(function (callable $get, callable $set, $state): void {
+                                $surveyId = $get('survey_id');
+
+                                if ($state && $surveyId && ! Survey::query()
+                                    ->whereKey($surveyId)
+                                    ->whereHas('groups', fn ($query) => $query->where('groups.id', $state))
+                                    ->exists()) {
+                                    $set('survey_id', null);
+                                }
+                            }),
                     ])
                     ->columns(2),
             ]);
@@ -141,8 +149,7 @@ class SurveyReports extends Page
                 ->label('Download consolidated report')
                 ->icon('heroicon-o-document-chart-bar')
                 ->color('info')
-                ->visible(fn (): bool => ! filled($this->filters['survey_id'] ?? null)
-                    || ! filled($this->filters['group_id'] ?? null))
+                ->visible(fn (): bool => ! filled($this->filters['survey_id'] ?? null))
                 ->requiresConfirmation()
                 ->modalHeading('Generate consolidated survey workbook')
                 ->modalDescription('This queues a single Excel workbook covering ALL active surveys and ALL groups. The M&E team can filter by survey within the workbook. This may take several minutes to generate.')
@@ -153,11 +160,10 @@ class SurveyReports extends Page
                 ->label('Download comprehensive report')
                 ->icon('heroicon-o-document-arrow-down')
                 ->color('success')
-                ->visible(fn (): bool => filled($this->filters['survey_id'] ?? null)
-                    && filled($this->filters['group_id'] ?? null))
+                ->visible(fn (): bool => filled($this->filters['survey_id'] ?? null))
                 ->requiresConfirmation()
                 ->modalHeading('Generate comprehensive survey workbook')
-                ->modalDescription('This queues a private Excel workbook with all group members, every survey question and response, participation outcomes, question drop-offs, and SMS credit utilization.')
+                ->modalDescription('This queues a private Excel workbook for the selected survey and group scope, with responses, participation outcomes, question drop-offs, and SMS credit utilization.')
                 ->modalSubmitActionLabel('Queue workbook')
                 ->action(fn () => $this->queueComprehensiveReport()),
         ];
@@ -176,13 +182,13 @@ class SurveyReports extends Page
         $surveyId = $this->filters['survey_id'] ?? null;
         $groupId = $this->filters['group_id'] ?? null;
 
-        if (! $surveyId || ! $groupId) {
+        if (! $surveyId) {
             return [];
         }
 
         $baseQuery = SurveyProgress::query()
             ->where('survey_id', $surveyId)
-            ->whereHas('member.groups', fn ($q) => $q->where('groups.id', $groupId));
+            ->when($groupId, fn ($query) => $query->whereHas('member.groups', fn ($groups) => $groups->where('groups.id', $groupId)));
 
         $total = (clone $baseQuery)->count();
         $completed = (clone $baseQuery)->whereNotNull('completed_at')->where('status', 'COMPLETED')->count();
@@ -215,50 +221,48 @@ class SurveyReports extends Page
         $surveyId = $this->filters['survey_id'] ?? null;
         $groupId = $this->filters['group_id'] ?? null;
 
-        if (! $surveyId || ! $groupId) {
+        if (! $surveyId) {
             return [];
         }
 
-        $group = Group::find($groupId);
-        if (! $group) {
-            return [];
-        }
+        $progressByGroup = DB::table('group_member')
+            ->join('members', 'members.id', '=', 'group_member.member_id')
+            ->join('survey_progress', 'survey_progress.member_id', '=', 'members.id')
+            ->whereNull('members.deleted_at')
+            ->where('survey_progress.survey_id', $surveyId)
+            ->when($groupId, fn ($query) => $query->where('group_member.group_id', $groupId))
+            ->select('group_member.group_id')
+            ->selectRaw('COUNT(*) as total_progresses')
+            ->selectRaw("SUM(CASE WHEN survey_progress.completed_at IS NOT NULL AND survey_progress.status = 'COMPLETED' THEN 1 ELSE 0 END) as completed_progresses")
+            ->selectRaw("SUM(CASE WHEN survey_progress.completed_at IS NULL AND survey_progress.status IN ('ACTIVE', 'UPDATING_DETAILS', 'PENDING') THEN 1 ELSE 0 END) as ongoing_progresses")
+            ->selectRaw("SUM(CASE WHEN survey_progress.status = 'CANCELLED' THEN 1 ELSE 0 END) as cancelled_progresses")
+            ->groupBy('group_member.group_id')
+            ->get()
+            ->keyBy('group_id');
 
-        $members = $group->members()->count();
+        return Group::query()
+            ->when($groupId,
+                fn ($query) => $query->whereKey($groupId),
+                fn ($query) => $query->where(function ($groups) use ($surveyId, $progressByGroup) {
+                    $groups->whereHas('surveys', fn ($surveys) => $surveys->where('surveys.id', $surveyId))
+                        ->orWhereIn('groups.id', $progressByGroup->keys()->all());
+                }))
+            ->withCount('members')
+            ->orderBy('name')
+            ->get()
+            ->map(function (Group $group) use ($progressByGroup): array {
+                $progress = $progressByGroup->get($group->id);
 
-        $totalProgresses = SurveyProgress::query()
-            ->where('survey_id', $surveyId)
-            ->whereHas('member.groups', fn ($q) => $q->where('groups.id', $groupId))
-            ->count();
-
-        $completedProgresses = SurveyProgress::query()
-            ->where('survey_id', $surveyId)
-            ->whereNotNull('completed_at')
-            ->where('status', 'COMPLETED')
-            ->whereHas('member.groups', fn ($q) => $q->where('groups.id', $groupId))
-            ->count();
-
-        $ongoingProgresses = SurveyProgress::query()
-            ->where('survey_id', $surveyId)
-            ->whereNull('completed_at')
-            ->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS', 'PENDING'])
-            ->whereHas('member.groups', fn ($q) => $q->where('groups.id', $groupId))
-            ->count();
-
-        $cancelledProgresses = SurveyProgress::query()
-            ->where('survey_id', $surveyId)
-            ->where('status', 'CANCELLED')
-            ->whereHas('member.groups', fn ($q) => $q->where('groups.id', $groupId))
-            ->count();
-
-        return [
-            'name' => $group->name,
-            'total_members' => $members,
-            'total_progresses' => $totalProgresses,
-            'completed_progresses' => $completedProgresses,
-            'ongoing_progresses' => $ongoingProgresses,
-            'cancelled_progresses' => $cancelledProgresses,
-        ];
+                return [
+                    'name' => $group->name,
+                    'total_members' => $group->members_count,
+                    'total_progresses' => (int) ($progress->total_progresses ?? 0),
+                    'completed_progresses' => (int) ($progress->completed_progresses ?? 0),
+                    'ongoing_progresses' => (int) ($progress->ongoing_progresses ?? 0),
+                    'cancelled_progresses' => (int) ($progress->cancelled_progresses ?? 0),
+                ];
+            })
+            ->all();
     }
 
     /**
@@ -269,7 +273,7 @@ class SurveyReports extends Page
         $surveyId = $this->filters['survey_id'] ?? null;
         $groupId = $this->filters['group_id'] ?? null;
 
-        if (! $surveyId || ! $groupId) {
+        if (! $surveyId) {
             return [];
         }
 
@@ -278,7 +282,7 @@ class SurveyReports extends Page
             ->whereNull('completed_at')
             ->whereIn('status', ['ACTIVE', 'PENDING', 'UPDATING_DETAILS'])
             ->where('survey_id', $surveyId)
-            ->whereHas('member.groups', fn ($q) => $q->where('groups.id', $groupId))
+            ->when($groupId, fn ($query) => $query->whereHas('member.groups', fn ($groups) => $groups->where('groups.id', $groupId)))
             ->groupBy('current_question_id')
             ->orderByRaw('COUNT(*) DESC')
             ->limit(20)
@@ -298,8 +302,7 @@ class SurveyReports extends Page
 
     public function hasFiltersApplied(): bool
     {
-        return filled($this->filters['survey_id'] ?? null)
-            && filled($this->filters['group_id'] ?? null);
+        return filled($this->filters['survey_id'] ?? null);
     }
 
     public function getRecentExports()
@@ -349,7 +352,7 @@ class SurveyReports extends Page
         }
 
         $unit = (($export->filters['report_mode'] ?? null) === 'consolidated'
-            || Str::contains($export->file_name, 'consolidated_survey_report'))
+            || Str::contains($export->file_name, ['consolidated_survey_report', 'all_groups_survey_report']))
             ? 'responses'
             : (Str::contains($export->file_name, 'comprehensive_survey_report') ? 'members' : 'transactions');
 
@@ -368,13 +371,21 @@ class SurveyReports extends Page
             ]);
             $uuid = (string) Str::uuid();
 
-            if ($consolidated || ($scope['survey'] === null || $scope['group'] === null)) {
+            if ($consolidated) {
                 $fileName = collect([
                     'echo_net_africa',
                     'all_surveys',
                     'consolidated_survey_report',
                     now()->format('Y_m_d_His'),
                 ])->implode('_').'.xlsx';
+            } elseif ($scope['group'] === null) {
+                $fileName = collect([
+                    'echo_net_africa',
+                    Str::slug($scope['survey']->title, '_'),
+                    'all_groups',
+                    'survey_report',
+                    now()->format('Y_m_d_His'),
+                ])->filter()->implode('_').'.xlsx';
             } else {
                 $fileName = collect([
                     'echo_net_africa',
@@ -386,7 +397,7 @@ class SurveyReports extends Page
             }
 
             $reportFilters = $scope['credit_filters'];
-            if ($scope['is_consolidated']) {
+            if ($consolidated) {
                 $reportFilters['report_mode'] = 'consolidated';
             }
 
@@ -412,7 +423,7 @@ class SurveyReports extends Page
 
             Notification::make()
                 ->title('Report could not be queued')
-                ->body('Please verify the survey and group, then try again.')
+                ->body('Please verify the selected survey and group, then try again.')
                 ->danger()
                 ->send();
         }
