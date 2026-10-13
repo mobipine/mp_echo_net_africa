@@ -28,6 +28,10 @@ class CreditUtilizationWorkbookWriter
     {
         $scope = $this->surveyReports->scope($filters);
 
+        if (filled($filters['report_metric'] ?? null)) {
+            return $this->writeCardReport($scope, (string) $filters['report_metric'], $outputPath);
+        }
+
         if ($scope['is_consolidated']) {
             return $this->writeConsolidated($scope, $requestedBy, $outputPath);
         }
@@ -74,6 +78,84 @@ class CreditUtilizationWorkbookWriter
         }
 
         return $memberRows;
+    }
+
+    private function writeCardReport(array $scope, string $metric, string $outputPath): int
+    {
+        $survey = $scope['survey'];
+        if (! $survey) {
+            throw new \InvalidArgumentException('A survey must be selected for a card report.');
+        }
+
+        $writer = new Writer(new Options);
+        $writer->setCreator('Echo Net Africa');
+        $writer->openToFile($outputPath);
+
+        try {
+            $sheet = $writer->getCurrentSheet();
+            $sheet->setName('Member Responses');
+            $metricHeading = match ($metric) {
+                'total_progresses' => 'Total Progresses',
+                'completed' => 'Completed Progresses',
+                'in_progress' => 'In Progress Records',
+                'cancelled' => 'Cancelled Progresses',
+                'reminders_sent' => 'Reminders Sent',
+                'members_sent_reminder' => 'Members Sent Reminder',
+                'repeated_reminders' => 'Repeated Reminders (3+)',
+                default => throw new \InvalidArgumentException('Unsupported survey report card metric.'),
+            };
+            $headings = [
+                'Name', 'Email', 'Phone Number', 'National ID', 'Gender',
+                'Date of Birth', 'Marital Status', 'County Name', $metricHeading,
+                ...$scope['questions']->pluck('question')->all(),
+            ];
+            $sheet->setSheetView((new SheetView)->setFreezeRow(1)->setShowGridLines(false));
+            $writer->addRow(Row::fromValues($headings, $this->legacyHeaderStyle())->setHeight(24));
+
+            $maxLengths = array_map(fn ($heading): int => $this->displayLength($heading), $headings);
+            $dataRow = 0;
+            $rows = $this->surveyReports->streamMemberResponses(
+                $survey->id,
+                $scope['group']?->id,
+                $scope['questions'],
+                function (array $record) use ($writer, $scope, &$maxLengths, &$dataRow): void {
+                    $member = $record['member'];
+                    $values = [
+                        $member->name ?? 'N/A',
+                        $member->email ?? 'N/A',
+                        $member->phone ?? 'N/A',
+                        $member->national_id ?? 'N/A',
+                        $member->gender ?? 'N/A',
+                        $member->dob?->format('Y-m-d') ?? 'N/A',
+                        $member->marital_status ?? 'N/A',
+                        $member->county?->name ?? 'N/A',
+                        $record['card_metric_value'] ?? 0,
+                    ];
+
+                    foreach ($scope['questions'] as $question) {
+                        $values[] = $record['answers'][$question['id']]['value'] ?? 'N/A';
+                    }
+
+                    foreach ($values as $column => $value) {
+                        $maxLengths[$column] = max($maxLengths[$column], $this->displayLength($value));
+                    }
+
+                    $style = $dataRow % 2 === 0 ? $this->legacyBodyStyle(true) : $this->legacyBodyStyle();
+                    $writer->addRow(Row::fromValues($values, $style));
+                    $dataRow++;
+                },
+                $metric,
+            );
+
+            foreach ($maxLengths as $column => $length) {
+                $sheet->setColumnWidth(min(255, max(10, $length + 2)), $column + 1);
+            }
+            $sheet->setAutoFilter(new AutoFilter(0, 0, max(0, count($headings) - 1), $dataRow));
+        } finally {
+            $writer->close();
+        }
+
+        return $rows['stats']['group_members'];
     }
 
     private function writeConsolidated(array $scope, string $requestedBy, string $outputPath): int

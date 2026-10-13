@@ -359,6 +359,76 @@ class SurveyReports extends Page
         return number_format($export->row_count).' '.$unit;
     }
 
+    public function queueCardReport(string $metric): void
+    {
+        $userId = auth()->id();
+        abort_unless($userId, 403);
+
+        $labels = [
+            'total_progresses' => 'Total progresses',
+            'completed' => 'Surveys completed',
+            'in_progress' => 'Still in progress',
+            'cancelled' => 'Cancelled',
+            'reminders_sent' => 'Reminders sent',
+            'members_sent_reminder' => 'Members sent reminder',
+            'repeated_reminders' => 'Repeated reminders',
+        ];
+
+        if (! isset($labels[$metric]) || ! filled($this->filters['survey_id'] ?? null)) {
+            Notification::make()
+                ->title('Select a survey first')
+                ->body('Choose a survey before exporting a card report.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        try {
+            $scope = app(ComprehensiveSurveyReportService::class)->scope([
+                'survey_ids' => [$this->filters['survey_id']],
+                'group_ids' => [$this->filters['group_id'] ?? null],
+            ]);
+            $uuid = (string) Str::uuid();
+            $fileName = collect([
+                'echo_net_africa',
+                Str::slug($scope['survey']->title, '_'),
+                $scope['group'] ? Str::slug($scope['group']->name, '_') : 'all_groups',
+                Str::slug($metric, '_'),
+                'comprehensive_survey_report',
+                now()->format('Y_m_d_His'),
+            ])->filter()->implode('_').'.xlsx';
+            $reportFilters = $scope['credit_filters'];
+            $reportFilters['report_metric'] = $metric;
+
+            $report = CreditReportExport::query()->create([
+                'uuid' => $uuid,
+                'user_id' => $userId,
+                'status' => CreditReportExport::STATUS_QUEUED,
+                'filters' => $reportFilters,
+                'disk' => 'local',
+                'file_path' => "private/credit-reports/{$userId}/{$uuid}.xlsx",
+                'file_name' => $fileName,
+            ]);
+
+            GenerateCreditUtilizationReportJob::dispatch($report->id)->afterCommit();
+
+            Notification::make()
+                ->title($labels[$metric].' report queued')
+                ->body('The Excel workbook is being generated. It will appear in your downloads when ready.')
+                ->success()
+                ->send();
+        } catch (Throwable $exception) {
+            report($exception);
+
+            Notification::make()
+                ->title('Report could not be queued')
+                ->body('Please verify the selected survey and group, then try again.')
+                ->danger()
+                ->send();
+        }
+    }
+
     private function queueComprehensiveReport(bool $consolidated = false): void
     {
         $userId = auth()->id();

@@ -40,13 +40,13 @@
             {{-- Stat cards matching Filament's StatsOverviewWidget design --}}
             @php
                 $statCards = [
-                    ['label' => 'Total Progresses', 'value' => number_format($stats['total']), 'description' => 'Total progress records created.', 'icon' => 'heroicon-o-chart-bar', 'iconColor' => 'text-gray-400 dark:text-gray-500'],
-                    ['label' => 'Surveys Completed', 'value' => number_format($stats['completed']), 'description' => $stats['completion_rate'] . '% Completion Rate', 'icon' => 'heroicon-o-check-circle', 'iconColor' => 'text-green-500 dark:text-green-400'],
-                    ['label' => 'Still In Progress', 'value' => number_format($stats['in_progress']), 'description' => 'Uncompleted active surveys.', 'icon' => 'heroicon-o-clock', 'iconColor' => 'text-yellow-500 dark:text-yellow-400'],
-                    ['label' => 'Cancelled', 'value' => number_format($stats['cancelled']), 'description' => 'Cancelled the survey progress.', 'icon' => 'heroicon-o-x-circle', 'iconColor' => 'text-red-500 dark:text-red-400'],
-                    ['label' => 'Reminders Sent', 'value' => number_format($stats['reminders_sent']), 'description' => 'Total reminders sent to members.', 'icon' => 'heroicon-o-bell', 'iconColor' => 'text-blue-500 dark:text-blue-400'],
-                    ['label' => 'Members Sent Reminder', 'value' => number_format($stats['members_sent_reminder']), 'description' => 'Unique members who received reminders.', 'icon' => 'heroicon-o-user-group', 'iconColor' => 'text-primary-500 dark:text-primary-400'],
-                    ['label' => 'Repeated Reminders (3+)', 'value' => number_format($stats['repeat_reminders']), 'description' => 'Members who received 3+ reminders.', 'icon' => 'heroicon-o-exclamation-circle', 'iconColor' => 'text-red-500 dark:text-red-400'],
+                    ['metric' => 'total_progresses', 'label' => 'Total Progresses', 'value' => number_format($stats['total']), 'description' => 'Total progress records created.', 'icon' => 'heroicon-o-chart-bar', 'iconColor' => 'text-gray-400 dark:text-gray-500'],
+                    ['metric' => 'completed', 'label' => 'Surveys Completed', 'value' => number_format($stats['completed']), 'description' => $stats['completion_rate'] . '% Completion Rate', 'icon' => 'heroicon-o-check-circle', 'iconColor' => 'text-green-500 dark:text-green-400'],
+                    ['metric' => 'in_progress', 'label' => 'Still In Progress', 'value' => number_format($stats['in_progress']), 'description' => 'Uncompleted active surveys.', 'icon' => 'heroicon-o-clock', 'iconColor' => 'text-yellow-500 dark:text-yellow-400'],
+                    ['metric' => 'cancelled', 'label' => 'Cancelled', 'value' => number_format($stats['cancelled']), 'description' => 'Cancelled the survey progress.', 'icon' => 'heroicon-o-x-circle', 'iconColor' => 'text-red-500 dark:text-red-400'],
+                    ['metric' => 'reminders_sent', 'label' => 'Reminders Sent', 'value' => number_format($stats['reminders_sent']), 'description' => 'Total reminders sent to members.', 'icon' => 'heroicon-o-bell', 'iconColor' => 'text-blue-500 dark:text-blue-400'],
+                    ['metric' => 'members_sent_reminder', 'label' => 'Members Sent Reminder', 'value' => number_format($stats['members_sent_reminder']), 'description' => 'Unique members who received reminders.', 'icon' => 'heroicon-o-user-group', 'iconColor' => 'text-primary-500 dark:text-primary-400'],
+                    ['metric' => 'repeated_reminders', 'label' => 'Repeated Reminders (3+)', 'value' => number_format($stats['repeat_reminders']), 'description' => 'Members who received 3+ reminders.', 'icon' => 'heroicon-o-exclamation-circle', 'iconColor' => 'text-red-500 dark:text-red-400'],
                 ];
             @endphp
 
@@ -63,6 +63,19 @@
                             </div>
                             <div class="text-sm text-gray-500 dark:text-gray-400">
                                 {{ $card['description'] }}
+                            </div>
+                            <div class="pt-2">
+                                <x-filament::button
+                                    size="xs"
+                                    color="gray"
+                                    icon="heroicon-o-document-arrow-down"
+                                    wire:click="queueCardReport('{{ $card['metric'] }}')"
+                                    wire:loading.attr="disabled"
+                                    wire:target="queueCardReport"
+                                    aria-label="Export {{ $card['label'] }} as Excel"
+                                >
+                                    Export Excel
+                                </x-filament::button>
                             </div>
                         </div>
                     </div>

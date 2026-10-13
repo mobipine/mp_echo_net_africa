@@ -24,6 +24,7 @@ jobs:
       - name: Deploy to server
         run: |
           sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@213.199.58.213 << 'EOF'
+            set -euo pipefail
             cd /var/www/enaf
             git pull
             composer install --no-interaction --prefer-dist --optimize-autoloader
@@ -31,13 +32,26 @@ jobs:
             npm run build
             php artisan migrate --force
             php artisan optimize:clear
-            php artisan config:cache
-            php artisan route:cache
-            php artisan view:cache
-            php artisan event:cache
             php artisan optimize
+            php artisan filament:optimize
             php artisan queue:restart
             install -m 0644 deploy/supervisor/enaf-credit-reports-worker.conf /etc/supervisor/conf.d/enaf-credit-reports-worker.conf
             supervisorctl reread
             supervisorctl update
+            supervisorctl restart enaf-credit-reports-worker
+
+            systemctl is-active --quiet apache2
+            systemctl is-active --quiet php8.3-fpm
+            supervisorctl status enaf-credit-reports-worker | grep -q RUNNING
+            supervisorctl status enaf-reverb-server | grep -q RUNNING
+            systemctl reload php8.3-fpm
+            curl --fail --silent --show-error --location --max-time 20 \
+              --resolve enaf.monitoring.mp.ke:443:127.0.0.1 \
+              https://enaf.monitoring.mp.ke/admin/login -o /dev/null
+            test "$(curl --silent --show-error --max-time 3 -o /dev/null -w '%{http_code}' \
+              -H 'Connection: Upgrade' \
+              -H 'Upgrade: websocket' \
+              -H 'Sec-WebSocket-Version: 13' \
+              -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+              https://enaf.monitoring.mp.ke/reverb-websocket/up || true)" = 101
           EOF

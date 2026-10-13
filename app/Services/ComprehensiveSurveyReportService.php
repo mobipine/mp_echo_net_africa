@@ -192,7 +192,8 @@ class ComprehensiveSurveyReportService
         ?int $surveyId,
         ?int $groupId,
         Collection $questions,
-        ?callable $writeRow = null
+        ?callable $writeRow = null,
+        ?string $cardMetric = null,
     ): array {
         $questionByResponseId = [];
         $questionStats = [];
@@ -227,7 +228,28 @@ class ComprehensiveSurveyReportService
             'total_answers' => 0,
         ];
 
-        $this->memberQuery($groupId)
+        $memberQuery = $cardMetric !== null && $groupId
+            ? Member::query()->whereHas('groups', fn (Builder $query) => $query->where('groups.id', $groupId))
+            : $this->memberQuery($groupId);
+        if ($cardMetric !== null) {
+            if (! in_array($cardMetric, [
+                'total_progresses', 'completed', 'in_progress', 'cancelled',
+                'reminders_sent', 'members_sent_reminder', 'repeated_reminders',
+            ], true)) {
+                throw new \InvalidArgumentException('Unsupported survey report card metric.');
+            }
+
+            if (! $surveyId) {
+                throw new \InvalidArgumentException('A survey must be selected for a card report.');
+            }
+
+            $memberQuery->whereHas('surveyProgresses', function (Builder $query) use ($surveyId, $cardMetric): void {
+                $query->where('survey_id', $surveyId);
+                $this->applyCardMetricFilter($query, $cardMetric);
+            });
+        }
+
+        $memberQuery
             ->with('county:id,name')
             ->orderBy('members.id')
             ->chunkById(self::MEMBER_CHUNK_SIZE, function (Collection $members) use (
@@ -236,16 +258,34 @@ class ComprehensiveSurveyReportService
                 $questionByResponseId,
                 &$questionStats,
                 &$stats,
-                $writeRow
+                $writeRow,
+                $cardMetric,
             ) {
                 $memberIds = $members->pluck('id');
                 $progresses = SurveyProgress::query()
                     ->when($surveyId, fn ($q) => $q->where('survey_id', $surveyId))
+                    ->when($cardMetric !== null, function (Builder $query) use ($cardMetric): void {
+                        $this->applyCardMetricFilter($query, $cardMetric);
+                    })
                     ->whereIn('member_id', $memberIds)
                     ->orderByDesc('id')
                     ->get()
                     ->unique('member_id')
                     ->keyBy('member_id');
+
+                $cardValues = $cardMetric === null
+                    ? collect()
+                    : SurveyProgress::query()
+                        ->where('survey_id', $surveyId)
+                        ->whereIn('member_id', $memberIds)
+                        ->when($cardMetric !== null, function (Builder $query) use ($cardMetric): void {
+                            $this->applyCardMetricFilter($query, $cardMetric);
+                        })
+                        ->select('member_id')
+                        ->selectRaw('COUNT(*) as progress_count, COALESCE(SUM(number_of_reminders), 0) as reminders_sent')
+                        ->groupBy('member_id')
+                        ->get()
+                        ->keyBy('member_id');
 
                 $phoneVariants = $members
                     ->pluck('phone')
@@ -347,6 +387,12 @@ class ComprehensiveSurveyReportService
                             'first_response_at' => $responseDates->first(),
                             'last_response_at' => $responseDates->last(),
                             'answers' => $answers,
+                            'card_metric_value' => match ($cardMetric) {
+                                'reminders_sent' => (int) ($cardValues->get($member->id)?->reminders_sent ?? 0),
+                                'members_sent_reminder', 'repeated_reminders' => 1,
+                                null => null,
+                                default => (int) ($cardValues->get($member->id)?->progress_count ?? 0),
+                            },
                         ]);
                     }
                 }
@@ -356,6 +402,19 @@ class ComprehensiveSurveyReportService
             'stats' => $stats,
             'questions' => collect($questionStats)->sortBy('position')->values(),
         ];
+    }
+
+    private function applyCardMetricFilter(Builder $query, string $metric): void
+    {
+        match ($metric) {
+            'total_progresses' => null,
+            'completed' => $query->whereNotNull('completed_at')->where('status', 'COMPLETED'),
+            'in_progress' => $query->whereNull('completed_at')->whereIn('status', ['ACTIVE', 'UPDATING_DETAILS', 'PENDING']),
+            'cancelled' => $query->whereNull('completed_at')->where('status', 'CANCELLED'),
+            'reminders_sent', 'members_sent_reminder' => $query->where('number_of_reminders', '>=', 1),
+            'repeated_reminders' => $query->where('number_of_reminders', '>=', 3),
+            default => throw new \InvalidArgumentException('Unsupported survey report card metric.'),
+        };
     }
 
     private function canonicalQuestions(Survey $survey): Collection
