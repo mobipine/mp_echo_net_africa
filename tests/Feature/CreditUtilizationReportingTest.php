@@ -296,7 +296,7 @@ class CreditUtilizationReportingTest extends TestCase
         $this->assertSame('7', (string) $financeSummary[14]);
         $this->assertSame('3', (string) $financeSummary[15]);
         $this->assertSame('3', (string) $financeSummary[16]);
-        $this->assertSame('2', (string) $financeSummary[19]);
+        $this->assertSame('1', (string) $financeSummary[19]);
 
         $groupSurvey = $workbook->getSheetByName('Group x Survey');
         $groupSurveyRows = collect($groupSurvey->toArray(null, true, true, false));
@@ -315,12 +315,12 @@ class CreditUtilizationReportingTest extends TestCase
         $this->assertSame('1', (string) $activePair[11]);
         $this->assertSame('1', (string) $activePair[12]);
         $this->assertSame('1', (string) $activePair[13]);
-        $this->assertSame('5', (string) $activePair[14]);
+        $this->assertSame('6', (string) $activePair[14]);
         $this->assertSame('75.0%', (string) $activePair[15]);
         $this->assertSame('3', (string) $activePair[17]);
         $unattributedPair = $groupSurveyRows->first(fn (array $row): bool => ($row[0] ?? null) === 'Unattributed / legacy'
             && ($row[2] ?? null) === 'Household Finance Survey');
-        $this->assertSame('2', (string) $unattributedPair[14]);
+        $this->assertSame('1', (string) $unattributedPair[14]);
 
         $groupCoverage = collect($workbook->getSheetByName('Group Coverage')->toArray(null, true, true, false));
         $this->assertTrue($groupCoverage->contains(fn (array $row): bool => ($row[0] ?? null) === 'Kibera Group'
@@ -342,8 +342,12 @@ class CreditUtilizationReportingTest extends TestCase
         $ambiguousLegacyResponse = $responseRows->first(fn (array $row): bool => ($row[7] ?? null) === 'Ambiguous phone match'
             && ($row[11] ?? null) === '750');
         $this->assertNotNull($ambiguousLegacyResponse);
-        $this->assertTrue($responseRows->contains(fn (array $row): bool => ($row[7] ?? null) === 'John Active'
-            && ($row[11] ?? null) === '625'));
+        $unverifiedMemberGroupResponse = $responseRows->first(fn (array $row): bool => ($row[7] ?? null) === 'John Active'
+            && ($row[11] ?? null) === '625');
+        $this->assertNotNull($unverifiedMemberGroupResponse);
+        $this->assertSame('Umoja Group', $unverifiedMemberGroupResponse[3]);
+        $this->assertSame((string) $data['group']->id, (string) $unverifiedMemberGroupResponse[4]);
+        $this->assertSame('Inferred from member group and survey dispatch', $unverifiedMemberGroupResponse[5]);
         $this->assertSame('A1:O8', $responses->getAutoFilter()->getRange());
         $this->assertSame('A2', $responses->getFreezePane());
         $participantSummary = $workbook->getSheetByName('Participant Survey Summary');

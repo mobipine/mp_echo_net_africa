@@ -178,7 +178,7 @@ class CreditUtilizationWorkbookWriter
             ['Participant response rows', $data['responses']],
             ['Unattributed participant-survey records', $data['unattributed_participant_surveys']],
             ['Unattributed response rows', $data['unattributed_responses']],
-            ['Group attribution', 'A group is verified only when a progress record dispatch batch matches group-survey dispatch metadata. Other records are marked as legacy/unattributed.'],
+            ['Group attribution', 'Dispatch batch matches are verified. Older records use the member’s group and survey dispatch history when the match is clear. A current member group may be shown without a verified survey dispatch; ambiguous records remain unattributed.'],
             ['Response row grain', 'One row per stored participant-survey-question response; repeated answers remain separate rows.'],
             ['Participant summary grain', 'Latest progress record per participant and survey; response history remains in Participant Responses.'],
             ['Filtering', 'Use each sheet’s header filters to analyze by survey, group, status, participant, or question.'],

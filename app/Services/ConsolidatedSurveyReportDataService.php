@@ -51,6 +51,7 @@ class ConsolidatedSurveyReportDataService
         }
 
         $pairs = $this->configuredGroupSurveyPairs($surveyIds);
+        $groupNames = Group::query()->pluck('name', 'id')->all();
         $pairStats = [];
         $batchToPair = [];
         $batchCandidates = [];
@@ -66,8 +67,11 @@ class ConsolidatedSurveyReportDataService
                 'was_dispatched' => $pair['was_dispatched'],
                 'dispatched_at' => $pair['dispatched_at'],
                 'dispatch_batch_uuids' => $pair['dispatch_batch_uuids'],
+                'dispatch_times' => $pair['dispatch_times'],
                 'progress_count' => 0,
                 'response_count' => 0,
+                'inferred_progress_count' => 0,
+                'inferred_response_count' => 0,
                 'respondent_ids' => [],
                 'completed_ids' => [],
                 'in_progress_ids' => [],
@@ -140,6 +144,7 @@ class ConsolidatedSurveyReportDataService
                 &$pairStats,
                 $batchToPair,
                 $ambiguousBatchUuids,
+                $groupNames,
                 &$responseCountsByProgress,
                 &$respondedProgressIds,
                 &$globalParticipantIds,
@@ -148,7 +153,7 @@ class ConsolidatedSurveyReportDataService
             ): void {
                 $progressById = SurveyProgress::query()
                     ->whereIn('id', $responses->pluck('session_id')->filter()->unique())
-                    ->with('member.county')
+                    ->with(['member.county', 'member.groups:id'])
                     ->get()
                     ->keyBy('id');
                 $legacyMembersByPhone = $this->membersByNormalizedPhone($responses);
@@ -170,13 +175,18 @@ class ConsolidatedSurveyReportDataService
                     }
                     $memberId = $member?->id ? (int) $member->id : null;
                     $batchUuid = $progress?->dispatch_batch_uuid;
-                    $pairKey = $batchUuid ? ($batchToPair[$batchUuid] ?? null) : null;
-                    $groupName = $pairKey ? $pairStats[$pairKey]['group_name'] : null;
-                    $attribution = $pairKey
-                        ? 'Verified by dispatch batch'
-                        : (isset($ambiguousBatchUuids[$batchUuid])
-                            ? 'Unattributed: batch matches multiple group assignments'
-                            : ($progress ? 'Unattributed: no matching group dispatch batch' : 'Unattributed: no linked survey progress'));
+                    $group = $this->resolveGroupAttribution(
+                        $surveyId,
+                        $member,
+                        $batchUuid,
+                        $progress?->created_at ?? $response->created_at,
+                        $progress !== null,
+                        $pairStats,
+                        $batchToPair,
+                        $ambiguousBatchUuids,
+                        $groupNames,
+                    );
+                    $pairKey = $group['pair_key'];
                     $questionId = $questionBySurveyAndId[$surveyId][(int) $response->question_id] ?? null;
                     $question = $questionDetailsBySurveyAndId[$surveyId][(int) $response->question_id] ?? null;
 
@@ -200,6 +210,9 @@ class ConsolidatedSurveyReportDataService
                     }
                     if ($pairKey) {
                         $pairStats[$pairKey]['response_count']++;
+                        if ($group['source'] !== 'batch') {
+                            $pairStats[$pairKey]['inferred_response_count']++;
+                        }
                     }
 
                     if ($questionId !== null) {
@@ -231,9 +244,9 @@ class ConsolidatedSurveyReportDataService
                         $survey->title,
                         $surveyId,
                         $survey->status,
-                        $groupName ?? 'Unattributed / legacy',
-                        $pairKey ? $pairStats[$pairKey]['group_id'] : null,
-                        $attribution,
+                        $group['name'],
+                        $group['id'],
+                        $group['attribution'],
                         $memberId,
                         $member?->name ?? ($phoneMatches->count() > 1 ? 'Ambiguous phone match' : 'Unmatched participant'),
                         $member?->phone ?? $response->msisdn,
@@ -254,7 +267,7 @@ class ConsolidatedSurveyReportDataService
 
         SurveyProgress::query()
             ->whereIn('id', $latestProgressIds)
-            ->with('member.county')
+            ->with(['member.county', 'member.groups:id'])
             ->orderBy('id')
             ->chunkById(500, function (Collection $progresses) use (
                 $surveyById,
@@ -262,6 +275,7 @@ class ConsolidatedSurveyReportDataService
                 &$pairStats,
                 $batchToPair,
                 $ambiguousBatchUuids,
+                $groupNames,
                 $responseCountsByProgress,
                 $respondedProgressIds,
                 &$globalParticipantIds,
@@ -279,7 +293,18 @@ class ConsolidatedSurveyReportDataService
                     $memberId = $member?->id ? (int) $member->id : null;
                     $participantKey = $memberId ?? 'progress-'.$progress->id;
                     $batchUuid = $progress->dispatch_batch_uuid;
-                    $pairKey = $batchUuid ? ($batchToPair[$batchUuid] ?? null) : null;
+                    $group = $this->resolveGroupAttribution(
+                        $surveyId,
+                        $member,
+                        $batchUuid,
+                        $progress->created_at,
+                        true,
+                        $pairStats,
+                        $batchToPair,
+                        $ambiguousBatchUuids,
+                        $groupNames,
+                    );
+                    $pairKey = $group['pair_key'];
                     $responseCount = (int) ($responseCountsByProgress[$progress->id] ?? 0);
                     $responded = isset($respondedProgressIds[$progress->id]) || (bool) $progress->has_responded;
                     $completed = (bool) $progress->completed_at || strtoupper((string) $progress->status) === 'COMPLETED';
@@ -295,6 +320,9 @@ class ConsolidatedSurveyReportDataService
                         $surveyStats[$surveyId]['unattributed_participant_surveys']++;
                     } else {
                         $pairStats[$pairKey]['progress_count']++;
+                        if ($group['source'] !== 'batch') {
+                            $pairStats[$pairKey]['inferred_progress_count']++;
+                        }
                         $pairStatsProgressIds[$pairKey][$participantKey] = true;
                     }
 
@@ -333,13 +361,9 @@ class ConsolidatedSurveyReportDataService
                         $survey->title,
                         $surveyId,
                         $survey->status,
-                        $pairKey ? $pairStats[$pairKey]['group_name'] : 'Unattributed / legacy',
-                        $pairKey ? $pairStats[$pairKey]['group_id'] : null,
-                        $pairKey
-                            ? 'Verified by dispatch batch'
-                            : (isset($ambiguousBatchUuids[$batchUuid])
-                                ? 'Unattributed: batch matches multiple group assignments'
-                                : 'Unattributed: no matching group dispatch batch'),
+                        $group['name'],
+                        $group['id'],
+                        $group['attribution'],
                         $memberId,
                         $member?->name ?? 'Unmatched participant',
                         $member?->phone ?? '',
@@ -385,6 +409,11 @@ class ConsolidatedSurveyReportDataService
         unset($stats);
 
         foreach ($pairStats as &$stats) {
+            if ($stats['inferred_progress_count'] > 0 || $stats['inferred_response_count'] > 0) {
+                $stats['attribution'] = $stats['dispatch_batch_uuids'] === []
+                    ? 'Inferred from member group and survey dispatch history'
+                    : 'Verified batches and inferred legacy group matches';
+            }
             $stats['unique_respondents'] = count($stats['respondent_ids']);
             $stats['completed_count'] = count($stats['completed_ids']);
             $stats['in_progress_count'] = count($stats['in_progress_ids']);
@@ -396,7 +425,7 @@ class ConsolidatedSurveyReportDataService
             $stats['completion_rate'] = $stats['progress_count'] > 0
                 ? $stats['completed_count'] / $stats['progress_count']
                 : null;
-            unset($stats['respondent_ids'], $stats['completed_ids'], $stats['in_progress_ids'], $stats['dropped_ids'], $stats['no_response_ids']);
+            unset($stats['respondent_ids'], $stats['completed_ids'], $stats['in_progress_ids'], $stats['dropped_ids'], $stats['no_response_ids'], $stats['dispatch_times'], $stats['inferred_progress_count'], $stats['inferred_response_count']);
         }
         unset($stats);
 
@@ -456,7 +485,7 @@ class ConsolidatedSurveyReportDataService
                     'no_response_count' => null,
                     'response_rate' => null,
                     'completion_rate' => null,
-                    'attribution' => 'Legacy progress without a reliable group batch',
+                    'attribution' => 'Group dispatch unresolved or member group only',
                     'attributed_credits' => 0,
                 ]);
             }
@@ -505,6 +534,7 @@ class ConsolidatedSurveyReportDataService
                         'was_dispatched' => false,
                         'dispatched_at' => null,
                         'dispatch_batch_uuids' => [],
+                        'dispatch_times' => [],
                     ];
                 }
 
@@ -517,10 +547,17 @@ class ConsolidatedSurveyReportDataService
                 if ($assignment->dispatch_batch_uuid) {
                     $pairRows[$key]['dispatch_batch_uuids'][] = $assignment->dispatch_batch_uuid;
                 }
+                if ($assignment->was_dispatched || $assignment->dispatched_at) {
+                    $dispatchAt = $assignment->dispatched_at ?? $assignment->created_at;
+                    if ($dispatchAt) {
+                        $pairRows[$key]['dispatch_times'][] = $dispatchAt->getTimestamp();
+                    }
+                }
             });
 
         foreach ($pairRows as &$pair) {
             $pair['dispatch_batch_uuids'] = array_values(array_unique($pair['dispatch_batch_uuids']));
+            $pair['dispatch_times'] = array_values(array_unique($pair['dispatch_times']));
         }
         unset($pair);
 
@@ -598,6 +635,132 @@ class ConsolidatedSurveyReportDataService
         return $coverage;
     }
 
+    private function resolveGroupAttribution(
+        int $surveyId,
+        ?Member $member,
+        ?string $batchUuid,
+        mixed $observedAt,
+        bool $hasProgress,
+        array $pairStats,
+        array $batchToPair,
+        array $ambiguousBatchUuids,
+        array $groupNames,
+    ): array {
+        $batchPairKey = $batchUuid ? ($batchToPair[$batchUuid] ?? null) : null;
+        if ($batchPairKey && (int) $pairStats[$batchPairKey]['survey_id'] === $surveyId) {
+            return $this->attributedGroup($batchPairKey, $pairStats, 'Verified by dispatch batch', 'batch');
+        }
+
+        if (! $member) {
+            return $this->unattributedGroup($batchUuid && isset($ambiguousBatchUuids[$batchUuid])
+                ? 'Unattributed: batch matches multiple group assignments'
+                : ($hasProgress ? 'Unattributed: member unavailable' : 'Unattributed: no linked survey progress'));
+        }
+
+        $observedTime = $this->timestamp($observedAt);
+        $memberGroups = [];
+        if ($member->group_id) {
+            $memberGroups[(int) $member->group_id] = 0;
+        }
+        foreach ($member->groups as $group) {
+            $groupId = (int) $group->id;
+            $joinedAt = $this->timestamp($group->pivot?->created_at) ?? 0;
+            $memberGroups[$groupId] = min($memberGroups[$groupId] ?? $joinedAt, $joinedAt);
+        }
+
+        $dispatchCandidates = [];
+        $configuredCandidates = [];
+        foreach ($memberGroups as $groupId => $joinedAt) {
+            if ($observedTime !== null && $joinedAt > $observedTime) {
+                continue;
+            }
+
+            $pairKey = $groupId.':'.$surveyId;
+            if (! isset($pairStats[$pairKey])) {
+                continue;
+            }
+            $configuredCandidates[$pairKey] = true;
+
+            if ($observedTime === null) {
+                continue;
+            }
+            foreach ($pairStats[$pairKey]['dispatch_times'] as $dispatchTime) {
+                if ($dispatchTime <= $observedTime && $dispatchTime > ($dispatchCandidates[$pairKey] ?? 0)) {
+                    $dispatchCandidates[$pairKey] = $dispatchTime;
+                }
+            }
+        }
+
+        if (count($dispatchCandidates) === 1) {
+            return $this->attributedGroup(array_key_first($dispatchCandidates), $pairStats, 'Inferred from member group and survey dispatch', 'dispatch');
+        }
+
+        if ($hasProgress && count($dispatchCandidates) > 1 && $observedTime !== null) {
+            arsort($dispatchCandidates);
+            $pairKeys = array_keys($dispatchCandidates);
+            $latest = $dispatchCandidates[$pairKeys[0]];
+            $runnerUp = $dispatchCandidates[$pairKeys[1]];
+            if ($observedTime - $latest <= 3600 && $latest - $runnerUp >= 3600) {
+                return $this->attributedGroup($pairKeys[0], $pairStats, 'Inferred from member group and dispatch timing', 'dispatch');
+            }
+
+            return $this->unattributedGroup('Unattributed: multiple possible survey groups');
+        }
+
+        if (count($configuredCandidates) === 1 && $hasProgress) {
+            return $this->attributedGroup(array_key_first($configuredCandidates), $pairStats, 'Inferred from unique member survey assignment; dispatch unverified', 'assignment');
+        }
+        if (count($configuredCandidates) > 1) {
+            return $this->unattributedGroup('Unattributed: multiple possible survey groups');
+        }
+
+        $knownGroupId = (int) ($member->group_id ?: (count($memberGroups) === 1 ? array_key_first($memberGroups) : 0));
+        if ($knownGroupId && isset($groupNames[$knownGroupId])) {
+            return [
+                'pair_key' => null,
+                'id' => $knownGroupId,
+                'name' => $groupNames[$knownGroupId],
+                'attribution' => 'Current member group; survey dispatch unverified',
+                'source' => 'member',
+            ];
+        }
+
+        return $this->unattributedGroup($batchUuid && isset($ambiguousBatchUuids[$batchUuid])
+            ? 'Unattributed: batch matches multiple group assignments'
+            : 'Unattributed: no matching member survey group');
+    }
+
+    private function attributedGroup(string $pairKey, array $pairStats, string $attribution, string $source): array
+    {
+        return [
+            'pair_key' => $pairKey,
+            'id' => $pairStats[$pairKey]['group_id'],
+            'name' => $pairStats[$pairKey]['group_name'],
+            'attribution' => $attribution,
+            'source' => $source,
+        ];
+    }
+
+    private function unattributedGroup(string $attribution): array
+    {
+        return [
+            'pair_key' => null,
+            'id' => null,
+            'name' => 'Unattributed / legacy',
+            'attribution' => $attribution,
+            'source' => 'unattributed',
+        ];
+    }
+
+    private function timestamp(mixed $value): ?int
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->getTimestamp();
+        }
+
+        return filled($value) ? strtotime((string) $value) : null;
+    }
+
     private function formatTimestamp(mixed $value): ?string
     {
         if ($value instanceof \DateTimeInterface) {
@@ -621,7 +784,8 @@ class ConsolidatedSurveyReportDataService
 
         return Member::query()
             ->whereIn('phone', $phoneVariants)
-            ->get(['id', 'name', 'phone'])
+            ->with('groups:id')
+            ->get(['id', 'name', 'phone', 'group_id'])
             ->groupBy(fn (Member $member): string => normalizePhoneNumber((string) $member->phone));
     }
 
